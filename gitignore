@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+
+# Firebase local state / emulator data
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+ui-debug.log
+pubsub-debug.log
+database-debug.log
+.runtimeconfig.json
+
+# secrets — never commit these
+.env
+.env.*
+*service-account*.json
+serviceAccountKey.json
+
+# editor / OS
+.DS_Store
+.vscode/
+*.log
