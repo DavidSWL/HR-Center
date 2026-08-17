@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Employees — SWL HR Center</title>
+<link rel="icon" href="/favicon.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="workspace">
+    <div class="topbar">
+      <h1>Employees</h1>
+      <button class="theme-toggle" id="theme-toggle" type="button">Dark mode</button>
+    </div>
+    <div class="page">
+
+      <div class="toolbar">
+        <input type="search" class="search-input" id="search" placeholder="Search by name…" />
+        <button class="btn btn-primary" id="add-btn" type="button">+ Add Employee</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Employee ID</th>
+              <th>Name</th>
+              <th>Division</th>
+              <th>Position</th>
+              <th>Hire Date</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div class="empty-state" id="empty-state" hidden>No employees yet — add the first one above.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add / edit modal -->
+<div class="modal-overlay" id="modal-overlay" hidden>
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Add Employee</h3>
+      <button class="modal-close" id="modal-close" type="button">&times;</button>
+    </div>
+    <form id="employee-form">
+      <input type="hidden" id="emp-id" />
+      <div class="field-row">
+        <div class="field">
+          <label for="first-name">First name</label>
+          <input type="text" id="first-name" required />
+        </div>
+        <div class="field">
+          <label for="last-name">Last name</label>
+          <input type="text" id="last-name" required />
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="division">Division</label>
+          <select id="division" required>
+            <option value="">Select…</option>
+            <option>Maintenance</option>
+            <option>Enhancement</option>
+            <option>Irrigation</option>
+            <option>Hardscape</option>
+            <option>Admin</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="position">Position</label>
+          <input type="text" id="position" required />
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="hire-date">Hire date</label>
+          <input type="date" id="hire-date" required />
+        </div>
+        <div class="field">
+          <label for="phone">Phone</label>
+          <input type="tel" id="phone" />
+        </div>
+      </div>
+      <div class="field">
+        <label for="email">Work email</label>
+        <input type="email" id="email" />
+      </div>
+
+      <div id="terminate-section" hidden>
+        <div class="field-row">
+          <div class="field">
+            <label for="separation-date">Separation date</label>
+            <input type="date" id="separation-date" />
+          </div>
+          <div class="field">
+            <label for="separation-type">Separation type</label>
+            <select id="separation-type">
+              <option value="">Select…</option>
+              <option value="voluntary">Voluntary</option>
+              <option value="involuntary">Involuntary</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-danger" id="terminate-btn" hidden>Terminate</button>
+        <button type="button" class="btn btn-secondary" id="cancel-btn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="save-btn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from '/auth.js';
+import { initShell, showToast, formatDate } from '/app.js';
+import { db } from '/firebaseconfig.js';
+import {
+  collection, doc, getDocs, setDoc, updateDoc, writeBatch, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('employees', profile);
+
+let allEmployees = [];
+let editingId = null;
+
+const rowsEl = document.getElementById('rows');
+const emptyState = document.getElementById('empty-state');
+const overlay = document.getElementById('modal-overlay');
+const form = document.getElementById('employee-form');
+
+function statusChip(emp) {
+  if (emp.status === 'terminated') return '<span class="chip status-terminated">Terminated</span>';
+  if (emp.status === 'onboarding') return '<span class="chip status-onboarding">Onboarding</span>';
+  return '<span class="chip">Active</span>';
+}
+
+function render(filterText = '') {
+  const q = filterText.trim().toLowerCase();
+  const visible = allEmployees.filter((e) =>
+    !q || `${e.first_name} ${e.last_name}`.toLowerCase().includes(q)
+  );
+  rowsEl.innerHTML = visible.map((e) => `
+    <tr class="row-clickable" data-id="${e.id}">
+      <td class="mono">${e.id}</td>
+      <td>${e.first_name} ${e.last_name}</td>
+      <td>${e.division || '—'}</td>
+      <td>${e.position || '—'}</td>
+      <td>${formatDate(e.hire_date)}</td>
+      <td>${statusChip(e)}</td>
+    </tr>
+  `).join('');
+  emptyState.hidden = visible.length > 0;
+
+  rowsEl.querySelectorAll('tr').forEach((tr) => {
+    tr.addEventListener('click', () => openEdit(tr.dataset.id));
+  });
+}
+
+async function loadEmployees() {
+  const snap = await getDocs(collection(db, 'employees'));
+  allEmployees = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''));
+  render(document.getElementById('search').value);
+}
+
+function nextEmployeeId() {
+  const nums = allEmployees
+    .map((e) => parseInt(String(e.id).replace(/\D/g, ''), 10))
+    .filter((n) => !Number.isNaN(n));
+  const next = (nums.length ? Math.max(...nums) : 1000) + 1;
+  return 'E' + next;
+}
+
+function openAdd() {
+  editingId = null;
+  form.reset();
+  document.getElementById('modal-title').textContent = 'Add Employee';
+  document.getElementById('terminate-btn').hidden = true;
+  document.getElementById('terminate-section').hidden = true;
+  overlay.hidden = false;
+}
+
+function openEdit(id) {
+  const emp = allEmployees.find((e) => e.id === id);
+  if (!emp) return;
+  editingId = id;
+  document.getElementById('modal-title').textContent = `${emp.first_name} ${emp.last_name}`;
+  document.getElementById('first-name').value = emp.first_name || '';
+  document.getElementById('last-name').value = emp.last_name || '';
+  document.getElementById('division').value = emp.division || '';
+  document.getElementById('position').value = emp.position || '';
+  document.getElementById('hire-date').value = emp.hire_date || '';
+  document.getElementById('phone').value = emp.phone || '';
+  document.getElementById('email').value = emp.email || '';
+  document.getElementById('terminate-btn').hidden = emp.status === 'terminated';
+  document.getElementById('terminate-section').hidden = true;
+  overlay.hidden = false;
+}
+
+function closeModal() {
+  overlay.hidden = true;
+  editingId = null;
+}
+
+document.getElementById('add-btn').addEventListener('click', openAdd);
+document.getElementById('cancel-btn').addEventListener('click', closeModal);
+document.getElementById('modal-close').addEventListener('click', closeModal);
+document.getElementById('search').addEventListener('input', (e) => render(e.target.value));
+
+document.getElementById('terminate-btn').addEventListener('click', () => {
+  document.getElementById('terminate-section').hidden = false;
+});
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const saveBtn = document.getElementById('save-btn');
+  saveBtn.disabled = true;
+
+  const data = {
+    first_name: document.getElementById('first-name').value.trim(),
+    last_name: document.getElementById('last-name').value.trim(),
+    division: document.getElementById('division').value,
+    position: document.getElementById('position').value.trim(),
+    hire_date: document.getElementById('hire-date').value,
+    phone: document.getElementById('phone').value.trim(),
+    email: document.getElementById('email').value.trim(),
+    entered_by: profile.uid,
+    updated_at: serverTimestamp(),
+  };
+
+  const separationSectionOpen = !document.getElementById('terminate-section').hidden;
+  if (separationSectionOpen) {
+    const sepDate = document.getElementById('separation-date').value;
+    const sepType = document.getElementById('separation-type').value;
+    if (!sepDate || !sepType) {
+      showToast('Separation date and type are both required to terminate.', 'error');
+      saveBtn.disabled = false;
+      return;
+    }
+    data.status = 'terminated';
+    data.separation_date = sepDate;
+    data.separation_type = sepType;
+  }
+
+  try {
+    if (editingId) {
+      await updateDoc(doc(db, 'employees', editingId), data);
+      showToast('Employee updated.');
+    } else {
+      const newId = nextEmployeeId();
+      data.status = 'onboarding';
+      data.entered_at = serverTimestamp();
+
+      // A new hire also gets the 30/60/90 review rows and the onboarding
+      // checklist — one write, so it can't be created half-done.
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'employees', newId), data);
+
+      const hireDate = new Date(data.hire_date + 'T00:00:00');
+      [30, 60, 90].forEach((days) => {
+        const due = new Date(hireDate);
+        due.setDate(due.getDate() + days);
+        batch.set(doc(db, 'employees', newId, 'reviews', String(days)), {
+          milestone: days,
+          due_date: due.toISOString().slice(0, 10),
+          review_completed: false,
+          form_received: false,
+          entered_by: profile.uid,
+        });
+      });
+
+      ['I-9 Verification', 'Employee Handbook Acknowledgment', 'Direct Deposit Enrollment', 'Emergency Contact Form']
+        .forEach((docTitle, i) => {
+          batch.set(doc(db, 'employees', newId, 'onboarding_docs', String(i)), {
+            title: docTitle,
+            on_file: false,
+            entered_by: profile.uid,
+          });
+        });
+
+      await batch.commit();
+      showToast('Employee added — 30/60/90 reviews and onboarding checklist created.');
+    }
+    closeModal();
+    await loadEmployees();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  } finally {
+    saveBtn.disabled = false;
+  }
+});
+
+await loadEmployees();
+</script>
+</body>
+</html>

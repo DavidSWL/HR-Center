@@ -7,11 +7,14 @@
     "rules": "storage.rules"
   },
   "hosting": {
-    "public": "public",
+    "public": ".",
     "ignore": [
       "firebase.json",
       "**/.*",
-      "**/node_modules/**"
+      "**/node_modules/**",
+      "docs/**",
+      "tests/**",
+      "package*.json"
     ]
   },
   "emulators": {

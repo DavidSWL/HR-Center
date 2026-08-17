@@ -1,0 +1,11 @@
+{
+  "name": "SWL HR Center",
+  "short_name": "HR Center",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#0B1F16",
+  "theme_color": "#154733",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
