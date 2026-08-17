@@ -20,11 +20,11 @@ export const NAV_SECTIONS = [
     label: 'People',
     items: [
       { key: 'roster', label: 'Employee roster', href: 'employees.html', built: true },
-      { key: 'comp', label: 'Policy compliance', href: '#', built: false },
-      { key: 'attendance', label: 'Attendance', href: '#', built: false },
+      { key: 'comp', label: 'Policy compliance', href: 'compliance.html', built: true },
+      { key: 'attendance', label: 'Attendance', href: 'attendance.html', built: true },
       { key: 'reviews', label: 'New hires & reviews', href: '#', built: false },
       { key: 'discipline', label: 'Disciplinary actions', href: '#', built: false },
-      { key: 'notes', label: 'Notes & files', href: '#', built: false },
+      { key: 'notes', label: 'Notes & files', href: 'notes.html', built: true },
     ],
   },
   {
@@ -37,7 +37,7 @@ export const NAV_SECTIONS = [
   {
     label: 'HR team',
     items: [
-      { key: 'tasks', label: 'Tasks', href: '#', built: false },
+      { key: 'tasks', label: 'Tasks', href: 'tasks.html', built: true },
       { key: 'training', label: 'Team training', href: '#', built: false },
       { key: 'completed', label: 'Completed work', href: '#', built: false },
     ],
