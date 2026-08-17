@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attendance — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1>Attendance</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>Quick entry</h3><span>No point system — just what happened and how often</span></div>
+        <div class="card-body">
+          <form id="entry-form">
+            <div class="frow">
+              <div class="field">
+                <label class="f-lab" for="emp-select">Employee</label>
+                <select class="f-in" id="emp-select" required></select>
+              </div>
+              <div class="field">
+                <label class="f-lab" for="occ-date">Date</label>
+                <input class="f-in" id="occ-date" type="date" required>
+              </div>
+            </div>
+            <div class="field">
+              <label class="f-lab">Type</label>
+              <div style="display:flex;gap:8px">
+                <button type="button" class="gh type-btn on" data-type="ncns" style="flex:1">No Call No Show</button>
+                <button type="button" class="gh type-btn" data-type="other" style="flex:1">Other</button>
+              </div>
+            </div>
+            <div class="field" id="reason-field">
+              <label class="f-lab" for="reason">Reason (required for Other)</label>
+              <input class="f-in" id="reason">
+            </div>
+            <button type="submit" class="gh solid">Save &amp; clear</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>Frequency by employee</h3><span id="freq-summary">—</span></div>
+        <table>
+          <thead><tr><th>Employee</th><th>NCNS</th><th>Other</th><th>Total</th><th>Most common day</th><th>Last occurrence</th></tr></thead>
+          <tbody id="freq-rows"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>Occurrence log</h3><span id="log-summary">—</span></div>
+        <div class="tools">
+          <input class="inp" id="search" placeholder="Search employee" style="min-width:190px">
+          <select class="inp" id="type-filter">
+            <option value="">All types</option>
+            <option value="ncns">No Call No Show</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <table>
+          <thead><tr><th>Date</th><th>Employee</th><th>Type</th><th>Reason</th><th>Entered by</th></tr></thead>
+          <tbody id="log-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, showToast, formatDate } from './app.js';
+import { db } from './firebaseconfig.js';
+import {
+  collection, doc, getDocs, addDoc, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('attendance', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+document.getElementById('occ-date').value = new Date().toISOString().slice(0, 10);
+
+let employees = [];
+let occurrences = [];
+let currentType = 'ncns';
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+async function loadEmployees() {
+  const snap = await getDocs(collection(db, 'employees'));
+  employees = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((e) => e.status !== 'terminated')
+    .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''));
+  document.getElementById('emp-select').innerHTML = employees
+    .map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name} (${e.id})</option>`)
+    .join('');
+}
+
+async function loadOccurrences() {
+  const snap = await getDocs(collection(db, 'attendance'));
+  occurrences = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  renderFrequency();
+  renderLog();
+}
+
+function empName(id) {
+  const e = employees.find((x) => x.id === id);
+  return e ? `${e.first_name} ${e.last_name}` : id;
+}
+
+function renderFrequency() {
+  const byEmp = {};
+  occurrences.forEach((o) => {
+    if (!byEmp[o.emp_id]) byEmp[o.emp_id] = { ncns: 0, other: 0, days: {}, last: null };
+    const rec = byEmp[o.emp_id];
+    if (o.type === 'ncns') rec.ncns++; else rec.other++;
+    if (o.date) {
+      const day = WEEKDAYS[new Date(o.date + 'T00:00:00').getDay()];
+      rec.days[day] = (rec.days[day] || 0) + 1;
+      if (!rec.last || o.date > rec.last) rec.last = o.date;
+    }
+  });
+
+  const rows = Object.entries(byEmp)
+    .map(([empId, rec]) => {
+      const topDay = Object.entries(rec.days).sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
+      return { empId, ...rec, total: rec.ncns + rec.other, topDay };
+    })
+    .sort((a, b) => b.total - a.total);
+
+  document.getElementById('freq-summary').textContent = `${rows.length} employees with occurrences`;
+  document.getElementById('freq-rows').innerHTML = rows.length ? rows.map((r) => `
+    <tr>
+      <td>${empName(r.empId)}</td>
+      <td class="mono">${r.ncns}</td>
+      <td class="mono">${r.other}</td>
+      <td class="mono" style="font-weight:700">${r.total}</td>
+      <td class="mono">${r.topDay}</td>
+      <td class="mono">${formatDate(r.last)}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="6" class="dim">No occurrences logged yet.</td></tr>';
+}
+
+function renderLog() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const typeFilter = document.getElementById('type-filter').value;
+
+  const visible = occurrences.filter((o) => {
+    if (typeFilter && o.type !== typeFilter) return false;
+    if (q && !empName(o.emp_id).toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  document.getElementById('log-summary').textContent = `${visible.length} of ${occurrences.length}`;
+  document.getElementById('log-rows').innerHTML = visible.length ? visible.map((o) => `
+    <tr>
+      <td class="mono">${formatDate(o.date)}</td>
+      <td>${empName(o.emp_id)}</td>
+      <td>${o.type === 'ncns' ? '<span class="pill bad">No Call No Show</span>' : '<span class="pill mid">Other</span>'}</td>
+      <td class="dim">${o.reason || '—'}</td>
+      <td class="mono dim">${o.entered_by === profile.uid ? 'You' : o.entered_by}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="5" class="dim">No occurrences match.</td></tr>';
+}
+
+document.querySelectorAll('.type-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.type-btn').forEach((b) => b.classList.remove('on'));
+    btn.classList.add('on');
+    currentType = btn.dataset.type;
+    document.getElementById('reason-field').style.display = currentType === 'other' ? 'block' : 'none';
+  });
+});
+document.getElementById('reason-field').style.display = 'none';
+
+document.getElementById('entry-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const reason = document.getElementById('reason').value.trim();
+  if (currentType === 'other' && !reason) {
+    showToast('A reason is required for Other.', 'error');
+    return;
+  }
+  try {
+    await addDoc(collection(db, 'attendance'), {
+      emp_id: document.getElementById('emp-select').value,
+      date: document.getElementById('occ-date').value,
+      type: currentType,
+      reason: currentType === 'other' ? reason : '',
+      entered_by: profile.uid,
+      entered_at: serverTimestamp(),
+    });
+    document.getElementById('reason').value = '';
+    document.getElementById('occ-date').value = new Date().toISOString().slice(0, 10);
+    showToast('Occurrence saved.');
+    await loadOccurrences();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+});
+
+document.getElementById('search').addEventListener('input', renderLog);
+document.getElementById('type-filter').addEventListener('change', renderLog);
+
+await loadEmployees();
+await loadOccurrences();
+</script>
+</body>
+</html>

@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Policy compliance — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1>Policy compliance</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h">
+          <h3>Documents</h3>
+          <span id="doc-summary">— active</span>
+        </div>
+        <div class="tools">
+          <button class="gh solid" id="add-doc-btn" type="button">Add document</button>
+        </div>
+        <table>
+          <thead><tr><th>Title</th><th>Type</th><th>Version</th><th>Effective</th><th></th></tr></thead>
+          <tbody id="doc-rows"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-h">
+          <h3>Compliance matrix</h3>
+          <span id="matrix-summary">—</span>
+        </div>
+        <div class="tools">
+          <input class="inp" id="search" placeholder="Search employee" style="min-width:190px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)">
+            <input type="checkbox" id="missing-only"> Show missing only
+          </label>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="mx" id="matrix-table">
+            <thead><tr id="matrix-head"><th style="min-width:170px">Employee</th></tr></thead>
+            <tbody id="matrix-body"></tbody>
+          </table>
+        </div>
+        <div class="legend">
+          <span><i class="chip y"></i> On file</span>
+          <span><i class="chip n"></i> Missing</span>
+          <span><i class="chip s"></i> Superseded</span>
+          <span><i class="chip x"></i> Not applicable</span>
+          <span class="dim">Click a cell to change it.</span>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- add document modal -->
+<div class="modal-overlay" id="modal-overlay" hidden>
+  <div class="modal">
+    <div class="modal-h">
+      <h3>Add document</h3>
+      <button class="modal-close" id="modal-close" type="button">&times;</button>
+    </div>
+    <form id="doc-form">
+      <div class="modal-body">
+        <div class="field">
+          <label class="f-lab" for="doc-title">Title</label>
+          <input class="f-in" id="doc-title" required>
+        </div>
+        <div class="frow">
+          <div class="field">
+            <label class="f-lab" for="doc-type">Type</label>
+            <select class="f-in" id="doc-type" required>
+              <option value="handbook">Handbook</option>
+              <option value="policy">Policy</option>
+              <option value="notice">Notice</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="f-lab" for="doc-version">Version label</label>
+            <input class="f-in" id="doc-version" placeholder="e.g. Rev. A" required>
+          </div>
+        </div>
+        <div class="field">
+          <label class="f-lab" for="doc-effective">Effective date</label>
+          <input class="f-in" id="doc-effective" type="date" required>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="gh" id="doc-cancel">Cancel</button>
+        <button type="submit" class="gh solid">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, showToast, formatDate } from './app.js';
+import { db } from './firebaseconfig.js';
+import {
+  collection, doc, getDocs, setDoc, updateDoc, writeBatch, serverTimestamp, query, where,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('comp', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+let documents = [];
+let employees = [];
+let ackByEmpDoc = {}; // `${empId}__${docId}` -> {status, signed_date, entered_by, version_label}
+
+function nextCycle(current) {
+  if (current === 'on_file') return 'na';
+  if (current === 'na') return 'missing';
+  return 'on_file'; // missing or superseded -> on_file
+}
+
+function chipClass(status) {
+  if (status === 'on_file') return 'y';
+  if (status === 'na') return 'x';
+  if (status === 'superseded') return 's';
+  return 'n';
+}
+
+async function loadAll() {
+  const [docSnap, empSnap] = await Promise.all([
+    getDocs(collection(db, 'policy_documents')),
+    getDocs(collection(db, 'employees')),
+  ]);
+
+  documents = docSnap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((d) => d.active !== false)
+    .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+
+  employees = empSnap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((e) => e.status !== 'terminated')
+    .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''));
+
+  ackByEmpDoc = {};
+  await Promise.all(employees.map(async (emp) => {
+    const ackSnap = await getDocs(collection(db, 'employees', emp.id, 'acknowledgments'));
+    ackSnap.forEach((a) => {
+      ackByEmpDoc[`${emp.id}__${a.id}`] = a.data();
+    });
+  }));
+
+  renderDocs();
+  renderMatrix();
+}
+
+function renderDocs() {
+  document.getElementById('doc-summary').textContent = `${documents.length} active`;
+  document.getElementById('doc-rows').innerHTML = documents.map((d) => `
+    <tr>
+      <td><b>${d.title}</b></td>
+      <td class="mono dim">${d.type || '—'}</td>
+      <td class="mono">${d.version_label || '—'}</td>
+      <td class="mono">${formatDate(d.effective_date)}</td>
+      <td style="text-align:right"><button class="gh new-version-btn" data-id="${d.id}" type="button">New version</button></td>
+    </tr>
+  `).join('');
+  document.querySelectorAll('.new-version-btn').forEach((btn) => {
+    btn.addEventListener('click', () => publishNewVersion(btn.dataset.id));
+  });
+}
+
+function renderMatrix() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const missingOnly = document.getElementById('missing-only').checked;
+
+  const head = document.getElementById('matrix-head');
+  head.innerHTML = '<th style="min-width:170px">Employee</th>' +
+    documents.map((d) => `<th class="d"><div>${d.title}</div></th>`).join('');
+
+  let visible = employees.filter((e) =>
+    !q || `${e.first_name} ${e.last_name}`.toLowerCase().includes(q)
+  );
+
+  if (missingOnly) {
+    visible = visible.filter((e) =>
+      documents.some((d) => {
+        const ack = ackByEmpDoc[`${e.id}__${d.id}`];
+        const status = ack?.status || 'missing';
+        return status === 'missing' || status === 'superseded';
+      })
+    );
+  }
+
+  document.getElementById('matrix-summary').textContent = `${visible.length} of ${employees.length} employees · ${documents.length} documents`;
+
+  document.getElementById('matrix-body').innerHTML = visible.map((e) => {
+    const cells = documents.map((d) => {
+      const ack = ackByEmpDoc[`${e.id}__${d.id}`];
+      const status = ack?.status || 'missing';
+      return `<td class="c" data-emp="${e.id}" data-doc="${d.id}" style="cursor:pointer" title="${status.replace('_',' ')}"><i class="chip ${chipClass(status)}"></i></td>`;
+    }).join('');
+    return `<tr><td>${e.first_name} ${e.last_name} <span class="mono dim">${e.id}</span></td>${cells}</tr>`;
+  }).join('');
+
+  document.querySelectorAll('#matrix-body td.c').forEach((cell) => {
+    cell.addEventListener('click', () => cycleCell(cell.dataset.emp, cell.dataset.doc));
+  });
+}
+
+async function cycleCell(empId, docId) {
+  const key = `${empId}__${docId}`;
+  const current = ackByEmpDoc[key]?.status || 'missing';
+  const next = nextCycle(current);
+  const docInfo = documents.find((d) => d.id === docId);
+
+  const payload = {
+    status: next,
+    version_label: docInfo?.version_label || '',
+    entered_by: profile.uid,
+  };
+  if (next === 'on_file') {
+    payload.signed_date = new Date().toISOString().slice(0, 10);
+  } else {
+    payload.signed_date = null;
+  }
+
+  try {
+    await setDoc(doc(db, 'employees', empId, 'acknowledgments', docId), payload, { merge: true });
+    ackByEmpDoc[key] = payload;
+    renderMatrix();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not update — ' + err.message, 'error');
+  }
+}
+
+async function publishNewVersion(docId) {
+  const docInfo = documents.find((d) => d.id === docId);
+  const newVersion = prompt(`New version label for "${docInfo.title}"`, docInfo.version_label || '');
+  if (!newVersion) return;
+  const newEffective = prompt('Effective date (YYYY-MM-DD)', new Date().toISOString().slice(0, 10));
+  if (!newEffective) return;
+
+  try {
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'policy_documents', docId), {
+      version_label: newVersion,
+      effective_date: newEffective,
+      entered_by: profile.uid,
+    });
+
+    // Publishing a new version resets that column: anyone marked on file
+    // against the old version becomes superseded, not silently carried
+    // forward as "still compliant."
+    employees.forEach((emp) => {
+      const key = `${emp.id}__${docId}`;
+      const ack = ackByEmpDoc[key];
+      if (ack?.status === 'on_file') {
+        batch.set(doc(db, 'employees', emp.id, 'acknowledgments', docId), {
+          ...ack,
+          status: 'superseded',
+        });
+      }
+    });
+
+    await batch.commit();
+    showToast('New version published — acknowledgments reset.');
+    await loadAll();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not publish — ' + err.message, 'error');
+  }
+}
+
+document.getElementById('search').addEventListener('input', renderMatrix);
+document.getElementById('missing-only').addEventListener('change', renderMatrix);
+
+const overlay = document.getElementById('modal-overlay');
+document.getElementById('add-doc-btn').addEventListener('click', () => { overlay.hidden = false; });
+document.getElementById('modal-close').addEventListener('click', () => { overlay.hidden = true; });
+document.getElementById('doc-cancel').addEventListener('click', () => { overlay.hidden = true; });
+
+document.getElementById('doc-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const newDocRef = doc(collection(db, 'policy_documents'));
+  try {
+    await setDoc(newDocRef, {
+      title: document.getElementById('doc-title').value.trim(),
+      type: document.getElementById('doc-type').value,
+      version_label: document.getElementById('doc-version').value.trim(),
+      effective_date: document.getElementById('doc-effective').value,
+      active: true,
+      entered_by: profile.uid,
+      created_at: serverTimestamp(),
+    });
+    overlay.hidden = true;
+    document.getElementById('doc-form').reset();
+    showToast('Document added.');
+    await loadAll();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+});
+
+await loadAll();
+</script>
+</body>
+</html>

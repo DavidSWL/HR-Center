@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notes to file — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1>Notes to file</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>New note</h3><span>Not discipline — this doesn't count as a step</span></div>
+        <div class="card-body">
+          <form id="note-form">
+            <div class="frow">
+              <div class="field">
+                <label class="f-lab" for="emp-select">Employee</label>
+                <select class="f-in" id="emp-select" required></select>
+              </div>
+              <div class="field">
+                <label class="f-lab" for="note-type">Type</label>
+                <select class="f-in" id="note-type" required>
+                  <option value="documented_conversation">Documented conversation</option>
+                  <option value="coaching_note">Coaching note</option>
+                  <option value="manager_statement">Manager statement</option>
+                  <option value="employee_statement">Employee statement</option>
+                  <option value="uploaded_record">Uploaded record</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label class="f-lab" for="note-body">Note</label>
+              <textarea class="f-in" id="note-body" rows="4" style="resize:vertical" required></textarea>
+            </div>
+            <div class="field">
+              <label class="f-lab" for="note-file">Attachment (optional)</label>
+              <input class="f-in" id="note-file" type="file" accept="application/pdf,image/*">
+            </div>
+            <button type="submit" class="gh solid" id="save-note-btn">Save note</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>All notes</h3><span id="notes-summary">—</span></div>
+        <div class="tools">
+          <input class="inp" id="search" placeholder="Search employee or text" style="min-width:240px">
+        </div>
+        <table>
+          <thead><tr><th>Date</th><th>Employee</th><th>Type</th><th>Note</th><th>File</th><th>Entered by</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, showToast, formatDate } from './app.js';
+import { db, storage } from './firebaseconfig.js';
+import {
+  collection, doc, getDocs, setDoc, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import {
+  ref, uploadBytes, getDownloadURL,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('notes', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+const TYPE_LABELS = {
+  documented_conversation: 'Documented conversation',
+  coaching_note: 'Coaching note',
+  manager_statement: 'Manager statement',
+  employee_statement: 'Employee statement',
+  uploaded_record: 'Uploaded record',
+};
+
+let employees = [];
+let notes = [];
+
+function empName(id) {
+  const e = employees.find((x) => x.id === id);
+  return e ? `${e.first_name} ${e.last_name}` : id;
+}
+
+async function loadEmployees() {
+  const snap = await getDocs(collection(db, 'employees'));
+  employees = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((e) => e.status !== 'terminated')
+    .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''));
+  document.getElementById('emp-select').innerHTML = employees
+    .map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name} (${e.id})</option>`)
+    .join('');
+}
+
+async function loadNotes() {
+  const snap = await getDocs(collection(db, 'notes_to_file'));
+  notes = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.entered_at?.seconds || 0) - (a.entered_at?.seconds || 0));
+  render();
+}
+
+function render() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const visible = notes.filter((n) =>
+    !q || empName(n.emp_id).toLowerCase().includes(q) || (n.body || '').toLowerCase().includes(q)
+  );
+  document.getElementById('notes-summary').textContent = `${visible.length} of ${notes.length}`;
+  document.getElementById('rows').innerHTML = visible.length ? visible.map((n) => `
+    <tr>
+      <td class="mono">${n.entered_at?.seconds ? formatDate(new Date(n.entered_at.seconds * 1000)) : '—'}</td>
+      <td>${empName(n.emp_id)}</td>
+      <td class="dim">${TYPE_LABELS[n.type] || n.type}</td>
+      <td>${(n.body || '').slice(0, 90)}${(n.body || '').length > 90 ? '…' : ''}</td>
+      <td>${n.attachment_url ? `<a href="${n.attachment_url}" target="_blank" rel="noopener">View</a>` : '<span class="dim">—</span>'}</td>
+      <td class="mono dim">${n.entered_by === profile.uid ? 'You' : n.entered_by}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="6" class="dim">No notes yet.</td></tr>';
+}
+
+document.getElementById('search').addEventListener('input', render);
+
+document.getElementById('note-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const saveBtn = document.getElementById('save-note-btn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Saving…';
+
+  try {
+    const noteRef = doc(collection(db, 'notes_to_file'));
+    let attachmentUrl = null, attachmentPath = null;
+
+    const file = document.getElementById('note-file').files[0];
+    if (file) {
+      attachmentPath = `notes/${noteRef.id}/${file.name}`;
+      const storageRef = ref(storage, attachmentPath);
+      await uploadBytes(storageRef, file);
+      attachmentUrl = await getDownloadURL(storageRef);
+    }
+
+    await setDoc(noteRef, {
+      emp_id: document.getElementById('emp-select').value,
+      type: document.getElementById('note-type').value,
+      body: document.getElementById('note-body').value.trim(),
+      attachment_path: attachmentPath,
+      attachment_url: attachmentUrl,
+      entered_by: profile.uid,
+      entered_at: serverTimestamp(),
+    });
+
+    document.getElementById('note-form').reset();
+    showToast('Note saved.');
+    await loadNotes();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save note';
+  }
+});
+
+await loadEmployees();
+await loadNotes();
+</script>
+</body>
+</html>

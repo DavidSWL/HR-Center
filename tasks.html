@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tasks — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1>Tasks</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>Assign a task</h3><span>One person, with enough context to start without asking</span></div>
+        <div class="card-body">
+          <form id="task-form">
+            <div class="frow">
+              <div class="field">
+                <label class="f-lab" for="assignee">Assigned to</label>
+                <select class="f-in" id="assignee" required></select>
+              </div>
+              <div class="field">
+                <label class="f-lab" for="due-date">Due date</label>
+                <input class="f-in" id="due-date" type="date" required>
+              </div>
+            </div>
+            <div class="field">
+              <label class="f-lab" for="instructions">What's needed / why</label>
+              <textarea class="f-in" id="instructions" rows="3" style="resize:vertical" required></textarea>
+            </div>
+            <div class="field">
+              <label class="f-lab" for="recurring">Recurring</label>
+              <select class="f-in" id="recurring">
+                <option value="none">One-time</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="annual">Annual</option>
+              </select>
+            </div>
+            <button type="submit" class="gh solid">Assign</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>Open tasks</h3><span id="tasks-summary">—</span></div>
+        <div class="tools">
+          <select class="inp" id="person-filter"><option value="">Everyone</option></select>
+          <select class="inp" id="status-filter">
+            <option value="open">Open</option>
+            <option value="all">All, including completed</option>
+          </select>
+        </div>
+        <table>
+          <thead><tr><th>Due</th><th>Assigned to</th><th>What's needed</th><th>Recurring</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, showToast, formatDate } from './app.js';
+import { db } from './firebaseconfig.js';
+import {
+  collection, doc, getDocs, setDoc, updateDoc, addDoc, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('tasks', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+let staff = [];
+let tasks = [];
+const todayStr = new Date().toISOString().slice(0, 10);
+
+function staffName(uid) {
+  const s = staff.find((x) => x.id === uid);
+  return s ? s.name : uid;
+}
+
+async function loadStaff() {
+  const snap = await getDocs(collection(db, 'users'));
+  staff = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const options = staff.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+  document.getElementById('assignee').innerHTML = options;
+  document.getElementById('person-filter').innerHTML = '<option value="">Everyone</option>' + options;
+}
+
+async function loadTasks() {
+  const snap = await getDocs(collection(db, 'tasks'));
+  tasks = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''));
+  render();
+}
+
+function render() {
+  const personFilter = document.getElementById('person-filter').value;
+  const statusFilter = document.getElementById('status-filter').value;
+
+  const visible = tasks.filter((t) => {
+    if (statusFilter === 'open' && t.status === 'complete') return false;
+    if (personFilter && t.assigned_to !== personFilter) return false;
+    return true;
+  });
+
+  document.getElementById('tasks-summary').textContent = `${visible.length} of ${tasks.length}`;
+
+  document.getElementById('rows').innerHTML = visible.length ? visible.map((t) => {
+    const overdue = t.status !== 'complete' && t.due_date && t.due_date < todayStr;
+    return `
+      <tr>
+        <td class="mono" style="${overdue ? 'color:var(--alertTx);font-weight:700' : ''}">${formatDate(t.due_date)}${overdue ? ' · overdue' : ''}</td>
+        <td>${staffName(t.assigned_to)}</td>
+        <td>${t.status === 'complete' ? `<span style="text-decoration:line-through;color:var(--faint)">${t.instructions}</span>` : t.instructions}</td>
+        <td class="dim">${t.recurring && t.recurring !== 'none' ? t.recurring : '—'}</td>
+        <td style="text-align:right;white-space:nowrap">
+          ${t.status === 'complete'
+            ? '<span class="pill ok">Done</span>'
+            : `<button class="gh complete-btn" data-id="${t.id}" type="button">Complete</button>
+               <button class="gh reassign-btn" data-id="${t.id}" type="button">Reassign</button>`}
+        </td>
+      </tr>
+    `;
+  }).join('') : '<tr><td colspan="5" class="dim">No tasks match.</td></tr>';
+
+  document.querySelectorAll('.complete-btn').forEach((btn) => {
+    btn.addEventListener('click', () => completeTask(btn.dataset.id));
+  });
+  document.querySelectorAll('.reassign-btn').forEach((btn) => {
+    btn.addEventListener('click', () => reassignTask(btn.dataset.id));
+  });
+}
+
+async function completeTask(id) {
+  try {
+    await updateDoc(doc(db, 'tasks', id), {
+      status: 'complete',
+      completed_at: serverTimestamp(),
+      completed_by: profile.uid,
+    });
+    await addDoc(collection(db, 'activity'), {
+      module: 'tasks',
+      item: tasks.find((t) => t.id === id)?.instructions || id,
+      entered_by: profile.uid,
+      entered_at: serverTimestamp(),
+    });
+    showToast('Task completed.');
+    await loadTasks();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not update — ' + err.message, 'error');
+  }
+}
+
+async function reassignTask(id) {
+  const task = tasks.find((t) => t.id === id);
+  const names = staff.map((s) => `${s.name} (${s.id})`).join('\n');
+  const newUid = prompt(`Reassign to which user ID?\n\n${names}`, task.assigned_to);
+  if (!newUid || newUid === task.assigned_to) return;
+  if (!staff.some((s) => s.id === newUid)) {
+    showToast('Not a recognized user ID.', 'error');
+    return;
+  }
+  try {
+    await addDoc(collection(db, 'tasks', id, 'reassignments'), {
+      from: task.assigned_to,
+      to: newUid,
+      entered_by: profile.uid,
+      entered_at: serverTimestamp(),
+    });
+    await updateDoc(doc(db, 'tasks', id), { assigned_to: newUid });
+    showToast('Task reassigned.');
+    await loadTasks();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not reassign — ' + err.message, 'error');
+  }
+}
+
+document.getElementById('person-filter').addEventListener('change', render);
+document.getElementById('status-filter').addEventListener('change', render);
+
+document.getElementById('task-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await addDoc(collection(db, 'tasks'), {
+      assigned_to: document.getElementById('assignee').value,
+      due_date: document.getElementById('due-date').value,
+      instructions: document.getElementById('instructions').value.trim(),
+      recurring: document.getElementById('recurring').value,
+      status: 'open',
+      entered_by: profile.uid,
+      entered_at: serverTimestamp(),
+    });
+    document.getElementById('task-form').reset();
+    showToast('Task assigned.');
+    await loadTasks();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not assign — ' + err.message, 'error');
+  }
+});
+
+await loadStaff();
+await loadTasks();
+</script>
+</body>
+</html>
