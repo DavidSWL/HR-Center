@@ -25,6 +25,9 @@ jobs:
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > "$RUNNER_TEMP/firebase-key.json"
 
       - name: Deploy rules and hosting
-        run: firebase deploy --only firestore:rules,storage:rules,hosting --project hr-center-8ad6f --non-interactive
+        # storage:rules is left out until Cloud Storage is confirmed set up
+        # in the Firebase Console (Storage -> Get started) -- add it back
+        # to this list once that's done.
+        run: firebase deploy --only firestore:rules,hosting --project hr-center-8ad6f --non-interactive
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-key.json
