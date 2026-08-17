@@ -17,12 +17,12 @@ import { getStorage }      from 'https://www.gstatic.com/firebasejs/10.12.2/fire
 
 // ── Replace these with your HR-Center project's own credentials ────────────
 const firebaseConfig = {
-  apiKey: "REPLACE_ME",
-  authDomain: "REPLACE_ME.firebaseapp.com",
-  projectId: "REPLACE_ME",
-  storageBucket: "REPLACE_ME.firebasestorage.app",
-  messagingSenderId: "REPLACE_ME",
-  appId: "REPLACE_ME"
+  apiKey: "AIzaSyA_uEz9yivQy5WqYF69XLbAUsq8ELu_QB4",
+  authDomain: "hr-center-8ad6f.firebaseapp.com",
+  projectId: "hr-center-8ad6f",
+  storageBucket: "hr-center-8ad6f.firebasestorage.app",
+  messagingSenderId: "262992323845",
+  appId: "1:262992323845:web:60709d7dc994000710436c"
 };
 // ─────────────────────────────────────────────────────────────────────────
 
