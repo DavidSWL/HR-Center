@@ -1,137 +1,161 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Employees — SWL HR Center</title>
-<link rel="icon" href="/favicon.svg" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="/styles.css" />
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Employee roster — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div class="app-shell">
-  <nav class="sidebar" id="sidebar"></nav>
-  <div class="workspace">
-    <div class="topbar">
-      <h1>Employees</h1>
-      <button class="theme-toggle" id="theme-toggle" type="button">Dark mode</button>
-    </div>
-    <div class="page">
 
-      <div class="toolbar">
-        <input type="search" class="search-input" id="search" placeholder="Search by name…" />
-        <button class="btn btn-primary" id="add-btn" type="button">+ Add Employee</button>
-      </div>
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
 
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Employee ID</th>
-              <th>Name</th>
-              <th>Division</th>
-              <th>Position</th>
-              <th>Hire Date</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody id="rows"></tbody>
-        </table>
-        <div class="empty-state" id="empty-state" hidden>No employees yet — add the first one above.</div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Add / edit modal -->
-<div class="modal-overlay" id="modal-overlay" hidden>
-  <div class="modal">
-    <div class="modal-header">
-      <h3 id="modal-title">Add Employee</h3>
-      <button class="modal-close" id="modal-close" type="button">&times;</button>
-    </div>
-    <form id="employee-form">
-      <input type="hidden" id="emp-id" />
-      <div class="field-row">
-        <div class="field">
-          <label for="first-name">First name</label>
-          <input type="text" id="first-name" required />
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1>Employee roster</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
         </div>
-        <div class="field">
-          <label for="last-name">Last name</label>
-          <input type="text" id="last-name" required />
-        </div>
+        <div class="s" id="header-date"></div>
       </div>
-      <div class="field-row">
-        <div class="field">
-          <label for="division">Division</label>
-          <select id="division" required>
-            <option value="">Select…</option>
+    </header>
+
+    <section class="view">
+      <div class="card">
+        <div class="card-h">
+          <h3>Employee roster</h3>
+          <span id="roster-summary">— active</span>
+        </div>
+        <div class="tools">
+          <button class="gh solid" id="add-btn" type="button">Add new hire</button>
+          <input class="inp" id="search" placeholder="Search name or ID" style="min-width:190px">
+          <select class="inp" id="division-filter">
+            <option value="">All divisions</option>
             <option>Maintenance</option>
             <option>Enhancement</option>
             <option>Irrigation</option>
             <option>Hardscape</option>
             <option>Admin</option>
           </select>
+          <select class="inp" id="status-filter">
+            <option value="active">Active + onboarding</option>
+            <option value="all">All, including terminated</option>
+          </select>
         </div>
-        <div class="field">
-          <label for="position">Position</label>
-          <input type="text" id="position" required />
-        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th><th>Name</th><th>Job title</th><th>Div</th><th>Start</th><th>Yrs</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div class="legend" id="empty-state" hidden><span>No employees match — try clearing the search or filters.</span></div>
+        <div class="legend"><span>Years of service is calculated from the hire date — never typed in twice.</span></div>
       </div>
-      <div class="field-row">
-        <div class="field">
-          <label for="hire-date">Hire date</label>
-          <input type="date" id="hire-date" required />
-        </div>
-        <div class="field">
-          <label for="phone">Phone</label>
-          <input type="tel" id="phone" />
-        </div>
-      </div>
-      <div class="field">
-        <label for="email">Work email</label>
-        <input type="email" id="email" />
-      </div>
+    </section>
+  </div>
+</div>
 
-      <div id="terminate-section" hidden>
-        <div class="field-row">
+<!-- Add / edit modal -->
+<div class="modal-overlay" id="modal-overlay" hidden>
+  <div class="modal">
+    <div class="modal-h">
+      <h3 id="modal-title">Add new hire</h3>
+      <button class="modal-close" id="modal-close" type="button">&times;</button>
+    </div>
+    <form id="employee-form">
+      <div class="modal-body">
+        <input type="hidden" id="emp-id">
+        <div class="frow">
           <div class="field">
-            <label for="separation-date">Separation date</label>
-            <input type="date" id="separation-date" />
+            <label class="f-lab" for="first-name">First name</label>
+            <input class="f-in" id="first-name" required>
           </div>
           <div class="field">
-            <label for="separation-type">Separation type</label>
-            <select id="separation-type">
+            <label class="f-lab" for="last-name">Last name</label>
+            <input class="f-in" id="last-name" required>
+          </div>
+        </div>
+        <div class="frow">
+          <div class="field">
+            <label class="f-lab" for="division">Division</label>
+            <select class="f-in" id="division" required>
               <option value="">Select…</option>
-              <option value="voluntary">Voluntary</option>
-              <option value="involuntary">Involuntary</option>
+              <option>Maintenance</option>
+              <option>Enhancement</option>
+              <option>Irrigation</option>
+              <option>Hardscape</option>
+              <option>Admin</option>
             </select>
           </div>
+          <div class="field">
+            <label class="f-lab" for="position">Job title</label>
+            <input class="f-in" id="position" required>
+          </div>
+        </div>
+        <div class="frow">
+          <div class="field">
+            <label class="f-lab" for="hire-date">Hire date</label>
+            <input class="f-in" id="hire-date" type="date" required>
+          </div>
+          <div class="field">
+            <label class="f-lab" for="phone">Phone</label>
+            <input class="f-in" id="phone" type="tel">
+          </div>
+        </div>
+        <div class="field">
+          <label class="f-lab" for="email">Work email</label>
+          <input class="f-in" id="email" type="email">
+        </div>
+
+        <div id="terminate-section" hidden>
+          <div class="frow">
+            <div class="field">
+              <label class="f-lab" for="separation-date">Separation date</label>
+              <input class="f-in" id="separation-date" type="date">
+            </div>
+            <div class="field">
+              <label class="f-lab" for="separation-type">Separation type</label>
+              <select class="f-in" id="separation-type">
+                <option value="">Select…</option>
+                <option value="voluntary">Voluntary</option>
+                <option value="involuntary">Involuntary</option>
+              </select>
+            </div>
+          </div>
         </div>
       </div>
-
       <div class="modal-actions">
-        <button type="button" class="btn btn-danger" id="terminate-btn" hidden>Terminate</button>
-        <button type="button" class="btn btn-secondary" id="cancel-btn">Cancel</button>
-        <button type="submit" class="btn btn-primary" id="save-btn">Save</button>
+        <button type="button" class="gh" id="terminate-btn" hidden style="border-color:var(--alertTx);color:var(--alertTx)">Terminate</button>
+        <button type="button" class="gh" id="cancel-btn">Cancel</button>
+        <button type="submit" class="gh solid" id="save-btn">Save</button>
       </div>
     </form>
   </div>
 </div>
 
 <script type="module">
-import { requireAuth } from '/auth.js';
-import { initShell, showToast, formatDate } from '/app.js';
-import { db } from '/firebaseconfig.js';
+import { requireAuth } from './auth.js';
+import { initShell, showToast, formatDate, yearsSince } from './app.js';
+import { db } from './firebaseconfig.js';
 import {
-  collection, doc, getDocs, setDoc, updateDoc, writeBatch, serverTimestamp,
+  collection, doc, getDocs, updateDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
-initShell('employees', profile);
+initShell('roster', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
 
 let allEmployees = [];
 let editingId = null;
@@ -141,25 +165,33 @@ const emptyState = document.getElementById('empty-state');
 const overlay = document.getElementById('modal-overlay');
 const form = document.getElementById('employee-form');
 
-function statusChip(emp) {
-  if (emp.status === 'terminated') return '<span class="chip status-terminated">Terminated</span>';
-  if (emp.status === 'onboarding') return '<span class="chip status-onboarding">Onboarding</span>';
-  return '<span class="chip">Active</span>';
+function statusPill(emp) {
+  if (emp.status === 'terminated') return '<span class="pill bad">Terminated</span>';
+  if (emp.status === 'onboarding') return '<span class="pill mid">Onboarding</span>';
+  return '<span class="pill ok">Active</span>';
 }
 
-function render(filterText = '') {
-  const q = filterText.trim().toLowerCase();
-  const visible = allEmployees.filter((e) =>
-    !q || `${e.first_name} ${e.last_name}`.toLowerCase().includes(q)
-  );
+function render() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const divisionFilter = document.getElementById('division-filter').value;
+  const statusFilter = document.getElementById('status-filter').value;
+
+  const visible = allEmployees.filter((e) => {
+    if (statusFilter === 'active' && e.status === 'terminated') return false;
+    if (divisionFilter && e.division !== divisionFilter) return false;
+    if (q && !`${e.first_name} ${e.last_name} ${e.id}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
   rowsEl.innerHTML = visible.map((e) => `
-    <tr class="row-clickable" data-id="${e.id}">
-      <td class="mono">${e.id}</td>
-      <td>${e.first_name} ${e.last_name}</td>
-      <td>${e.division || '—'}</td>
+    <tr class="row-clickable" data-id="${e.id}" style="cursor:pointer">
+      <td class="mono dim">${e.id}</td>
+      <td><b>${e.first_name} ${e.last_name}</b></td>
       <td>${e.position || '—'}</td>
-      <td>${formatDate(e.hire_date)}</td>
-      <td>${statusChip(e)}</td>
+      <td class="mono">${e.division || '—'}</td>
+      <td class="mono">${formatDate(e.hire_date)}</td>
+      <td class="mono">${e.status === 'terminated' ? '—' : yearsSince(e.hire_date)}</td>
+      <td>${statusPill(e)}</td>
     </tr>
   `).join('');
   emptyState.hidden = visible.length > 0;
@@ -167,6 +199,10 @@ function render(filterText = '') {
   rowsEl.querySelectorAll('tr').forEach((tr) => {
     tr.addEventListener('click', () => openEdit(tr.dataset.id));
   });
+
+  const activeCount = allEmployees.filter((e) => e.status !== 'terminated').length;
+  const divisions = new Set(allEmployees.filter((e) => e.status !== 'terminated').map((e) => e.division).filter(Boolean));
+  document.getElementById('roster-summary').textContent = `${activeCount} active · ${divisions.size} division${divisions.size === 1 ? '' : 's'}`;
 }
 
 async function loadEmployees() {
@@ -174,7 +210,7 @@ async function loadEmployees() {
   allEmployees = snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''));
-  render(document.getElementById('search').value);
+  render();
 }
 
 function nextEmployeeId() {
@@ -182,13 +218,13 @@ function nextEmployeeId() {
     .map((e) => parseInt(String(e.id).replace(/\D/g, ''), 10))
     .filter((n) => !Number.isNaN(n));
   const next = (nums.length ? Math.max(...nums) : 1000) + 1;
-  return 'E' + next;
+  return 'SWL-' + String(next).padStart(4, '0');
 }
 
 function openAdd() {
   editingId = null;
   form.reset();
-  document.getElementById('modal-title').textContent = 'Add Employee';
+  document.getElementById('modal-title').textContent = 'Add new hire';
   document.getElementById('terminate-btn').hidden = true;
   document.getElementById('terminate-section').hidden = true;
   overlay.hidden = false;
@@ -219,7 +255,9 @@ function closeModal() {
 document.getElementById('add-btn').addEventListener('click', openAdd);
 document.getElementById('cancel-btn').addEventListener('click', closeModal);
 document.getElementById('modal-close').addEventListener('click', closeModal);
-document.getElementById('search').addEventListener('input', (e) => render(e.target.value));
+document.getElementById('search').addEventListener('input', render);
+document.getElementById('division-filter').addEventListener('change', render);
+document.getElementById('status-filter').addEventListener('change', render);
 
 document.getElementById('terminate-btn').addEventListener('click', () => {
   document.getElementById('terminate-section').hidden = false;
