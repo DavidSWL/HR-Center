@@ -1,57 +1,66 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Sign in — SWL HR Center</title>
-<link rel="icon" href="/favicon.svg" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="/styles.css" />
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SouthWest Landscape — HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
 </head>
-<body class="login-body">
+<body>
 
+<div class="login" id="login">
   <div class="login-card">
-    <div class="login-brand">SWL HR Center</div>
-    <div class="login-sub">SOUTHWEST LANDSCAPE — INTERNAL USE ONLY</div>
+    <div class="mark">SouthWest<br>Landscape <i>/ HR</i></div>
+    <div class="badge">Est. 1982 — 44 years</div>
+    <p class="login-sub">Human Resources platform. Authorized HR staff only — every entry is stamped with who made it.</p>
 
     <div id="login-error" class="login-error" hidden></div>
 
     <form id="login-form">
-      <div class="field">
-        <label for="email">Email</label>
-        <input type="email" id="email" required autocomplete="username" />
+      <div style="margin-bottom:16px">
+        <label class="f-lab" for="email">Email</label>
+        <input class="f-in" id="email" type="email" required autocomplete="username">
       </div>
-      <div class="field">
-        <label for="password">Password</label>
-        <input type="password" id="password" required autocomplete="current-password" />
+      <div>
+        <label class="f-lab" for="password">Password</label>
+        <input class="f-in" id="password" type="password" required autocomplete="current-password">
       </div>
       <label class="login-remember">
-        <input type="checkbox" id="remember-me" />
+        <input type="checkbox" id="remember-me">
         Keep me signed in on this device
       </label>
-      <button type="submit" class="btn btn-primary btn-block" id="login-btn">Sign in</button>
+      <button class="login-btn" type="submit" id="go">Sign in</button>
     </form>
 
-    <p style="margin-top:16px; text-align:center;">
-      <a href="#" id="forgot-link" style="font-size:12px; color: var(--sidebar-text-dim);">Forgot password?</a>
+    <div class="login-foot" id="login-date">&nbsp;</div>
+    <p style="margin-top:14px">
+      <a href="#" id="forgot-link" style="font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:#7E8C82;text-transform:uppercase">Forgot password?</a>
     </p>
   </div>
+  <div class="login-note">Session times out after 30 minutes idle</div>
+</div>
 
 <script type="module">
-import { login, redirectIfAuthenticated, requestPasswordReset, friendlyAuthError } from '/auth.js';
+import { login, redirectIfAuthenticated, requestPasswordReset, friendlyAuthError } from './auth.js';
 
 redirectIfAuthenticated();
 
+document.getElementById('login-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+
 const form = document.getElementById('login-form');
 const errorBox = document.getElementById('login-error');
-const submitBtn = document.getElementById('login-btn');
+const goBtn = document.getElementById('go');
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   errorBox.hidden = true;
-  submitBtn.disabled = true;
-  submitBtn.textContent = 'Signing in…';
+  goBtn.disabled = true;
+  goBtn.textContent = 'Signing in…';
 
   const email = document.getElementById('email').value.trim();
   const password = document.getElementById('password').value;
@@ -59,12 +68,12 @@ form.addEventListener('submit', async (e) => {
 
   try {
     await login(email, password, rememberMe);
-    window.location.href = '/dashboard.html';
+    window.location.href = 'dashboard.html';
   } catch (err) {
     errorBox.textContent = friendlyAuthError(err);
     errorBox.hidden = false;
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'Sign in';
+    goBtn.disabled = false;
+    goBtn.textContent = 'Sign in';
   }
 });
 
