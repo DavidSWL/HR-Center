@@ -1,0 +1,236 @@
+rules_version = '2';
+
+// This app talks straight to Firestore from the browser — there is no
+// server in between checking anything. Everything below is the entire
+// security model. See docs/security-rules-explained.md for a line-by-line
+// walkthrough in plain language.
+//
+// Default posture: deny everything. Every collection below opts back in
+// explicitly. If a collection isn't listed, the catch-all at the bottom
+// denies it.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- helpers --------------------------------------------------------
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Any of the three HR staff — every one of them has a /users/{uid} doc.
+    // This is the ONE thing that makes someone "in" the app at all.
+    function isHrUser() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function role() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isDavid() {
+      return isHrUser() && role() == 'david';
+    }
+
+    // Field names that must never be written, under any spelling. This is
+    // the enforcement of the CLAUDE.md exclusion list — a pay rate or an
+    // SSN cannot be saved even by an honest mistake in the UI code, because
+    // the rule rejects the write before it reaches the database.
+    function hasForbiddenFields(data) {
+      return data.keys().hasAny([
+        // compensation
+        'pay_rate', 'payRate', 'pay_type', 'payType', 'salary',
+        'salary_band', 'salaryBand', 'bonus', 'comp_history', 'compHistory',
+        'hourly_rate', 'hourlyRate',
+        // identity / financial
+        'ssn', 'social_security', 'socialSecurity', 'ssn_last4', 'ssnLast4',
+        'bank_account', 'bankAccount', 'bank_routing', 'bankRouting',
+        'direct_deposit', 'directDeposit',
+        // date of birth — birth month/day are fine, birth YEAR is not
+        'dob', 'date_of_birth', 'dateOfBirth', 'birth_year', 'birthYear',
+        // I-9 / work authorization — lives in a separate file by law
+        'i9', 'I9', 'work_authorization', 'workAuthorization',
+        // medical detail beyond Cal/OSHA Form 300 fields
+        'diagnosis', 'physician_notes', 'physicianNotes',
+        'workers_comp', 'workersComp', 'medical_restriction',
+        'medicalRestriction',
+        // ER narrative detail — stays in the Word investigation notes
+        'witness_statement', 'witnessStatement',
+        'complainant_identity', 'complainantIdentity'
+      ]);
+    }
+
+    function isClean(data) {
+      return !hasForbiddenFields(data);
+    }
+
+    function stamped(data) {
+      return data.keys().hasAll(['entered_by']);
+    }
+
+    // ---- users ------------------------------------------------------------
+    // Role assignment is how every other rule below decides who can do
+    // what, so it is not something the app itself is allowed to change.
+    // These three accounts are created and edited by hand (Firebase
+    // Console or Admin SDK), never through the client.
+    match /users/{uid} {
+      allow read: if isHrUser();
+      allow write: if false;
+    }
+
+    // ---- employees ----------------------------------------------------
+    match /employees/{empId} {
+      allow read: if isHrUser();
+      allow create, update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false; // terminate = status change, not a delete
+
+      match /acknowledgments/{docId} {
+        allow read: if isHrUser();
+        allow create, update: if isHrUser() && isClean(request.resource.data);
+        allow delete: if false;
+      }
+      match /reviews/{milestone} {
+        allow read: if isHrUser();
+        allow create, update: if isHrUser() && isClean(request.resource.data);
+        allow delete: if false;
+      }
+      match /onboarding_docs/{docId} {
+        allow read: if isHrUser();
+        allow create, update: if isHrUser() && isClean(request.resource.data);
+        allow delete: if false;
+      }
+    }
+
+    // ---- policy documents -----------------------------------------------
+    match /policy_documents/{docId} {
+      allow read: if isHrUser();
+      allow create, update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false; // retire (set active:false), don't delete
+    }
+
+    // ---- attendance -------------------------------------------------------
+    match /attendance/{occurrenceId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data)
+        && stamped(request.resource.data);
+      allow update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+    }
+
+    // ---- discipline & notes ----------------------------------------------
+    match /disciplinary_actions/{actionId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data)
+        && stamped(request.resource.data);
+      allow update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+    }
+
+    match /notes_to_file/{noteId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data)
+        && stamped(request.resource.data);
+      allow update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+    }
+
+    // ---- safety -------------------------------------------------------
+    match /incidents/{incidentId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data)
+        && stamped(request.resource.data);
+      allow update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+    }
+
+    match /safety_issues/{issueId} {
+      allow read: if isHrUser();
+      allow create, update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+    }
+
+    match /safety_meetings/{meetingId} {
+      allow read: if isHrUser();
+      allow create, update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+    }
+
+    // ---- employee relations ------------------------------------------
+    // Anyone on staff can open a case, add interviews, and record
+    // responses. Only David can move a case to closed — enforced here,
+    // not by hiding the button in the UI. A single update that both
+    // closes the case AND changes other fields still requires David,
+    // because the check runs against the resulting document.
+    match /er_cases/{caseId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data)
+        && request.resource.data.status != 'closed';
+      allow update: if isHrUser() && isClean(request.resource.data)
+        && (request.resource.data.status != 'closed' || isDavid());
+      allow delete: if false;
+
+      match /interviews/{interviewId} {
+        allow read: if isHrUser();
+        allow create, update: if isHrUser() && isClean(request.resource.data);
+        allow delete: if false;
+
+        match /responses/{questionNo} {
+          allow read: if isHrUser();
+          allow create, update: if isHrUser() && isClean(request.resource.data);
+          allow delete: if false;
+        }
+      }
+    }
+
+    // ---- tasks ----------------------------------------------------------
+    match /tasks/{taskId} {
+      allow read: if isHrUser();
+      allow create, update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+
+      match /reassignments/{id} {
+        allow read: if isHrUser();
+        allow create: if isHrUser() && isClean(request.resource.data);
+        allow update, delete: if false; // history — append only
+      }
+    }
+
+    // ---- training ---------------------------------------------------------
+    match /training_modules/{moduleId} {
+      allow read: if isHrUser();
+      allow create, update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+
+      match /completions/{staffId} {
+        allow read: if isHrUser();
+        allow create, update: if isHrUser() && isClean(request.resource.data);
+        allow delete: if false;
+      }
+    }
+
+    // ---- activity log ---------------------------------------------------
+    // Every module writes here on completion — append only, never edited
+    // or removed, so it stays a trustworthy record of who did what.
+    match /activity/{activityId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data)
+        && stamped(request.resource.data);
+      allow update, delete: if false;
+    }
+
+    // ---- settings (managed lists) -----------------------------------
+    match /settings/{listName} {
+      allow read: if isHrUser();
+      allow create, update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+    }
+
+    // ---- default deny ---------------------------------------------------
+    // Anything not explicitly matched above is closed. New collections
+    // need a rule added here before the app can use them.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,43 @@
+rules_version = '2';
+
+// Signed disciplinary documents and note attachments. Paths mirror the
+// Firestore documents that own them (disciplinary/{action_id}/{filename},
+// notes/{note_id}/{filename}) but Storage rules can't read that structure
+// on their own — the firestore.exists()/get() calls below reach into
+// Firestore to ask "does this person have a /users doc," the same
+// authorization check firestore.rules uses for the records themselves.
+//
+// No public read, ever. These are personnel files.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isHrUser() {
+      return request.auth != null &&
+        firestore.exists(/databases/(default)/documents/users/$(request.auth.uid));
+    }
+
+    // 25MB covers a scanned, signed multi-page PDF with room to spare.
+    // Anything asking for more from this app is not a document upload.
+    function isReasonableUpload() {
+      return request.resource.size < 25 * 1024 * 1024
+        && request.resource.contentType.matches('application/pdf|image/.*');
+    }
+
+    match /disciplinary/{actionId}/{fileName} {
+      allow read: if isHrUser();
+      allow write: if isHrUser() && isReasonableUpload();
+      allow delete: if false; // superseded, not removed — keep the record
+    }
+
+    match /notes/{noteId}/{fileName} {
+      allow read: if isHrUser();
+      allow write: if isHrUser() && isReasonableUpload();
+      allow delete: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
