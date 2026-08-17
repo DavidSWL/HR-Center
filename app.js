@@ -11,13 +11,13 @@ export const NAV_SECTIONS = [
   {
     label: 'Overview',
     items: [
-      { key: 'dashboard', label: 'Dashboard', href: '/dashboard.html', built: true },
+      { key: 'dashboard', label: 'Dashboard', href: 'dashboard.html', built: true },
     ],
   },
   {
     label: 'People',
     items: [
-      { key: 'employees', label: 'Employees', href: '/employees.html', built: true },
+      { key: 'employees', label: 'Employees', href: 'employees.html', built: true },
       { key: 'compliance', label: 'Compliance', href: '#', built: false },
       { key: 'attendance', label: 'Attendance', href: '#', built: false },
       { key: 'discipline', label: 'Discipline & Notes', href: '#', built: false },

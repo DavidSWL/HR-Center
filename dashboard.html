@@ -4,10 +4,10 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Dashboard — SWL HR Center</title>
-<link rel="icon" href="/favicon.svg" />
+<link rel="icon" href="favicon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="/styles.css" />
+<link rel="stylesheet" href="styles.css" />
 </head>
 <body>
 <div class="app-shell">
@@ -44,16 +44,16 @@
           generation, and reports are still on the way, one module at a
           time.
         </p>
-        <a class="btn btn-primary mt-16" href="/employees.html" style="text-decoration:none;">Go to Employees →</a>
+        <a class="btn btn-primary mt-16" href="employees.html" style="text-decoration:none;">Go to Employees →</a>
       </div>
     </div>
   </div>
 </div>
 
 <script type="module">
-import { requireAuth } from '/auth.js';
-import { initShell } from '/app.js';
-import { db } from '/firebaseconfig.js';
+import { requireAuth } from './auth.js';
+import { initShell } from './app.js';
+import { db } from './firebaseconfig.js';
 import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();

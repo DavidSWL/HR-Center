@@ -4,10 +4,10 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Sign in — SWL HR Center</title>
-<link rel="icon" href="/favicon.svg" />
+<link rel="icon" href="favicon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="/styles.css" />
+<link rel="stylesheet" href="styles.css" />
 </head>
 <body class="login-body">
 
@@ -39,7 +39,7 @@
   </div>
 
 <script type="module">
-import { login, redirectIfAuthenticated, requestPasswordReset, friendlyAuthError } from '/auth.js';
+import { login, redirectIfAuthenticated, requestPasswordReset, friendlyAuthError } from './auth.js';
 
 redirectIfAuthenticated();
 
@@ -59,7 +59,7 @@ form.addEventListener('submit', async (e) => {
 
   try {
     await login(email, password, rememberMe);
-    window.location.href = '/dashboard.html';
+    window.location.href = 'dashboard.html';
   } catch (err) {
     errorBox.textContent = friendlyAuthError(err);
     errorBox.hidden = false;
