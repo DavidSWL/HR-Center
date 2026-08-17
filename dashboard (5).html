@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dashboard — SWL HR Center</title>
+<link rel="icon" href="/favicon.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div class="app-shell">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="workspace">
+    <div class="topbar">
+      <h1>Dashboard</h1>
+      <button class="theme-toggle" id="theme-toggle" type="button">Dark mode</button>
+    </div>
+    <div class="page">
+      <p class="text-muted" id="greeting">Loading…</p>
+
+      <div class="stat-grid mt-16">
+        <div class="card">
+          <div class="stat-label">Active Employees</div>
+          <div class="stat-value" id="stat-active">—</div>
+        </div>
+        <div class="card">
+          <div class="stat-label">New Hires (30 Days)</div>
+          <div class="stat-value" id="stat-new-hires">—</div>
+        </div>
+        <div class="card">
+          <div class="stat-label">Terminated (30 Days)</div>
+          <div class="stat-value" id="stat-terms">—</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-bottom:10px;">Getting started</h3>
+        <p class="text-muted">
+          This is the first working slice of the platform — sign-in, the
+          shell, and the Employees roster. Attendance, compliance,
+          discipline, safety, employee relations, tasks, training, document
+          generation, and reports are still on the way, one module at a
+          time.
+        </p>
+        <a class="btn btn-primary mt-16" href="/employees.html" style="text-decoration:none;">Go to Employees →</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from '/auth.js';
+import { initShell } from '/app.js';
+import { db } from '/firebaseconfig.js';
+import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (profile) {
+  initShell('dashboard', profile);
+  document.getElementById('greeting').textContent =
+    `Welcome back, ${profile.name || profile.email}.`;
+
+  try {
+    const snap = await getDocs(collection(db, 'employees'));
+    let active = 0, newHires = 0, terms = 0;
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    snap.forEach((docSnap) => {
+      const e = docSnap.data();
+      if (e.status !== 'terminated') active++;
+      if (e.hire_date && new Date(e.hire_date).getTime() >= cutoff) newHires++;
+      if (e.status === 'terminated' && e.separation_date &&
+          new Date(e.separation_date).getTime() >= cutoff) terms++;
+    });
+    document.getElementById('stat-active').textContent = active;
+    document.getElementById('stat-new-hires').textContent = newHires;
+    document.getElementById('stat-terms').textContent = terms;
+  } catch (err) {
+    console.error(err);
+    document.getElementById('stat-active').textContent = '—';
+  }
+}
+</script>
+</body>
+</html>
