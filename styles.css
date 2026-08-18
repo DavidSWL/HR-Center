@@ -105,14 +105,18 @@ body{font-family:var(--sans);font-size:14px;line-height:1.5;background:#000;colo
 .side-f button:hover{border-color:var(--oregon-glow);color:#fff}
 
 .main{min-width:0;background:var(--bg);color:var(--text)}
-.main[data-theme="light"]{
+/* Theme variables must resolve wherever data-theme lands, not just inside
+   .main — modal overlays render as direct children of <body>, outside
+   .main, so body[data-theme] carries the same values or they'd fall back
+   to nothing (a transparent modal) there. */
+body[data-theme="light"], .main[data-theme="light"]{
   --bg:#FFFFFF; --panel:#F7F8F6; --raise:#FFFFFF; --line:#E3E6E1; --edge:#CDD2C9;
   --text:#12150F; --muted:#69705F; --faint:#9AA192;
   --heroBg:var(--oregon); --heroTx:#FFFFFF; --heroNum:#FFFFFF;
   --accent:var(--oregon); --accentTx:var(--oregon); --alertTx:var(--alert);
   --hover:rgba(21,71,51,.05);
 }
-.main[data-theme="dark"]{
+body[data-theme="dark"], .main[data-theme="dark"]{
   --bg:#0A0D09; --panel:#111611; --raise:#161C15; --line:#212A20; --edge:#2E392C;
   --text:#F1F5EF; --muted:#8A9686; --faint:#65705F;
   --heroBg:#0F2C20; --heroTx:#F1F5EF; --heroNum:var(--oregon-glow);
@@ -248,7 +252,8 @@ th.sortable .sort-arrow{display:inline-block;width:8px;color:var(--accent)}
 /* explicit sizing + a visible arrow so <select> can't render oddly on
    any browser regardless of how many options it holds */
 select.f-in{
-  -webkit-appearance:none;appearance:none;height:44px;padding-right:34px;
+  -webkit-appearance:none;-moz-appearance:none;appearance:none;height:44px;padding-right:34px;
+  letter-spacing:normal;
   background-image:url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%237E8C82' stroke-width='1.6'%3E%3Cpath d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
   background-repeat:no-repeat;background-position:right 12px center;background-size:14px;
 }
