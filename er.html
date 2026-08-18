@@ -93,8 +93,11 @@
             <div class="card-h"><h3 id="interview-form-title">Interview</h3><span></span></div>
             <div class="card-body" id="interview-form-body"></div>
             <div class="modal-actions">
+              <button class="gh" id="add-followup-btn" type="button" hidden>+ Add follow-up question</button>
+              <span style="flex:1"></span>
               <button class="gh" id="cancel-interview-btn" type="button">Cancel</button>
               <button class="gh solid" id="save-interview-btn" type="button">Mark complete</button>
+              <button class="gh solid" id="save-followup-btn" type="button" hidden>Save follow-up</button>
             </div>
           </div>
         </div>
@@ -461,7 +464,7 @@ function renderInterviews() {
       <td class="dim" style="text-transform:capitalize">${iv.role}</td>
       <td>${iv.status === 'complete' ? '<span class="pill ok">Complete</span>' : '<span class="pill mid">Pending</span>'}</td>
       <td style="text-align:right">
-        ${iv.status !== 'complete' ? `<button class="gh conduct-btn" data-id="${iv.id}" type="button">Conduct interview</button>` : ''}
+        <button class="gh conduct-btn" data-id="${iv.id}" type="button">${iv.status === 'complete' ? 'View / add follow-up' : 'Conduct interview'}</button>
       </td>
     </tr>
   `).join('');
@@ -471,19 +474,63 @@ function renderInterviews() {
   document.getElementById('interview-form-card').hidden = true;
 }
 
-function openInterviewForm(interviewId) {
+async function loadInterviewResponses(interviewId) {
+  const snap = await getDocs(collection(db, 'er_cases', currentCase.id, 'interviews', interviewId, 'responses'));
+  return snap.docs
+    .map((d) => ({ index: parseInt(d.id, 10), ...d.data() }))
+    .sort((a, b) => a.index - b.index);
+}
+
+let followupCount = 0;
+
+async function openInterviewForm(interviewId) {
   currentInterviewId = interviewId;
   const iv = currentInterviews.find((i) => i.id === interviewId);
   document.getElementById('interview-form-title').textContent = `${iv.person_name} — ${iv.role}`;
-  const questions = questionsFor(iv.role, currentCase.type);
-  document.getElementById('interview-form-body').innerHTML = questions.map((q, i) => `
-    <div class="field">
-      <label class="f-lab">${q}</label>
-      <textarea class="f-in interview-answer" data-i="${i}" rows="2" style="resize:vertical"></textarea>
-    </div>
-  `).join('');
+  const addBtn = document.getElementById('add-followup-btn');
+  const saveBtn = document.getElementById('save-interview-btn');
+  const saveFollowupBtn = document.getElementById('save-followup-btn');
+  followupCount = 0;
+
+  if (iv.status === 'complete') {
+    // Completed interviews are read-only for their original answers — the
+    // record of what was said shouldn't change after the fact. New
+    // ground only gets added as an explicit follow-up question.
+    const existing = await loadInterviewResponses(interviewId);
+    document.getElementById('interview-form-body').innerHTML = existing.map((r) => `
+      <div class="qa"><div class="q">${r.question}</div><div>${r.response || '<span class="dim">No answer recorded</span>'}</div></div>
+    `).join('') || '<div class="dim">No responses recorded.</div>';
+    addBtn.hidden = false;
+    saveBtn.hidden = true;
+    saveFollowupBtn.hidden = true;
+  } else {
+    const questions = questionsFor(iv.role, currentCase.type);
+    document.getElementById('interview-form-body').innerHTML = questions.map((q, i) => `
+      <div class="field">
+        <label class="f-lab">${q}</label>
+        <textarea class="f-in interview-answer" data-i="${i}" rows="2" style="resize:vertical"></textarea>
+      </div>
+    `).join('');
+    addBtn.hidden = true;
+    saveBtn.hidden = false;
+    saveFollowupBtn.hidden = true;
+  }
   document.getElementById('interview-form-card').hidden = false;
 }
+
+document.getElementById('add-followup-btn').addEventListener('click', () => {
+  followupCount++;
+  const body = document.getElementById('interview-form-body');
+  const wrap = document.createElement('div');
+  wrap.className = 'field followup-field';
+  wrap.innerHTML = `
+    <label class="f-lab">Follow-up question ${followupCount}</label>
+    <input class="f-in followup-question" placeholder="Question">
+    <textarea class="f-in followup-answer" rows="2" style="resize:vertical;margin-top:6px" placeholder="Answer"></textarea>
+  `;
+  body.appendChild(wrap);
+  document.getElementById('save-followup-btn').hidden = false;
+});
 
 document.getElementById('cancel-interview-btn').addEventListener('click', () => {
   document.getElementById('interview-form-card').hidden = true;
@@ -507,6 +554,31 @@ document.getElementById('save-interview-btn').addEventListener('click', async ()
       interviewed_at: serverTimestamp(),
     });
     showToast('Interview recorded.');
+    await loadInterviews();
+    renderInterviews();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+});
+
+document.getElementById('save-followup-btn').addEventListener('click', async () => {
+  const pairs = [...document.querySelectorAll('.followup-field')].map((f) => ({
+    question: f.querySelector('.followup-question').value.trim(),
+    response: f.querySelector('.followup-answer').value.trim(),
+  })).filter((p) => p.question);
+
+  if (!pairs.length) { showToast('Enter at least one follow-up question.', 'error'); return; }
+
+  try {
+    const existing = await loadInterviewResponses(currentInterviewId);
+    let nextIndex = existing.length ? Math.max(...existing.map((r) => r.index)) + 1 : 0;
+    for (const pair of pairs) {
+      await setDoc(doc(db, 'er_cases', currentCase.id, 'interviews', currentInterviewId, 'responses', String(nextIndex)), pair);
+      nextIndex++;
+    }
+    showToast(`${pairs.length} follow-up question${pairs.length === 1 ? '' : 's'} added.`);
+    document.getElementById('interview-form-card').hidden = true;
     await loadInterviews();
     renderInterviews();
   } catch (err) {
@@ -553,12 +625,15 @@ function renderReview() {
   document.getElementById('action').value = currentCase.action || '';
 
   const closeBtn = document.getElementById('close-case-btn');
-  if (profile.role === 'david') {
+  const isDavid = profile.role === 'david';
+  document.getElementById('findings').disabled = !isDavid;
+  document.getElementById('action').disabled = !isDavid;
+  if (isDavid) {
     closeBtn.hidden = false;
     document.getElementById('close-gate-note').textContent = '';
   } else {
     closeBtn.hidden = true;
-    document.getElementById('close-gate-note').textContent = 'Only David can close a case — enforced in the security rules.';
+    document.getElementById('close-gate-note').textContent = 'Only David writes the findings and action taken, and closes the case — enforced in the security rules.';
   }
 }
 
