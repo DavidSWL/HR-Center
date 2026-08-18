@@ -105,6 +105,7 @@ function initTheme() {
   const mainEl = document.getElementById('main');
   const setTheme = (theme) => {
     if (mainEl) mainEl.dataset.theme = theme;
+    document.body.dataset.theme = theme;
     document.querySelectorAll('.toggle button').forEach((b) => {
       b.classList.toggle('on', b.dataset.t === theme);
     });
