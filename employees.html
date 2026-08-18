@@ -48,6 +48,7 @@
             <option value="Trees">Trees</option>
             <option value="Enhancements">Enhancements</option>
             <option value="Corporate">Corporate</option>
+            <option value="Yard">Yard</option>
           </select>
           <select class="inp" id="status-filter">
             <option value="active">Active + onboarding</option>
@@ -123,6 +124,7 @@
               <option value="Trees">Trees</option>
               <option value="Enhancements">Enhancements</option>
               <option value="Corporate">Corporate</option>
+              <option value="Yard">Yard</option>
             </select>
           </div>
           <div class="field"></div>
@@ -540,6 +542,16 @@ function pick(row, ...keys) {
   return '';
 }
 
+// Source spreadsheets use short branch codes (ENH, Corp) that don't match
+// the Location dropdown's option values — map the ones we've seen in real
+// data through, and pass anything unrecognized through as-is rather than
+// silently dropping it.
+const LOCATION_ALIASES = { enh: 'Enhancements', corp: 'Corporate' };
+function normalizeLocation(raw) {
+  const v = String(raw || '').trim();
+  return LOCATION_ALIASES[v.toLowerCase()] || v;
+}
+
 function nextGeneratedId(taken) {
   const nums = [...allEmployees, ...taken]
     .map((e) => parseInt(String(e.id).replace(/\D/g, ''), 10))
@@ -630,7 +642,7 @@ document.getElementById('csv-file').addEventListener('change', async (e) => {
 
     return {
       id, first_name: first, last_name: last, division,
-      location: pick(row, 'location', 'branch', 'region'),
+      location: normalizeLocation(pick(row, 'location', 'branch', 'region')),
       position: pick(row, 'position', 'job_title', 'title'),
       hire_date: hireDateStr,
       phone: pick(row, 'phone', 'phone_number'),

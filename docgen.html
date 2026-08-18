@@ -14,7 +14,10 @@
   .side, .bar, .no-print { display:none !important; }
   .app { display:block; }
   .view { padding:0; }
-  .doc-sheet { border:none !important; box-shadow:none !important; }
+  .doc-sheet, .form-doc { border:none !important; box-shadow:none !important; }
+  @page { size:letter; margin:0; }
+  .letter { width:8.5in; min-height:11in; box-shadow:none; margin:0; padding:1in; }
+  .force-break { break-before:page; page-break-before:always; }
 }
 .gen-menu{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:20px}
 .gen-tile{border:1px solid var(--line);background:var(--raise);padding:16px;cursor:pointer;text-align:left}
@@ -23,6 +26,7 @@
 .gen-tile p{font-size:11.5px;color:var(--faint);margin:0}
 .gen-tile.linkout{opacity:.85}
 
+/* ---- generic print sheet (PIP, onboarding) ---- */
 .doc-sheet{border:1px solid var(--line);background:#fff;color:#111;max-width:800px;margin:0 auto}
 .doc-bar{background:var(--oregon);color:#fff;padding:14px 24px;font-family:var(--display);font-size:16px;letter-spacing:.02em;text-transform:uppercase}
 .doc-body{padding:24px}
@@ -32,6 +36,45 @@
 .doc-grid div b{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:#666}
 .doc-fineprint{font-size:10.5px;color:#555;font-style:italic;border:1px solid #ccc;padding:10px;margin-top:14px}
 .sig-line{border-top:1px solid #333;margin-top:36px;padding-top:4px;font-size:11px}
+
+/* .form-doc family (Write-up / Termination / 30-60-90 review) now lives
+   in styles.css — shared with discipline.html's write-up print sheet. */
+
+/* ---- offer / increase / promotion letters — matches the branded
+   letterhead tool exactly (decor bands, ribbon, letterhead logo) ---- */
+.letter{position:relative;background:#fff;width:8.5in;min-height:11in;margin:0 auto;padding:1in;box-shadow:0 2px 18px rgba(0,0,0,.15);font-family:Calibri,"Segoe UI",Arial,sans-serif;color:#000;font-size:11pt;line-height:1.35}
+.letter p{margin:0 0 10px}
+.letter .just{text-align:justify}
+.letter .center{text-align:center}
+.letter .indent{padding-left:0.22in}
+.letter .tight{margin-bottom:2px}
+.letter .section-gap{margin-top:26px}
+.letter ul{margin:0 0 10px;padding-left:0.5in}
+.letter ul.tight{margin-bottom:2px}
+.letter li{margin:0 0 2px}
+.letterhead{margin-bottom:16px}
+.letterhead img{width:1.5in;height:auto;display:block}
+.sig-section{margin-top:10px}
+.sig-section p{margin:0 0 2px}
+.sig-img{max-height:0.9in;display:block;margin:6px 0 4px}
+.sig-blank{border-bottom:1px solid #333;width:260px;height:0.85in;margin:6px 0 4px}
+.decor-band{position:absolute;left:0;right:0;height:0.4in;overflow:hidden;background:#d3ded6}
+.decor-band.top{top:0}
+.decor-band.bottom{bottom:0}
+.decor-band .ribbon{position:absolute;top:0;bottom:0;left:17%;right:-4%;background:#8f1536;clip-path:polygon(0 0,100% 0,100% 100%,7% 100%)}
+.acceptance-block{margin-top:34px}
+.agreement-label{font-weight:700;text-align:center;margin-bottom:26px !important}
+.accept-line{display:flex;gap:40px;margin-bottom:6px}
+.accept-line .blank{flex:1;border-bottom:1px solid #000;height:1px;margin-top:46px}
+.accept-line .blank.short{flex:0 0 30%}
+.accept-label-line{display:flex;gap:40px;font-weight:700}
+.accept-label-line .lbl{flex:1}
+.accept-label-line .lbl.short{flex:0 0 30%}
+
+.tabs{display:flex;gap:0;border:1px solid var(--line);width:fit-content;margin-bottom:14px}
+.tabs .tab{padding:8px 18px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;color:var(--faint);border-right:1px solid var(--line)}
+.tabs .tab:last-child{border-right:none}
+.tabs .tab.active{background:var(--accent);color:#fff}
 </style>
 </head>
 <body>
@@ -55,9 +98,8 @@
 
       <div id="menu-view">
         <p class="dim" style="margin-bottom:16px">
-          Built to our own house style (Oregon green section bars) since the production forms and logo haven't
-          been supplied yet — swap in the real forms whenever they're ready. Every generator here produces a
-          print view; use your browser's Print → Save as PDF for a PDF copy. Word (.docx) export isn't included.
+          Write-up, Termination, 30/60/90 Review, and Offer/Increase/Promotion letters match the real SWL
+          forms exactly. Every generator produces a print view — use your browser's Print → Save as PDF.
         </p>
         <div class="gen-menu" id="tiles"></div>
       </div>
@@ -79,8 +121,9 @@
 
 <script type="module">
 import { requireAuth } from './auth.js';
-import { initShell, showToast, formatDate } from './app.js';
+import { initShell, showToast, formatDate, readSpreadsheetSheets, objectsFromRows } from './app.js';
 import { db } from './firebaseconfig.js';
+import { LOGO_DATA_URL, LOCATIONS, SCHEDULE_PRESETS, HR_SIGNER } from './letterhead-assets.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -92,6 +135,21 @@ initShell('docgen', profile);
 document.getElementById('header-date').textContent =
   new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
 
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+// Legal-letter-style long date ("August 18, 2026"), separate from app.js's
+// short admin-table formatDate() — this is only for printed documents.
+function longDate(dateStr, isEs = false) {
+  if (!dateStr) return '';
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString(isEs ? 'es-ES' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
 const T = {
   en: { employee: 'Employee', id: 'Employee ID', title: 'Job title', division: 'Division', hireDate: 'Hire date',
         manager: 'Reports to', language: 'Language', print: 'Print', save: 'Save' },
@@ -100,11 +158,11 @@ const T = {
 };
 
 const GENERATORS = [
-  { key: 'writeup', title: 'Write-up', desc: 'Lives in Disciplinary actions', linkout: 'discipline.html' },
+  { key: 'writeup', title: 'Write-up', desc: 'Lives in Disciplinary actions — matches the SWL warning form', linkout: 'discipline.html' },
   { key: 'pip', title: 'Performance Improvement Plan', desc: 'PIP with a four-check-in schedule' },
-  { key: 'review', title: '30 / 60 / 90 review', desc: 'Nine-area rating with an on-track routing question' },
-  { key: 'termination', title: 'Termination', desc: 'Lives in Employee roster — open an employee, use Terminate', linkout: 'employees.html' },
-  { key: 'offer', title: 'Offer letter', desc: 'Rate is typed, printed, and never stored' },
+  { key: 'review', title: '30 / 60 / 90 review', desc: 'Matches the SWL new-hire review template' },
+  { key: 'termination', title: 'Termination', desc: 'Matches the SWL termination form — log, generate, and import' },
+  { key: 'offer', title: 'Offer / increase / promotion', desc: '7 letter types, matches the branded SWL letterhead exactly' },
   { key: 'onboarding', title: 'Onboarding packet', desc: 'Assembles the required document checklist' },
 ];
 
@@ -131,16 +189,19 @@ document.getElementById('back-btn').addEventListener('click', () => {
 document.getElementById('print-btn').addEventListener('click', () => window.print());
 document.getElementById('lang-select').addEventListener('change', () => renderCurrent());
 
-let employees = [];
+let employees = [];       // active only — for "who can this happen to" selects
+let allEmployeesEver = []; // includes terminated — for name lookups on old records
 let currentKey = null;
 
 async function loadEmployees() {
   const snap = await getDocs(collection(db, 'employees'));
-  employees = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => e.status !== 'terminated');
+  allEmployeesEver = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  employees = allEmployeesEver.filter((e) => e.status !== 'terminated');
 }
 
-function empSelectOptions() {
-  return employees
+function empSelectOptions(list = employees) {
+  return list
+    .slice()
     .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''))
     .map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name} (${e.id})</option>`).join('');
 }
@@ -150,14 +211,20 @@ function openGenerator(key) {
   document.getElementById('menu-view').hidden = true;
   document.getElementById('gen-view').hidden = false;
   document.getElementById('page-title').textContent = GENERATORS.find((g) => g.key === key).title;
+  // Write-up, Termination, and 30/60/90 Review reproduce real SWL forms
+  // exactly as supplied — those forms are English-only, so the language
+  // toggle only applies to PIP, Onboarding, and the letters (which manage
+  // English/Spanish through their own letter-type list instead).
+  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding') ? '' : 'none';
   renderCurrent();
 }
 
 function renderCurrent() {
   const lang = document.getElementById('lang-select').value;
   if (currentKey === 'pip') renderPip(lang);
-  if (currentKey === 'review') renderReview(lang);
-  if (currentKey === 'offer') renderOffer(lang);
+  if (currentKey === 'review') renderReview();
+  if (currentKey === 'termination') renderTermination();
+  if (currentKey === 'offer') renderLetters();
   if (currentKey === 'onboarding') renderOnboarding(lang);
 }
 
@@ -270,138 +337,799 @@ function renderPipSheet(lang, emp, p) {
   `;
 }
 
-// ---- 30/60/90 review ----
+// ---- 30/60/90 review — matches "30 / 60 / 90 Day New Hire Review" exactly ----
 
-const AREAS = ['Job knowledge', 'Quality of work', 'Productivity', 'Attendance & punctuality',
-  'Communication', 'Teamwork', 'Safety compliance', 'Initiative', 'Adherence to policies'];
+const REVIEW_AREAS = [
+  'Attendance & Punctuality',
+  'Safety Practices (PPE, Procedures, Awareness)',
+  'Quality of Work',
+  'Job Knowledge / Skill Progress',
+  'Follows Instructions & Procedures',
+  'Care of Equipment, Tools & Vehicles',
+  'Teamwork & Attitude',
+  'Communication (Crew, Manager, Clients)',
+];
+const REVIEW_FOCUS = {
+  30: 'Trained on safety basics, knows the daily routine, performing core tasks with supervision.',
+  60: 'Handling core duties with less supervision; consistent quality, safety, and attendance.',
+  90: 'Fully performing the role independently and meeting company standards for quality, safety, and reliability.',
+};
+const REVIEW_HEADING = { 30: '30-Day Review — Learning the Job', 60: '60-Day Review — Working with Support', 90: '90-Day Review — Working Independently' };
 
-function renderReview(lang) {
+function reviewFormHtml(milestone) {
+  return `
+    <div class="card no-print" style="margin-bottom:10px">
+      <div class="card-h"><h3>${REVIEW_HEADING[milestone]}</h3></div>
+      <div class="card-body">
+        <p class="dim" style="margin-bottom:10px">${REVIEW_FOCUS[milestone]}</p>
+        ${REVIEW_AREAS.map((a, i) => `
+          <div class="field">
+            <label class="f-lab">${a}</label>
+            <div style="display:flex;gap:16px;margin-bottom:4px">
+              <label><input type="radio" name="rev${milestone}-area${i}" value="E"> Exceeds</label>
+              <label><input type="radio" name="rev${milestone}-area${i}" value="M" checked> Meets</label>
+              <label><input type="radio" name="rev${milestone}-area${i}" value="N"> Needs improvement</label>
+            </div>
+            <input class="f-in" placeholder="Comment (required if Needs improvement)" id="rev${milestone}-comment-${i}">
+          </div>
+        `).join('')}
+        <div class="field">
+          <label class="f-lab">Other</label>
+          <input class="f-in" placeholder="Describe (optional)" id="rev${milestone}-other-label" style="margin-bottom:6px">
+          <div style="display:flex;gap:16px;margin-bottom:4px">
+            <label><input type="radio" name="rev${milestone}-areaOther" value="E"> Exceeds</label>
+            <label><input type="radio" name="rev${milestone}-areaOther" value="M" checked> Meets</label>
+            <label><input type="radio" name="rev${milestone}-areaOther" value="N"> Needs improvement</label>
+          </div>
+          <input class="f-in" placeholder="Comment (optional)" id="rev${milestone}-other-comment">
+        </div>
+        <div class="field">
+          <label class="f-lab">Is the employee on track at this stage?</label>
+          <select class="f-in" id="rev${milestone}-ontrack">
+            <option value="yes">Yes</option>
+            <option value="yes-items">Yes, with items to work on (note below)</option>
+            <option value="no">No — notify HR</option>
+          </select>
+        </div>
+        <div class="field"><label class="f-lab">Manager notes (what's going well / what needs attention before the next review)</label><textarea class="f-in" id="rev${milestone}-notes" rows="3" style="resize:vertical"></textarea></div>
+        ${milestone === 90 ? `
+        <div class="field"><label class="f-lab">Overall 90-day assessment</label>
+          <select class="f-in" id="rev90-overall">
+            <option value="exceeds">Exceeds Expectations — performing above the standard for this role</option>
+            <option value="meets" selected>Meets Expectations — performing at the standard for this role</option>
+            <option value="needs">Needs Improvement — see comments; improvement plan or extended review period below</option>
+          </select>
+        </div>
+        <div class="field"><label class="f-lab">Recommendation</label>
+          <select class="f-in" id="rev90-recommend">
+            <option value="continue">Continue in role</option>
+            <option value="continue-support">Continue with additional training / support (describe below)</option>
+            <option value="extend">Extend review period</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Extend review period to (if selected above)</label><input class="f-in" id="rev90-extend-date" type="date"></div>
+          <div class="field"><label class="f-lab">Other (if selected above)</label><input class="f-in" id="rev90-other-recommend"></div>
+        </div>
+        <div class="field"><label class="f-lab">Manager overall comments</label><textarea class="f-in" id="rev90-overall-comments" rows="3" style="resize:vertical"></textarea></div>
+        <div class="field"><label class="f-lab">Employee comments (optional)</label><textarea class="f-in" id="rev90-employee-comments" rows="2" style="resize:vertical"></textarea></div>
+        ` : ''}
+        <button class="gh solid" id="rev${milestone}-generate-btn" type="button">Save &amp; generate — ${milestone}-day</button>
+      </div>
+    </div>
+  `;
+}
+
+function readReviewForm(milestone) {
+  const ratings = REVIEW_AREAS.map((a, i) => ({
+    area: a,
+    rating: document.querySelector(`input[name="rev${milestone}-area${i}"]:checked`).value,
+    comment: document.getElementById(`rev${milestone}-comment-${i}`).value.trim(),
+  }));
+  const otherLabel = document.getElementById(`rev${milestone}-other-label`).value.trim();
+  if (otherLabel) {
+    ratings.push({
+      area: `Other: ${otherLabel}`,
+      rating: document.querySelector(`input[name="rev${milestone}-areaOther"]:checked`).value,
+      comment: document.getElementById(`rev${milestone}-other-comment`).value.trim(),
+    });
+  }
+  const onTrack = document.getElementById(`rev${milestone}-ontrack`).value;
+  const notes = document.getElementById(`rev${milestone}-notes`).value.trim();
+  const data = { ratings, on_track: onTrack, manager_notes: notes };
+  if (milestone === 90) {
+    data.overall = document.getElementById('rev90-overall').value;
+    data.recommend = document.getElementById('rev90-recommend').value;
+    data.extend_date = document.getElementById('rev90-extend-date').value;
+    data.other_recommend = document.getElementById('rev90-other-recommend').value.trim();
+    data.overall_comments = document.getElementById('rev90-overall-comments').value.trim();
+    data.employee_comments = document.getElementById('rev90-employee-comments').value.trim();
+  }
+  return data;
+}
+
+function renderReview() {
   document.getElementById('gen-body').innerHTML = `
     <div class="card no-print" style="margin-bottom:16px">
       <div class="card-body">
-        <div class="frow">
-          <div class="field"><label class="f-lab">Employee</label><select class="f-in" id="rev-emp">${empSelectOptions()}</select></div>
-          <div class="field"><label class="f-lab">Milestone</label><select class="f-in" id="rev-milestone"><option value="30">30-day</option><option value="60">60-day</option><option value="90">90-day</option></select></div>
-        </div>
-        <div id="rev-areas"></div>
-        <div class="field"><label class="f-lab">Is the employee on track?</label>
-          <select class="f-in" id="rev-ontrack"><option value="yes">Yes</option><option value="no">No — route to HR</option></select>
-        </div>
-        <div class="field"><label class="f-lab">Manager notes</label><textarea class="f-in" id="rev-notes" rows="3" style="resize:vertical"></textarea></div>
-        <button class="gh solid" id="rev-generate-btn" type="button">Save &amp; generate</button>
+        <div class="field"><label class="f-lab">Employee</label><select class="f-in" id="rev-emp">${empSelectOptions()}</select></div>
       </div>
     </div>
-    <div class="doc-sheet" id="rev-sheet" hidden></div>
+    ${reviewFormHtml(30)}
+    ${reviewFormHtml(60)}
+    ${reviewFormHtml(90)}
+    <div class="form-doc" id="rev-sheet" hidden></div>
   `;
-  document.getElementById('rev-areas').innerHTML = AREAS.map((a, i) => `
-    <div class="field">
-      <label class="f-lab">${a}</label>
-      <div style="display:flex;gap:16px;margin-bottom:4px">
-        <label><input type="radio" name="area${i}" value="E"> Exceeds</label>
-        <label><input type="radio" name="area${i}" value="M" checked> Meets</label>
-        <label><input type="radio" name="area${i}" value="N"> Needs improvement</label>
+
+  [30, 60, 90].forEach((milestone) => {
+    document.getElementById(`rev${milestone}-generate-btn`).addEventListener('click', async () => {
+      const empId = document.getElementById('rev-emp').value;
+      const emp = employees.find((e) => e.id === empId);
+      if (!emp) { showToast('Select an employee.', 'error'); return; }
+      const data = readReviewForm(milestone);
+      const notOnTrack = data.on_track === 'no';
+
+      try {
+        await setDoc(doc(db, 'employees', empId, 'reviews', String(milestone)), {
+          ...data, review_completed: true, entered_by: profile.uid, updated_at: serverTimestamp(),
+        }, { merge: true });
+        await addDoc(collection(db, 'activity'), {
+          module: 'reviews', item: `${milestone}-day review generated — ${emp.first_name} ${emp.last_name}`,
+          entered_by: profile.uid, entered_at: serverTimestamp(),
+        });
+        if (notOnTrack) {
+          await addDoc(collection(db, 'tasks'), {
+            assigned_to: profile.uid, due_date: new Date().toISOString().slice(0, 10),
+            instructions: `Not on track — ${milestone}-day review for ${emp.first_name} ${emp.last_name} routed to HR`,
+            recurring: 'none', status: 'open', entered_by: profile.uid, entered_at: serverTimestamp(),
+          });
+        }
+        showToast('Review saved.' + (notOnTrack ? ' Routed to HR as a task.' : ''));
+        renderReviewSheet(emp, milestone, data);
+      } catch (err) {
+        console.error(err);
+        showToast('Could not save — ' + err.message, 'error');
+      }
+    });
+  });
+}
+
+function onTrackLabel(v) {
+  return v === 'yes' ? 'Yes' : v === 'yes-items' ? 'Yes, with items to work on (see notes)' : 'No — notify HR';
+}
+
+function renderReviewSheet(emp, milestone, data) {
+  const sheet = document.getElementById('rev-sheet');
+  sheet.hidden = false;
+  sheet.innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">30 / 60 / 90 Day New Hire Review</h1>
+      <div class="form-section">Employee Information</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Employee Name</b>${emp.first_name} ${emp.last_name}</div>
+        <div class="form-cell"><b>Employee ID</b>${emp.id}</div>
+        <div class="form-cell"><b>Job Title</b>${emp.position || ''}</div>
+        <div class="form-cell"><b>Department</b>${emp.division || ''}</div>
+        <div class="form-cell"><b>Manager</b>${(employees.find(m => m.id === emp.manager_emp_id) || {}).first_name ? `${employees.find(m => m.id === emp.manager_emp_id).first_name} ${employees.find(m => m.id === emp.manager_emp_id).last_name}` : ''}</div>
+        <div class="form-cell"><b>Start Date</b>${formatDate(emp.hire_date)}</div>
       </div>
-      <input class="f-in" placeholder="Comment (optional)" id="area-comment-${i}">
+      <div class="form-fine" style="border-top:1px solid #999">Complete one review at each milestone using the same checklist so progress is easy to see. Rating scale: E = Exceeds Expectations, M = Meets Expectations, N = Needs Improvement. Any "N" rating should include a comment. If the employee is not on track, notify HR before the next milestone.</div>
+
+      <div class="form-section">${REVIEW_HEADING[milestone]}</div>
+      <div class="form-fine" style="border-top:1px solid #999">Focus: ${REVIEW_FOCUS[milestone]}</div>
+      <table class="form-notice-table">
+        <thead><tr><th>Performance Area</th><th>E</th><th>M</th><th>N</th><th>Comments</th></tr></thead>
+        <tbody>
+          ${data.ratings.map(r => `<tr><td>${escapeHtml(r.area)}</td><td style="text-align:center">${r.rating === 'E' ? '☑' : '☐'}</td><td style="text-align:center">${r.rating === 'M' ? '☑' : '☐'}</td><td style="text-align:center">${r.rating === 'N' ? '☑' : '☐'}</td><td>${escapeHtml(r.comment)}</td></tr>`).join('')}
+        </tbody>
+      </table>
+      <div class="form-box">Is the employee on track at this stage? ${onTrackLabel(data.on_track)}</div>
+      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">Manager Notes</b>${escapeHtml(data.manager_notes) || '—'}</div>
+      <div class="form-sig">
+        <div>Review Completed On: ${formatDate(new Date().toISOString().slice(0, 10))}</div>
+        <div>Manager Initials: ______&nbsp;&nbsp;&nbsp;Employee Initials: ______</div>
+      </div>
+
+      ${milestone === 90 ? `
+      <div class="form-section">Overall 90-Day Assessment</div>
+      <div class="form-box">${data.overall === 'exceeds' ? 'Exceeds Expectations — performing above the standard for this role' : data.overall === 'needs' ? 'Needs Improvement — see comments; improvement plan or extended review period below' : 'Meets Expectations — performing at the standard for this role'}</div>
+      <div class="form-section">Recommendation</div>
+      <div class="form-box">${{ continue: 'Continue in role', 'continue-support': 'Continue with additional training / support (see comments)', extend: `Extend review period to: ${formatDate(data.extend_date)}`, other: `Other: ${escapeHtml(data.other_recommend)}` }[data.recommend]}</div>
+      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">Manager Overall Comments</b>${escapeHtml(data.overall_comments) || '—'}</div>
+      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">Employee Comments (optional)</b>${escapeHtml(data.employee_comments) || '—'}</div>
+      ` : ''}
+
+      <div class="form-fine" style="margin-top:14px;border:1px solid #999">This review is a coaching and communication tool. It does not create a contract of employment, and nothing in this document alters the at-will nature of employment. Either the employee or the Company may end employment at any time, with or without cause or notice.</div>
+      <div class="form-sig" style="grid-template-columns:1fr;margin-top:0">
+        <div style="border-right:none">Employee Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
+        <div style="border-right:none;border-top:none">Manager Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
+        <div style="border-right:none;border-top:none">HR Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
+      </div>
     </div>
-  `).join('');
+  `;
+}
 
-  document.getElementById('rev-generate-btn').addEventListener('click', async () => {
-    const empId = document.getElementById('rev-emp').value;
-    const emp = employees.find((e) => e.id === empId);
-    const milestone = document.getElementById('rev-milestone').value;
-    const onTrack = document.getElementById('rev-ontrack').value === 'yes';
-    const notes = document.getElementById('rev-notes').value.trim();
+// ---- Termination — matches the SWL termination form exactly. Final-pay
+// dollar amounts are typed on the generator, printed, and never written to
+// Firestore — same rule as the offer letter's rate field. ----
 
-    const ratings = AREAS.map((a, i) => ({
-      area: a,
-      rating: document.querySelector(`input[name="area${i}"]:checked`).value,
-      comment: document.getElementById(`area-comment-${i}`).value.trim(),
-    }));
+const TERM_REASONS = ['Voluntary Resignation', 'Layoff / Reduction in Force', 'Performance', 'Attendance / Tardiness', 'Policy/Conduct Violation', 'Other'];
+const PROPERTY_ITEMS = ['Keys', 'Uniform', 'Laptop', 'Phone', 'CC/Gas Card', 'Vehicle', 'Email/System Access Revoked', 'Building/Key Fob Access Revoked'];
+const NOTICE_ITEMS = [
+  { key: 'edd', label: 'EDD "For Your Benefit" Pamphlet (DE 2320)' },
+  { key: 'change', label: 'Notice to Employee as to Change in Relationship (involuntary separations only)' },
+  { key: 'cobra', label: 'COBRA Election Notice' },
+  { key: 'hipp', label: 'HIPP Notice (DHCS 9061)' },
+];
+const involuntaryReasons = new Set(['Layoff / Reduction in Force', 'Performance', 'Attendance / Tardiness', 'Policy/Conduct Violation']);
 
+let terminations = [];
+let termSortKey = 'date';
+let termSortDir = 'desc';
+
+async function loadTerminations() {
+  const snap = await getDocs(collection(db, 'terminations'));
+  terminations = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+function renderTermination() {
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-h"><h3>All terminations</h3><span id="term-summary">—</span></div>
+      <div class="tools">
+        <button class="gh solid" id="term-new-btn" type="button">New termination</button>
+        <button class="gh" id="term-import-btn" type="button">Import terminations</button>
+        <input class="inp" id="term-search" placeholder="Search employee, division, reason" style="min-width:220px">
+      </div>
+      <table>
+        <thead>
+          <tr id="term-head-row">
+            <th class="sortable" data-key="date">Term date<span class="sort-arrow"></span></th>
+            <th class="sortable" data-key="name">Employee<span class="sort-arrow"></span></th>
+            <th class="sortable" data-key="division">Division<span class="sort-arrow"></span></th>
+            <th class="sortable" data-key="location">Location<span class="sort-arrow"></span></th>
+            <th class="sortable" data-key="reason">Reason<span class="sort-arrow"></span></th>
+            <th class="sortable" data-key="type">Type<span class="sort-arrow"></span></th>
+          </tr>
+        </thead>
+        <tbody id="term-rows"></tbody>
+      </table>
+    </div>
+
+    <div class="card no-print" id="term-form-card" hidden style="margin-bottom:16px">
+      <div class="card-h"><h3>New termination</h3></div>
+      <div class="card-body">
+        <div class="field"><label class="f-lab">Employee</label><select class="f-in" id="term-emp">${empSelectOptions()}</select></div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Last day worked</label><input class="f-in" id="term-lastday" type="date"></div>
+          <div class="field"><label class="f-lab">Termination date</label><input class="f-in" id="term-date" type="date"></div>
+        </div>
+        <div class="field"><label class="f-lab">Reason for termination</label>
+          <select class="f-in" id="term-reason">${TERM_REASONS.map(r => `<option>${r}</option>`).join('')}</select>
+        </div>
+        <div class="field" id="term-reason-other-field" hidden><label class="f-lab">Other — describe</label><input class="f-in" id="term-reason-other"></div>
+        <div class="field"><label class="f-lab">Description of circumstances</label><textarea class="f-in" id="term-circumstances" rows="3" style="resize:vertical"></textarea></div>
+
+        <div class="field" style="margin-top:10px"><label class="f-lab" style="color:var(--alertTx)">Final hours &amp; pay — printed on the form only, never saved</label></div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Regular hours</label><input class="f-in" id="term-reg-hours" type="number" step="0.01"></div>
+          <div class="field"><label class="f-lab">OT hours</label><input class="f-in" id="term-ot-hours" type="number" step="0.01"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">VAC</label><input class="f-in" id="term-vac" type="number" step="0.01"></div>
+          <div class="field"><label class="f-lab">Sick pay (hours)</label><input class="f-in" id="term-sick" type="number" step="0.01"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">CMP (CA meal penalty)</label><input class="f-in" id="term-cmp" type="number" step="0.01"></div>
+          <div class="field"><label class="f-lab">Other</label><input class="f-in" id="term-other-pay"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Final wages amount ($)</label><input class="f-in" id="term-final-wages" type="number" step="0.01"></div>
+          <div class="field"><label class="f-lab">Date final check issued</label><input class="f-in" id="term-final-check-date" type="date"></div>
+        </div>
+
+        <div class="field"><label class="f-lab">Method of delivery (final pay)</label>
+          <select class="f-in" id="term-delivery-method"><option>In Person</option><option>Mailed</option><option>Direct Deposit</option></select>
+        </div>
+        <div class="field"><label class="f-lab">Company property return</label>
+          ${PROPERTY_ITEMS.map(p => `<label style="display:inline-block;width:48%;font-size:12.5px;margin-bottom:4px"><input type="checkbox" class="term-property" value="${p}"> ${p}</label>`).join('')}
+        </div>
+        <div class="field"><label class="f-lab">Required notices provided</label>
+          ${NOTICE_ITEMS.map(n => `
+            <div class="frow" style="align-items:flex-end;margin-bottom:6px">
+              <div class="field" style="margin-bottom:0"><span style="font-size:12px">${n.label}</span></div>
+              <div class="field" style="margin-bottom:0;display:flex;gap:10px;align-items:center">
+                <select class="f-in" id="term-notice-${n.key}" style="height:36px"><option value="na">N/A</option><option value="provided">Provided</option></select>
+                <input class="f-in" id="term-notice-${n.key}-date" type="date" style="height:36px">
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Delivered by</label><input class="f-in" id="term-delivered-by" value="${escapeHtml(profile.name || '')}"></div>
+          <div class="field"><label class="f-lab">Date delivered</label><input class="f-in" id="term-date-delivered" type="date"></div>
+        </div>
+        <div class="field"><label class="f-lab">Delivery method (notice)</label>
+          <select class="f-in" id="term-notice-delivery"><option>In Person</option><option>Certified Mail</option><option>Email w/Pay Stub Notice</option></select>
+        </div>
+        <button class="gh solid" id="term-generate-btn" type="button">Generate &amp; file</button>
+        <button class="gh" id="term-cancel-btn" type="button">Cancel</button>
+      </div>
+    </div>
+
+    <div class="form-doc" id="term-sheet" hidden></div>
+  `;
+
+  document.getElementById('term-new-btn').addEventListener('click', () => {
+    document.getElementById('term-form-card').hidden = false;
+    document.getElementById('term-sheet').hidden = true;
+  });
+  document.getElementById('term-cancel-btn').addEventListener('click', () => {
+    document.getElementById('term-form-card').hidden = true;
+  });
+  document.getElementById('term-reason').addEventListener('change', (e) => {
+    document.getElementById('term-reason-other-field').hidden = e.target.value !== 'Other';
+  });
+  document.getElementById('term-import-btn').addEventListener('click', openTermImport);
+  document.getElementById('term-search').addEventListener('input', renderTermRows);
+  document.querySelectorAll('#term-head-row .sortable').forEach((th) => {
+    th.addEventListener('click', () => {
+      if (termSortKey === th.dataset.key) termSortDir = termSortDir === 'asc' ? 'desc' : 'asc';
+      else { termSortKey = th.dataset.key; termSortDir = 'asc'; }
+      renderTermRows();
+    });
+  });
+  document.getElementById('term-generate-btn').addEventListener('click', generateTermination);
+
+  renderTermRows();
+}
+
+function termAccessor(key) {
+  return {
+    date: (r) => r.termination_date || '',
+    name: (r) => (r.emp_name || '').toLowerCase(),
+    division: (r) => (r.division || '').toLowerCase(),
+    location: (r) => (r.location || '').toLowerCase(),
+    reason: (r) => (r.reason || '').toLowerCase(),
+    type: (r) => (r.separation_type || ''),
+  }[key];
+}
+
+function renderTermRows() {
+  const q = document.getElementById('term-search').value.trim().toLowerCase();
+  const visible = terminations.filter((r) => !q || `${r.emp_name} ${r.division} ${r.reason}`.toLowerCase().includes(q));
+  const acc = termAccessor(termSortKey) || termAccessor('date');
+  visible.sort((a, b) => {
+    const av = acc(a), bv = acc(b);
+    const cmp = String(av).localeCompare(String(bv));
+    return termSortDir === 'asc' ? cmp : -cmp;
+  });
+  document.querySelectorAll('#term-head-row .sortable').forEach((th) => {
+    th.querySelector('.sort-arrow').textContent = th.dataset.key === termSortKey ? (termSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+  });
+  document.getElementById('term-summary').textContent = `${visible.length} of ${terminations.length}`;
+  document.getElementById('term-rows').innerHTML = visible.length ? visible.map((r) => `
+    <tr class="row-clickable" data-id="${r.id}" style="cursor:pointer">
+      <td class="mono">${formatDate(r.termination_date)}</td>
+      <td>${escapeHtml(r.emp_name || '—')}</td>
+      <td class="mono dim">${escapeHtml(r.division || '—')}</td>
+      <td class="mono dim">${escapeHtml(r.location || '—')}</td>
+      <td>${escapeHtml(r.reason || '—')}</td>
+      <td>${r.separation_type === 'involuntary' ? '<span class="pill bad">Involuntary</span>' : '<span class="pill ok">Voluntary</span>'}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="6" class="dim">No terminations logged yet.</td></tr>';
+  document.querySelectorAll('#term-rows tr').forEach((tr) => {
+    tr.addEventListener('click', () => {
+      const rec = terminations.find((r) => r.id === tr.dataset.id);
+      if (rec) renderTerminationSheet(rec);
+    });
+  });
+}
+
+async function generateTermination() {
+  const empId = document.getElementById('term-emp').value;
+  const emp = employees.find((e) => e.id === empId);
+  if (!emp) { showToast('Select an employee.', 'error'); return; }
+  const lastDay = document.getElementById('term-lastday').value;
+  const termDate = document.getElementById('term-date').value;
+  if (!lastDay || !termDate) { showToast('Last day worked and termination date are required.', 'error'); return; }
+  let reason = document.getElementById('term-reason').value;
+  if (reason === 'Other') reason = document.getElementById('term-reason-other').value.trim() || 'Other';
+
+  const propertyReturned = [...document.querySelectorAll('.term-property:checked')].map((c) => c.value);
+  const notices = NOTICE_ITEMS.map((n) => ({
+    key: n.key, label: n.label,
+    status: document.getElementById(`term-notice-${n.key}`).value,
+    date: document.getElementById(`term-notice-${n.key}-date`).value,
+  }));
+
+  const record = {
+    emp_id: empId, emp_name: `${emp.first_name} ${emp.last_name}`,
+    job_title: emp.position || '', division: emp.division || '', location: emp.location || '',
+    hire_date: emp.hire_date || '',
+    last_day_worked: lastDay, termination_date: termDate,
+    reason, circumstances: document.getElementById('term-circumstances').value.trim(),
+    separation_type: involuntaryReasons.has(reason) ? 'involuntary' : 'voluntary',
+    delivery_method: document.getElementById('term-delivery-method').value,
+    property_returned: propertyReturned,
+    notices,
+    delivered_by: document.getElementById('term-delivered-by').value.trim(),
+    date_delivered: document.getElementById('term-date-delivered').value,
+    notice_delivery_method: document.getElementById('term-notice-delivery').value,
+    entered_by: profile.uid, entered_at: serverTimestamp(),
+  };
+
+  // Final-pay figures never join `record` above — they're read straight
+  // from the form into the print sheet only, then discarded.
+  const finalPay = {
+    regHours: document.getElementById('term-reg-hours').value,
+    otHours: document.getElementById('term-ot-hours').value,
+    vac: document.getElementById('term-vac').value,
+    sick: document.getElementById('term-sick').value,
+    cmp: document.getElementById('term-cmp').value,
+    other: document.getElementById('term-other-pay').value,
+    amount: document.getElementById('term-final-wages').value,
+    checkDate: document.getElementById('term-final-check-date').value,
+  };
+
+  try {
+    const batch = writeBatch(db);
+    const termRef = doc(collection(db, 'terminations'));
+    batch.set(termRef, record);
+    batch.update(doc(db, 'employees', empId), {
+      status: 'terminated', separation_date: termDate, separation_type: record.separation_type,
+      entered_by: profile.uid, updated_at: serverTimestamp(),
+    });
+    await batch.commit();
+    await addDoc(collection(db, 'activity'), {
+      module: 'documents', item: `Termination filed — ${record.emp_name}`,
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    showToast('Termination filed. No final-pay figures were saved.');
+    await loadEmployees();
+    terminations.push({ id: termRef.id, ...record });
+    document.getElementById('term-form-card').hidden = true;
+    renderTermRows();
+    renderTerminationSheet({ id: termRef.id, ...record }, finalPay);
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+}
+
+function renderTerminationSheet(r, finalPay = {}) {
+  const sheet = document.getElementById('term-sheet');
+  sheet.hidden = false;
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  sheet.innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <div class="form-section">Employee Information</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Employee Name</b>${escapeHtml(r.emp_name)}</div>
+        <div class="form-cell"><b>Date</b>${formatDate(new Date().toISOString().slice(0, 10))}</div>
+        <div class="form-cell"><b>Job Title</b>${escapeHtml(r.job_title)}</div>
+        <div class="form-cell"><b>Employee ID</b>${escapeHtml(r.emp_id)}</div>
+      </div>
+      <div class="form-section">Employee Details</div>
+      <div class="form-grid c3">
+        <div class="form-cell"><b>Date of Hire</b>${formatDate(r.hire_date)}</div>
+        <div class="form-cell"><b>Last Day Worked</b>${formatDate(r.last_day_worked)}</div>
+        <div class="form-cell"><b>Termination Date</b>${formatDate(r.termination_date)}</div>
+      </div>
+      <div class="form-section">Reason for Termination</div>
+      <div class="form-checks">${TERM_REASONS.filter(rs => rs !== 'Other').map(rs => `<label>${rs === r.reason ? '☑' : '☐'} ${rs}</label>`).join('')}<label>${!TERM_REASONS.includes(r.reason) ? '☑' : '☐'} Other: ${!TERM_REASONS.includes(r.reason) ? escapeHtml(r.reason) : ''}</label></div>
+      <div class="form-section">Description of Circumstances</div>
+      <div class="form-box">${escapeHtml(r.circumstances) || '—'}</div>
+      <div class="form-section">Final Hours</div>
+      <div class="form-grid c3">
+        <div class="form-cell"><b>Regular Hours</b>${finalPay.regHours || ''}</div>
+        <div class="form-cell"><b>OT Hours</b>${finalPay.otHours || ''}</div>
+        <div class="form-cell"><b>VAC</b>${finalPay.vac || ''}</div>
+        <div class="form-cell"><b>Sick Pay</b>${finalPay.sick || ''}</div>
+        <div class="form-cell"><b>CMP (California Meal Penalty)</b>${finalPay.cmp || ''}</div>
+        <div class="form-cell"><b>Other</b>${escapeHtml(finalPay.other || '')}</div>
+      </div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Final Wages Amount</b>${finalPay.amount ? '$' + Number(finalPay.amount).toLocaleString() : ''}</div>
+        <div class="form-cell"><b>Date Final Check Issued</b>${formatDate(finalPay.checkDate)}</div>
+      </div>
+      <div class="form-fine">Note: Accrued, unused sick leave is generally not required to be paid out under California law (unlike vacation/PTO). Final pay timing: involuntary termination — wages due immediately, same day. Voluntary resignation with less than 72 hours' notice — wages due within 72 hours. Late final pay may trigger waiting-time penalties (Labor Code §201-203).</div>
+      <div class="form-section">Method of Delivery</div>
+      <div class="form-checks">${['In Person', 'Mailed', 'Direct Deposit'].map(m => `<label>${m === r.delivery_method ? '☑' : '☐'} ${m}</label>`).join('')}</div>
+      <div class="form-section">Company Property Return</div>
+      <div class="form-checks">${PROPERTY_ITEMS.map(p => `<label>${(r.property_returned || []).includes(p) ? '☑' : '☐'} ${p}</label>`).join('')}</div>
+      <div class="form-section">Required Notices Provided</div>
+      <table class="form-notice-table">
+        <thead><tr><th>Notice</th><th>Provided?</th><th>N/A</th><th>Date</th></tr></thead>
+        <tbody>
+          ${(r.notices || []).map(n => `<tr><td>${escapeHtml(n.label)}</td><td style="text-align:center">${n.status === 'provided' ? '☑' : '☐'}</td><td style="text-align:center">${n.status === 'na' ? '☑' : '☐'}</td><td>${formatDate(n.date)}</td></tr>`).join('')}
+        </tbody>
+      </table>
+      <div class="form-section">Acknowledgment &amp; Delivery</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Delivered By</b>${escapeHtml(r.delivered_by || '')}</div>
+        <div class="form-cell"><b>Date Delivered</b>${formatDate(r.date_delivered)}</div>
+      </div>
+      <div class="form-checks">${['In Person', 'Certified Mail', 'Email w/Pay Stub Notice'].map(m => `<label>${m === r.notice_delivery_method ? '☑' : '☐'} ${m}</label>`).join('')}</div>
+      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">Employee Acknowledgement</b>I acknowledge receipt of this termination notice and final pay information.<br><br>Employee Signature: __________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
+      <div class="form-atwill"><b>At-will Employment Reminder:</b> Employment with the company is at-will. Nothing in this document alters that status or creates a contract of employment.</div>
+    </div>
+  `;
+}
+
+// ---- Termination import — reads the "Terminations" sheet of the roster
+// workbook. Upserts: existing employees get their status flipped and a
+// terminations record filed; employees not currently in the roster (left
+// before the roster snapshot) get a minimal terminated-status record
+// created so history isn't lost. No pay figures exist in this sheet. ----
+
+async function openTermImport() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="width:820px">
+      <div class="modal-h"><h3>Import terminations</h3><button class="modal-close" id="ti-close" type="button">&times;</button></div>
+      <div class="modal-body">
+        <div id="ti-pick">
+          <p class="dim" style="margin-bottom:10px">.xlsx or .csv. Looks for a sheet named "Terminations" first, otherwise the first sheet. Employee ID, name, and termination date are required per row.</p>
+          <input class="f-in" id="ti-file" type="file" accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+        </div>
+        <div id="ti-preview" hidden>
+          <div id="ti-warnings"></div>
+          <p id="ti-summary" style="margin:10px 0"></p>
+          <div style="max-height:360px;overflow-y:auto;border:1px solid var(--edge)">
+            <table>
+              <thead><tr><th>Row</th><th>ID</th><th>Name</th><th>Term date</th><th>Reason</th><th>Status</th></tr></thead>
+              <tbody id="ti-rows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="gh" id="ti-cancel">Cancel</button>
+        <button type="button" class="gh solid" id="ti-confirm" hidden>Import valid rows</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector('#ti-close').addEventListener('click', close);
+  overlay.querySelector('#ti-cancel').addEventListener('click', close);
+
+  // Same branch-code aliases as the roster import — the source sheets use
+  // short codes (ENH, Corp) that don't match the Location dropdown values.
+  const LOCATION_ALIASES = { enh: 'Enhancements', corp: 'Corporate' };
+  const normalizeLocation = (raw) => {
+    const v = String(raw || '').trim();
+    return LOCATION_ALIASES[v.toLowerCase()] || v;
+  };
+  let parsed = [];
+
+  overlay.querySelector('#ti-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const sheets = await readSpreadsheetSheets(file);
+    const sheetName = Object.keys(sheets).find((n) => /terminat/i.test(n)) || Object.keys(sheets)[0];
+    const { headers, rows, forbiddenColumns } = objectsFromRows(sheets[sheetName], [
+      'Employee ID', 'Name', 'Job Title', 'Division', 'Branch', 'Manager', 'Term Date', 'Last Day', 'Reason',
+    ]);
+    const pick = (row, ...keys) => { for (const k of keys) if (row[k]) return row[k]; return ''; };
+    const dateVal = (v) => {
+      if (!v) return '';
+      const d = v instanceof Date ? v : new Date(v);
+      return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+    };
+    const nameToId = new Map(allEmployeesEver.map((e) => [`${e.first_name} ${e.last_name}`.trim().toLowerCase(), e.id]));
+
+    parsed = rows.map((row) => {
+      const id = pick(row, 'employee_id', 'id').toString().trim();
+      const name = pick(row, 'name', 'employee_name').toString().trim();
+      const termDate = dateVal(pick(row, 'term_date', 'termination_date'));
+      const errors = [];
+      if (!id || !/^[a-z0-9-]+$/i.test(id)) errors.push('missing/invalid Employee ID — likely a summary or note row, not a record');
+      if (!name) errors.push('missing name');
+      if (!termDate) errors.push('missing/invalid term date');
+      const reason = pick(row, 'reason').toString().trim();
+      return {
+        id, name, job_title: pick(row, 'job_title', 'title'),
+        division: pick(row, 'division'), location: normalizeLocation(pick(row, 'branch', 'location')),
+        hire_date: dateVal(pick(row, 'hire_date')),
+        last_day: dateVal(pick(row, 'last_day')),
+        term_date: termDate,
+        reason, notes: pick(row, 'notes'),
+        exists: allEmployeesEver.some((e) => e.id === id),
+        errors,
+      };
+    });
+
+    const validCount = parsed.filter((r) => !r.errors.length).length;
+    const warnings = [];
+    if (forbiddenColumns.length) warnings.push(`Ignored, never imported: ${forbiddenColumns.join(', ')}`);
+    overlay.querySelector('#ti-warnings').innerHTML = warnings.length
+      ? `<div class="login-error" style="background:var(--hover);color:var(--alertTx);border-color:var(--alertTx)">${warnings.join('<br>')}</div>` : '';
+    overlay.querySelector('#ti-summary').textContent = `${validCount} of ${parsed.length} rows will be imported. ${parsed.length - validCount} skipped (summary/note rows or missing data).`;
+    overlay.querySelector('#ti-rows').innerHTML = parsed.map((r, i) => `
+      <tr>
+        <td class="mono dim">${i + 1}</td>
+        <td class="mono">${escapeHtml(r.id)}</td>
+        <td>${escapeHtml(r.name)}</td>
+        <td class="mono">${r.term_date || '—'}</td>
+        <td class="dim">${escapeHtml(r.reason)}</td>
+        <td>${r.errors.length ? `<span class="pill bad">${r.errors.join(', ')}</span>` : `<span class="pill ok">${r.exists ? 'Updates existing employee' : 'Creates historical record'}</span>`}</td>
+      </tr>
+    `).join('');
+    overlay.querySelector('#ti-pick').hidden = true;
+    overlay.querySelector('#ti-preview').hidden = false;
+    overlay.querySelector('#ti-confirm').hidden = validCount === 0;
+  });
+
+  overlay.querySelector('#ti-confirm').addEventListener('click', async () => {
+    const valid = parsed.filter((r) => !r.errors.length);
     try {
-      await setDoc(doc(db, 'employees', empId, 'reviews', milestone), {
-        ratings, manager_notes: notes, on_track: onTrack,
-        review_completed: true, entered_by: profile.uid, updated_at: serverTimestamp(),
-      }, { merge: true });
+      for (let start = 0; start < valid.length; start += 50) {
+        const chunk = valid.slice(start, start + 50);
+        const batch = writeBatch(db);
+        chunk.forEach((r) => {
+          const separationType = /involuntary|policy|performance|attendance|layoff|elimination/i.test(r.reason) ? 'involuntary' : 'voluntary';
+          const termRef = doc(collection(db, 'terminations'));
+          batch.set(termRef, {
+            emp_id: r.id, emp_name: r.name, job_title: r.job_title, division: r.division, location: r.location,
+            hire_date: r.hire_date, last_day_worked: r.last_day, termination_date: r.term_date,
+            reason: r.reason, circumstances: r.notes, separation_type: separationType,
+            entered_by: profile.uid, entered_at: serverTimestamp(),
+          });
+          const empRef = doc(db, 'employees', r.id);
+          if (r.exists) {
+            batch.update(empRef, { status: 'terminated', separation_date: r.term_date, separation_type: separationType, entered_by: profile.uid, updated_at: serverTimestamp() });
+          } else {
+            const [first_name, ...rest] = r.name.split(' ');
+            batch.set(empRef, {
+              first_name, last_name: rest.join(' '), division: r.division, location: r.location,
+              position: r.job_title, hire_date: r.hire_date, status: 'terminated',
+              separation_date: r.term_date, separation_type: separationType,
+              entered_by: profile.uid, entered_at: serverTimestamp(),
+            });
+          }
+        });
+        await batch.commit();
+      }
       await addDoc(collection(db, 'activity'), {
-        module: 'reviews', item: `${milestone}-day review generated — ${emp.first_name} ${emp.last_name}`,
+        module: 'documents', item: `Imported ${valid.length} termination records`,
         entered_by: profile.uid, entered_at: serverTimestamp(),
       });
-      if (!onTrack) {
-        await addDoc(collection(db, 'tasks'), {
-          assigned_to: profile.uid, due_date: new Date().toISOString().slice(0, 10),
-          instructions: `Not on track — ${milestone}-day review for ${emp.first_name} ${emp.last_name} routed to HR`,
-          recurring: 'none', status: 'open', entered_by: profile.uid, entered_at: serverTimestamp(),
-        });
-      }
-      showToast('Review saved.' + (!onTrack ? ' Routed to HR as a task.' : ''));
-      renderReviewSheet(lang, emp, milestone, ratings, notes, onTrack);
+      showToast(`Imported ${valid.length} termination records.`);
+      await loadEmployees();
+      await loadTerminations();
+      renderTermRows();
+      close();
     } catch (err) {
       console.error(err);
-      showToast('Could not save — ' + err.message, 'error');
+      showToast('Import failed — ' + err.message, 'error');
     }
   });
 }
 
-function renderReviewSheet(lang, emp, milestone, ratings, notes, onTrack) {
-  const isEs = lang === 'es';
-  const sheet = document.getElementById('rev-sheet');
-  sheet.hidden = false;
-  sheet.innerHTML = `
-    <div class="doc-bar">${milestone}-${isEs ? 'Día Revisión de Desempeño' : 'Day Performance Review'}</div>
-    <div class="doc-body">
-      <div class="doc-grid">
-        <div><b>${isEs ? 'Empleado' : 'Employee'}</b>${emp.first_name} ${emp.last_name}</div>
-        <div><b>${isEs ? 'Puesto' : 'Job title'}</b>${emp.position || ''}</div>
-      </div>
-      <table><tbody>
-        ${ratings.map((r) => `<tr><td>${r.area}</td><td class="mono">${r.rating}</td><td class="dim">${r.comment || ''}</td></tr>`).join('')}
-      </table>
-      <h4>${isEs ? '¿En camino?' : 'On track?'}</h4>
-      <p>${onTrack ? (isEs ? 'Sí' : 'Yes') : (isEs ? 'No — remitido a RR.HH.' : 'No — routed to HR')}</p>
-      <h4>${isEs ? 'Notas del gerente' : 'Manager notes'}</h4>
-      <p>${notes || '—'}</p>
-      <div class="sig-line" style="display:inline-block;width:45%">${isEs ? 'Firma del empleado' : 'Employee signature'} / ${isEs ? 'Fecha' : 'Date'}</div>
-      <div class="sig-line" style="display:inline-block;width:45%;margin-left:5%">${isEs ? 'Firma del gerente' : 'Manager signature'} / ${isEs ? 'Fecha' : 'Date'}</div>
-    </div>
-  `;
-}
+// ---- Offer / Increase / Promotion letters — reproduces the branded SWL
+// letterhead tool exactly: same legal text, same letterhead/decor-band
+// branding, same 7 letter types. Rate/salary are typed on the generator,
+// printed, and never stored — same rule as everywhere else in this app.
+// The pay-band reference table from that tool (Entry/Senior rates per
+// role) is intentionally NOT carried over — that's exactly the kind of
+// salary-band data CLAUDE.md says never to store, even as a static list
+// baked into the app. Rate stays a manual entry, same as before. ----
 
-// ---- Offer letter (rate never stored) ----
+const LETTER_TYPES = [
+  { value: 'hourly-en', label: 'Hourly Offer Letter (English)', category: 'offer' },
+  { value: 'hourly-es', label: 'Hourly Offer Letter (Español)', category: 'offer' },
+  { value: 'salary', label: 'Salaried Offer Letter', category: 'offer' },
+  { value: 'increase-en', label: 'Wage Increase Letter (English)', category: 'increase' },
+  { value: 'increase-es', label: 'Wage Increase Letter (Español)', category: 'increase' },
+  { value: 'promotion-hourly', label: 'Promotion Letter — Hourly', category: 'promotion' },
+  { value: 'promotion-salary', label: 'Promotion Letter — Salary', category: 'promotion' },
+];
 
-function renderOffer(lang) {
+function renderLetters() {
   document.getElementById('gen-body').innerHTML = `
     <div class="card no-print" style="margin-bottom:16px">
       <div class="card-body">
-        <div class="frow">
-          <div class="field"><label class="f-lab">Candidate name</label><input class="f-in" id="offer-name"></div>
-          <div class="field"><label class="f-lab">Job title</label><input class="f-in" id="offer-title"></div>
+        <div class="tabs" id="ltr-tabs">
+          <div class="tab active" data-category="offer">Offer</div>
+          <div class="tab" data-category="increase">Increase</div>
+          <div class="tab" data-category="promotion">Promotion</div>
+        </div>
+        <div class="field"><label class="f-lab">Letter type</label>
+          <select class="f-in" id="ltr-type"></select>
         </div>
         <div class="frow">
-          <div class="field"><label class="f-lab">Branch / division</label><input class="f-in" id="offer-branch"></div>
-          <div class="field"><label class="f-lab">Reports to</label><input class="f-in" id="offer-manager"></div>
+          <div class="field"><label class="f-lab">First name</label><input class="f-in" id="ltr-first"></div>
+          <div class="field"><label class="f-lab">Last name</label><input class="f-in" id="ltr-last"></div>
+        </div>
+        <div class="field" id="ltr-position-field"><label class="f-lab">Position</label><input class="f-in" id="ltr-position"></div>
+        <div class="field"><label class="f-lab">Employment type</label>
+          <select class="f-in" id="ltr-emptype"><option value="Full-time">Full-Time</option><option value="Part-time">Part-Time</option><option value="Seasonal">Seasonal</option><option value="Temporary">Temporary</option></select>
         </div>
         <div class="frow">
-          <div class="field"><label class="f-lab">Pay rate (printed only — never saved)</label><input class="f-in" id="offer-rate" placeholder="e.g. $22.00/hr"></div>
-          <div class="field"><label class="f-lab">Schedule</label><input class="f-in" id="offer-schedule" placeholder="e.g. Mon–Fri, 6:30am–3:00pm"></div>
+          <div class="field"><label class="f-lab">Branch</label>
+            <select class="f-in" id="ltr-branch"><option value="">Select a branch…</option>${Object.entries(LOCATIONS).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('')}</select>
+          </div>
+          <div class="field"><label class="f-lab">Facility address</label><input class="f-in" id="ltr-address"></div>
         </div>
         <div class="frow">
-          <div class="field"><label class="f-lab">Start date</label><input class="f-in" id="offer-start" type="date"></div>
-          <div class="field"><label class="f-lab">Sign and return by</label><input class="f-in" id="offer-returnby" type="date"></div>
+          <div class="field"><label class="f-lab">Schedule</label>
+            <select class="f-in" id="ltr-schedule-preset"><option value="">Select or type below…</option>${SCHEDULE_PRESETS.map(s => `<option>${s}</option>`).join('')}</select>
+          </div>
+          <div class="field"><label class="f-lab">Schedule (editable)</label><input class="f-in" id="ltr-schedule"></div>
         </div>
-        <button class="gh solid" id="offer-generate-btn" type="button">Generate</button>
-        <button class="gh" id="offer-log-btn" type="button">Mark as sent (logs to activity — no rate included)</button>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Reports to</label><select class="f-in" id="ltr-reportsto">${empSelectOptions()}</select></div>
+          <div class="field"><label class="f-lab">Reports-to title</label><input class="f-in" id="ltr-reportsto-title"></div>
+        </div>
+        <div class="frow" id="ltr-rate-field">
+          <div class="field"><label class="f-lab">Hourly rate ($, printed only — never saved)</label><input class="f-in" id="ltr-rate" type="number" step="0.01"></div>
+          <div class="field" id="ltr-salary-field" hidden><label class="f-lab">Annual salary ($, printed only — never saved)</label><input class="f-in" id="ltr-salary" type="number" step="0.01"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Letter date</label><input class="f-in" id="ltr-date" type="date"></div>
+          <div class="field"><label class="f-lab">Start / effective date</label><input class="f-in" id="ltr-start" type="date"></div>
+        </div>
+        <div class="field"><label class="f-lab">Sign and return by</label><input class="f-in" id="ltr-return" type="date"></div>
+        <button class="gh solid" id="ltr-generate-btn" type="button">Generate</button>
+        <button class="gh" id="ltr-log-btn" type="button">Mark as sent (logs to activity — no rate included)</button>
       </div>
     </div>
-    <div class="doc-sheet" id="offer-sheet" hidden></div>
+    <div class="letter" id="ltr-sheet" hidden></div>
   `;
-  document.getElementById('offer-generate-btn').addEventListener('click', () => renderOfferSheet(lang));
-  document.getElementById('offer-log-btn').addEventListener('click', async () => {
-    const name = document.getElementById('offer-name').value.trim();
-    if (!name) { showToast('Candidate name is required.', 'error'); return; }
+
+  const typeSel = document.getElementById('ltr-type');
+  function fillTypes(category) {
+    typeSel.innerHTML = LETTER_TYPES.filter((t) => t.category === category).map((t) => `<option value="${t.value}">${t.label}</option>`).join('');
+    toggleLetterFields();
+  }
+  document.querySelectorAll('#ltr-tabs .tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('#ltr-tabs .tab').forEach((t) => t.classList.toggle('active', t === tab));
+      fillTypes(tab.dataset.category);
+    });
+  });
+  fillTypes('offer');
+  typeSel.addEventListener('change', toggleLetterFields);
+
+  function toggleLetterFields() {
+    const type = typeSel.value;
+    const isSalary = type === 'salary' || type === 'promotion-salary';
+    document.getElementById('ltr-salary-field').hidden = !isSalary;
+    document.getElementById('ltr-rate-field').querySelector('#ltr-rate').closest('.field').hidden = isSalary;
+    document.getElementById('ltr-position-field').hidden = (type === 'increase-en' || type === 'increase-es');
+  }
+
+  document.getElementById('ltr-branch').addEventListener('change', (e) => {
+    const loc = LOCATIONS[e.target.value];
+    if (loc) {
+      document.getElementById('ltr-address').value = loc.address;
+      document.getElementById('ltr-schedule').value = loc.schedule;
+    }
+  });
+  document.getElementById('ltr-schedule-preset').addEventListener('change', (e) => {
+    if (e.target.value) document.getElementById('ltr-schedule').value = e.target.value;
+  });
+  document.getElementById('ltr-reportsto').addEventListener('change', (e) => {
+    const m = employees.find((x) => x.id === e.target.value);
+    document.getElementById('ltr-reportsto-title').value = m ? (m.position || '') : '';
+  });
+
+  document.getElementById('ltr-generate-btn').addEventListener('click', () => generateLetterSheet());
+  document.getElementById('ltr-log-btn').addEventListener('click', async () => {
+    const first = document.getElementById('ltr-first').value.trim();
+    const last = document.getElementById('ltr-last').value.trim();
+    if (!first || !last) { showToast('Employee name is required.', 'error'); return; }
+    const type = typeSel.value;
+    const label = LETTER_TYPES.find((t) => t.value === type)?.label || 'Letter';
     try {
       await addDoc(collection(db, 'activity'), {
-        module: 'documents', item: `Offer letter sent — ${name}`,
+        module: 'documents', item: `${label} sent — ${first} ${last}`,
         entered_by: profile.uid, entered_at: serverTimestamp(),
       });
       showToast('Logged — no rate or salary data was recorded.');
@@ -412,29 +1140,270 @@ function renderOffer(lang) {
   });
 }
 
-function renderOfferSheet(lang) {
-  const isEs = lang === 'es';
-  const sheet = document.getElementById('offer-sheet');
+function letterHead() {
+  return `
+  <div class="decor-band top"><div class="ribbon"></div></div>
+  <div class="letterhead"><img src="${LOGO_DATA_URL}" alt="Southwest Landscape"></div>`;
+}
+function sigBlock(closing = 'Sincerely,') {
+  return `
+  <div class="sig-section">
+    <p>${escapeHtml(closing)}</p>
+    <img src="${HR_SIGNER.sig}" class="sig-img" alt="signature">
+    <p><strong>${escapeHtml(HR_SIGNER.name)}</strong></p>
+    <p>${escapeHtml(HR_SIGNER.title)}</p>
+  </div>`;
+}
+function pageFooter() { return `<div class="decor-band bottom"><div class="ribbon"></div></div>`; }
+function acceptanceBlock(agreementLabel, sigLabel, dateLabel) {
+  return `
+  <div class="acceptance-block">
+    <p class="agreement-label">${escapeHtml(agreementLabel)}</p>
+    <div class="accept-line"><span class="blank"></span><span class="blank short"></span></div>
+    <div class="accept-label-line"><span class="lbl">${escapeHtml(sigLabel)}</span><span class="lbl short">${escapeHtml(dateLabel)}</span></div>
+  </div>`;
+}
+function formatMoney(n) { return (Number(n) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' }); }
+
+function buildHourlyEn(ctx) {
+  const overtime = formatMoney(ctx.rate * 1.5);
+  return `${letterHead()}
+    <p><strong>${ctx.date}</strong></p>
+    <p><strong>Dear Applicant: ${escapeHtml(ctx.name)}</strong></p>
+    <p class="just">On behalf of Southwest Landscape, I am pleased to offer you a <strong>${escapeHtml(ctx.empType)}, Non-exempt</strong> position as <strong>${escapeHtml(ctx.position)}</strong>. If accepted, the terms of your employment with Southwest Landscape will be as follows:</p>
+    <p class="just indent"><strong>1. Start Date.</strong> Your anticipated start date is scheduled for <strong>${ctx.startDate}</strong>.</p>
+    <p class="just indent tight"><strong>2. Compensation.</strong></p>
+    <ul class="tight">
+      <li>You will be paid a wage <strong>${formatMoney(ctx.rate)} per hour</strong></li>
+      <li>Your overtime rate will be <strong>${overtime} per hour</strong> in accordance with applicable laws.</li>
+    </ul>
+    <p class="just">You will be paid on a weekly basis, with each pay period covering work performed Sunday through Saturday. All forms of compensation referred to in this letter are subject to applicable withholding and payroll taxes.</p>
+    <p class="indent tight"><strong>3. Location and Supervisor:</strong></p>
+    <ul>
+      <li>You will be headquartered in our facility located at <strong>${escapeHtml(ctx.address)} – ${escapeHtml(ctx.branchLabel)} Team.</strong></li>
+      <li>You will report to <strong>${escapeHtml(ctx.supervisorName)} – ${escapeHtml(ctx.supervisorTitle)}.</strong></li>
+      <li>Your schedule is as follows: <strong>${escapeHtml(ctx.schedule)}</strong> – Schedule will vary as business needs dictate.</li>
+    </ul>
+    <p class="center">Your location and schedule may be subject to changes as the company's needs may require.</p>
+    <p class="indent section-gap"><strong>4. Benefits.</strong> As a regular employee of Southwest Landscape, you will be eligible for paid vacation time and may elect to enroll in subsidized medical insurance coverage. Participating in the health plan is voluntary and available at your expense. Full details, including eligibility and enrollment, are provided in the Employee Benefits Guide.</p>
+    <p class="section-gap"><strong>5. Conditional Offer.</strong> This offer of employment is contingent upon the successful completion of standard pre-employment verifications. These may include confirmation of employment history, reference checks, review of driving record (if applicable), and verification of any information or credentials provided during the hiring process. This offer is made with the understanding that all information disclosed by the candidate is accurate and complete.</p>
+    <p class="indent section-gap force-break"><strong>6. Employment Relationship.</strong> Notwithstanding any of the above, your employment with Southwest Landscape is "at will" meaning that you or Southwest Landscape can terminate the employment relationship at any time, with or without cause, and with or without notice.</p>
+    <p>If you wish to accept this offer, please sign and date this letter and return it to me by <strong>${ctx.returnDate}</strong>.</p>
+    ${sigBlock()}
+    ${acceptanceBlock('ACCEPTANCE AND AGREEMENT:', 'Signature', 'Date')}
+    ${pageFooter()}`;
+}
+function buildHourlyEs(ctx) {
+  const overtime = formatMoney(ctx.rate * 1.5);
+  return `${letterHead()}
+    <p><strong>${ctx.date}</strong></p>
+    <p><strong>Estimado(a) Solicitante: ${escapeHtml(ctx.name)}</strong></p>
+    <p class="just">En nombre de Southwest Landscape, me complace ofrecerle un puesto <strong>${escapeHtml(ctx.empType)}, no exento</strong> como <strong>${escapeHtml(ctx.position)}</strong>. Si acepta, los términos de su empleo con Southwest Landscape serán los siguientes:</p>
+    <p class="just indent"><strong>1. Fecha de Inicio.</strong> Su fecha de inicio prevista está programada para el <strong>${ctx.startDate}</strong>.</p>
+    <p class="just indent tight"><strong>2. Compensación.</strong></p>
+    <ul class="tight">
+      <li>Se le pagará un salario de <strong>${formatMoney(ctx.rate)} por hora</strong></li>
+      <li>Su tarifa de tiempo extra será de <strong>${overtime} por hora</strong>, de acuerdo con las leyes aplicables.</li>
+    </ul>
+    <p class="just">Se le pagará semanalmente, con cada período de pago cubriendo el trabajo realizado de domingo a sábado. Todas las formas de compensación mencionadas en esta carta están sujetas a las retenciones e impuestos de nómina aplicables.</p>
+    <p class="indent tight"><strong>3. Ubicación y Supervisor:</strong></p>
+    <ul>
+      <li>Usted tendrá su sede en nuestras instalaciones ubicadas en <strong>${escapeHtml(ctx.address)} – Equipo de ${escapeHtml(ctx.branchLabel)}.</strong></li>
+      <li>Usted reportará a <strong>${escapeHtml(ctx.supervisorName)} – ${escapeHtml(ctx.supervisorTitle)}.</strong></li>
+      <li>Su horario es el siguiente: <strong>${escapeHtml(ctx.schedule)}</strong> – El horario puede variar según las necesidades del negocio.</li>
+    </ul>
+    <p class="center">Su ubicación y horario pueden estar sujetos a cambios según lo requieran las necesidades de la empresa.</p>
+    <p class="indent section-gap"><strong>4. Beneficios.</strong> Como empleado regular de Southwest Landscape, usted será elegible para tiempo de vacaciones pagadas y podrá inscribirse en un seguro médico subsidiado. La participación en el plan de salud es voluntaria y está disponible a su cargo. Los detalles completos, incluyendo elegibilidad e inscripción, se proporcionan en la Guía de Beneficios para Empleados.</p>
+    <p class="section-gap"><strong>5. Oferta Condicional.</strong> Esta oferta de empleo está sujeta a la finalización exitosa de las verificaciones estándar previas al empleo. Estas pueden incluir la confirmación del historial laboral, verificación de referencias, revisión del historial de manejo (si aplica), y verificación de cualquier información o credencial proporcionada durante el proceso de contratación. Esta oferta se realiza bajo el entendimiento de que toda la información divulgada por el candidato es precisa y completa.</p>
+    <p class="indent section-gap force-break"><strong>6. Relación Laboral.</strong> No obstante lo anterior, su empleo con Southwest Landscape es "a voluntad", lo que significa que usted o Southwest Landscape pueden terminar la relación laboral en cualquier momento, con o sin causa, y con o sin previo aviso.</p>
+    <p>Si desea aceptar esta oferta, favor de firmar y fechar esta carta y devolverla a mí antes del <strong>${ctx.returnDate}</strong>.</p>
+    ${sigBlock('Atentamente,')}
+    ${acceptanceBlock('ACEPTACIÓN Y ACUERDO:', 'Firma', 'Fecha')}
+    ${pageFooter()}`;
+}
+function buildSalary(ctx) {
+  return `${letterHead()}
+    <p><strong>${ctx.date}</strong></p>
+    <p><strong>Dear Applicant: ${escapeHtml(ctx.name)}</strong></p>
+    <p class="just">On behalf of Southwest Landscape, I am pleased to offer you a <strong>${escapeHtml(ctx.empType)}, exempt</strong> position as <strong>${escapeHtml(ctx.position)}</strong>. If accepted, the terms of your employment with Southwest Landscape will be as follows:</p>
+    <p class="just indent"><strong>1. Start Date.</strong> Your anticipated start date is scheduled for <strong>${ctx.startDate}</strong>.</p>
+    <p class="just indent tight"><strong>2. Compensation.</strong></p>
+    <ul class="tight"><li>You will be paid a starting salary of <strong>${formatMoney(ctx.salary)} per annum.</strong></li></ul>
+    <p class="just">You will be paid on a weekly basis, with each pay period covering work performed Sunday through Saturday. All forms of compensation referred to in this letter are subject to applicable withholding and payroll taxes.</p>
+    <p class="indent tight"><strong>3. Location and Supervisor:</strong></p>
+    <ul>
+      <li>You will be headquartered in our facility located at <strong>${escapeHtml(ctx.address)} – ${escapeHtml(ctx.branchLabel)} Team.</strong></li>
+      <li>You will report to <strong>${escapeHtml(ctx.supervisorName)} – ${escapeHtml(ctx.supervisorTitle)}.</strong></li>
+      <li>Your schedule is as follows: <strong>${escapeHtml(ctx.schedule)}</strong> – Schedule will vary as business needs dictate.</li>
+    </ul>
+    <p class="center">Your location and schedule may be subject to changes as the company's needs may require.</p>
+    <p class="indent section-gap"><strong>4. Benefits.</strong> As a regular employee of Southwest Landscape, you will be eligible for paid vacation time and may elect to enroll in subsidized medical insurance coverage. Participating in the health plan is voluntary and available at your expense. Full details, including eligibility and enrollment, are provided in the Employee Benefits Guide.</p>
+    <p class="section-gap"><strong>5. Conditional Offer.</strong> This offer of employment is contingent upon the successful completion of standard pre-employment verifications. These may include confirmation of employment history, reference checks, review of driving record (if applicable), and verification of any information or credentials provided during the hiring process. This offer is made with the understanding that all information disclosed by the candidate is accurate and complete.</p>
+    <p class="indent section-gap force-break"><strong>6. Employment Relationship.</strong> Notwithstanding any of the above, your employment with Southwest Landscape is "at will" meaning that you or Southwest Landscape can terminate the employment relationship at any time, with or without cause, and with or without notice.</p>
+    <p>If you wish to accept this offer, please sign and date this letter and return it to me by <strong>${ctx.returnDate}</strong>.</p>
+    ${sigBlock()}
+    ${acceptanceBlock('ACCEPTANCE AND AGREEMENT:', 'Signature', 'Date')}
+    ${pageFooter()}`;
+}
+function buildIncreaseEn(ctx) {
+  const overtime = formatMoney(ctx.rate * 1.5);
+  return `${letterHead()}
+    <p><strong>${ctx.date}</strong></p>
+    <p><strong>Dear ${escapeHtml(ctx.name)}:</strong></p>
+    <p class="just">Southwest Landscape is pleased to notify you of a wage increase in recognition of your continued contributions and commitment to our team.</p>
+    <p class="just indent"><strong>1. Effective Date.</strong> Your new rate of pay will go into effect on <strong>${ctx.startDate}</strong>.</p>
+    <p class="just indent tight"><strong>2. Compensation.</strong></p>
+    <ul class="tight">
+      <li>You will be paid a wage <strong>${formatMoney(ctx.rate)} per hour</strong></li>
+      <li>Your overtime rate will be <strong>${overtime} per hour</strong> in accordance with applicable laws.</li>
+    </ul>
+    <p class="just">You will be paid on a weekly basis, with each pay period covering work performed Sunday through Saturday. All forms of compensation referred to in this letter are subject to applicable withholding and payroll taxes.</p>
+    <p class="indent tight"><strong>3. Location and Supervisor:</strong></p>
+    <ul>
+      <li>You will be headquartered in our facility located at <strong>${escapeHtml(ctx.address)} – ${escapeHtml(ctx.branchLabel)} Team.</strong></li>
+      <li>You will report to <strong>${escapeHtml(ctx.supervisorName)} – ${escapeHtml(ctx.supervisorTitle)}.</strong></li>
+      <li>Your schedule is as follows: <strong>${escapeHtml(ctx.schedule)}</strong> – Schedule will vary as business needs dictate.</li>
+    </ul>
+    <p class="center">Your location and schedule may be subject to changes as the company's needs may require.</p>
+    <p class="indent section-gap"><strong>4. Benefits.</strong> As a regular employee of Southwest Landscape, you will be eligible for paid vacation time and may elect to enroll in subsidized medical insurance coverage. Participating in the health plan is voluntary and available at your expense. Full details, including eligibility and enrollment, are provided in the Employee Benefits Guide.</p>
+    <p class="section-gap"><strong>5. Conditional Offer.</strong> This offer of employment is contingent upon the successful completion of standard pre-employment verifications. These may include confirmation of employment history, reference checks, review of driving record (if applicable), and verification of any information or credentials provided during the hiring process. This offer is made with the understanding that all information disclosed by the candidate is accurate and complete.</p>
+    <p class="indent section-gap force-break"><strong>6. Employment Relationship.</strong> Notwithstanding any of the above, your employment with Southwest Landscape is "at will" meaning that you or Southwest Landscape can terminate the employment relationship at any time, with or without cause, and with or without notice.</p>
+    <p>If you wish to accept this offer, please sign and date this letter and return it to me by <strong>${ctx.returnDate}</strong>.</p>
+    ${sigBlock()}
+    ${acceptanceBlock('ACCEPTANCE AND AGREEMENT:', 'Signature', 'Date')}
+    ${pageFooter()}`;
+}
+function buildIncreaseEs(ctx) {
+  const overtime = formatMoney(ctx.rate * 1.5);
+  return `${letterHead()}
+    <p><strong>${ctx.date}</strong></p>
+    <p><strong>Estimado(a) ${escapeHtml(ctx.name)}:</strong></p>
+    <p class="just">Southwest Landscape se complace en notificarle un aumento salarial en reconocimiento a sus continuas contribuciones y compromiso con nuestro equipo.</p>
+    <p class="just indent"><strong>1. Fecha de Vigencia.</strong> Su nueva tasa de pago entrará en vigor el <strong>${ctx.startDate}</strong>.</p>
+    <p class="just indent tight"><strong>2. Compensación.</strong></p>
+    <ul class="tight">
+      <li>Se le pagará un salario de <strong>${formatMoney(ctx.rate)} por hora</strong>.</li>
+      <li>Su tasa de pago por horas extras será de <strong>${overtime} por hora</strong>, de acuerdo con las leyes aplicables.</li>
+    </ul>
+    <p class="just">Usted será pagado(a) semanalmente, con cada período de pago cubriendo el trabajo realizado de domingo a sábado. Todas las formas de compensación mencionadas en esta carta están sujetas a las retenciones y los impuestos correspondientes.</p>
+    <p class="indent tight"><strong>3. Ubicación y Supervisor:</strong></p>
+    <ul>
+      <li>Su lugar de trabajo principal será en nuestras instalaciones ubicadas en <strong>${escapeHtml(ctx.address)} – Equipo de ${escapeHtml(ctx.branchLabel)}.</strong></li>
+      <li>Usted reportará a <strong>${escapeHtml(ctx.supervisorName)} – ${escapeHtml(ctx.supervisorTitle)}.</strong></li>
+      <li>Su horario será el siguiente: <strong>${escapeHtml(ctx.schedule)}</strong>; el horario puede variar según las necesidades del negocio.</li>
+    </ul>
+    <p class="center">Su ubicación y horario pueden estar sujetos a cambios según lo requieran las necesidades de la empresa.</p>
+    <p class="indent section-gap"><strong>4. Beneficios.</strong> Como empleado(a) regular de Southwest Landscape, usted será elegible para tiempo de vacaciones pagadas y podrá optar por inscribirse en un plan de seguro médico subsidiado. La participación en el plan médico es voluntaria y está disponible a su propio costo. Los detalles completos, incluyendo elegibilidad e inscripción, se encuentran en la Guía de Beneficios para Empleados.</p>
+    <p class="section-gap"><strong>5. Oferta Condicional.</strong> Esta oferta de empleo está condicionada a la finalización exitosa de las verificaciones estándar previas al empleo. Estas pueden incluir confirmación de historial laboral, verificación de referencias, revisión del registro de manejo (si aplica) y verificación de cualquier información o credenciales proporcionadas durante el proceso de contratación. Esta oferta se realiza bajo el entendimiento de que toda la información proporcionada por el candidato es precisa y completa.</p>
+    <p class="indent section-gap force-break"><strong>6. Relación Laboral.</strong> Sin perjuicio de lo anterior, su empleo con Southwest Landscape es "a voluntad", lo que significa que usted o Southwest Landscape pueden terminar la relación laboral en cualquier momento, con o sin causa, y con o sin previo aviso.</p>
+    <p>Si desea aceptar esta oferta, firme y feche esta carta y regrésela a mí antes del <strong>${ctx.returnDate}</strong>.</p>
+    ${sigBlock('Atentamente,')}
+    ${acceptanceBlock('ACEPTACIÓN Y ACUERDO:', 'Firma', 'Fecha')}
+    ${pageFooter()}`;
+}
+function buildPromotionHourly(ctx) {
+  const overtime = formatMoney(ctx.rate * 1.5);
+  return `${letterHead()}
+    <p><strong>${ctx.date}</strong></p>
+    <p><strong>Dear ${escapeHtml(ctx.name)}:</strong></p>
+    <p class="just">On behalf of Southwest Landscape, I am pleased to offer you a title change as a <strong>${escapeHtml(ctx.empType)}, Non-exempt</strong> position as <strong>${escapeHtml(ctx.position)}</strong>. If accepted, the terms of your employment with Southwest Landscape will be as follows:</p>
+    <p class="just indent"><strong>1. Effective Date.</strong> Your anticipated start date is scheduled for <strong>${ctx.startDate}</strong>.</p>
+    <p class="just indent tight"><strong>2. Compensation.</strong></p>
+    <ul class="tight">
+      <li>You will be paid a starting wage at <strong>${formatMoney(ctx.rate)} per hour</strong>.</li>
+      <li>Your overtime rate will be <strong>${overtime} per hour</strong> in accordance with applicable law.</li>
+    </ul>
+    <p class="just">You will be paid on a weekly basis, with each pay period covering work performed Sunday through Saturday. All forms of compensation referred to in this letter are subject to applicable withholding and payroll taxes.</p>
+    <p class="indent tight"><strong>3. Location and Supervisor:</strong></p>
+    <ul>
+      <li>You will be headquartered in our facility located at <strong>${escapeHtml(ctx.address)} – ${escapeHtml(ctx.branchLabel)} Team.</strong></li>
+      <li>You will report to <strong>${escapeHtml(ctx.supervisorName)} – ${escapeHtml(ctx.supervisorTitle)}.</strong></li>
+      <li>Your schedule is as follows: <strong>${escapeHtml(ctx.schedule)}</strong> – Schedule will vary as business needs dictate.</li>
+    </ul>
+    <p class="center">Your location and schedule may be subject to changes as the company's needs may require.</p>
+    <p class="indent section-gap"><strong>4. Benefits.</strong> Your current elected benefits and vacation/sick time accruals remain the same as outlined in our Employee Benefits Guide and Handbook.</p>
+    <p class="section-gap"><strong>5. 90-Day Performance Period.</strong> You will be subject to a 90-day performance review, starting from your first day in the position. The purpose of this period is to assess your suitability for the position and to provide you with feedback, coaching, and training to help you succeed in your role. Your supervisor will conduct a formal performance evaluation at the end of the 90-day performance period to determine if you will continue with this role. If it is determined during or at the end of the 90-day performance period that the position is not a good fit, the Company may, at its discretion, attempt to place you in your former position (or a comparable position) if one is available. However, the Company cannot guarantee such placement.</p>
+    <p class="indent section-gap force-break"><strong>6. Employment Relationship.</strong> Notwithstanding any of the above, your employment with Southwest Landscape is "at will" meaning that you or Southwest Landscape can terminate the employment relationship at any time, with or without cause, and with or without notice.</p>
+    <p>If you wish to accept this offer, please sign and date this letter and return it to me by <strong>${ctx.returnDate}</strong>.</p>
+    ${sigBlock()}
+    ${acceptanceBlock('ACCEPTANCE AND AGREEMENT:', 'Signature', 'Date')}
+    ${pageFooter()}`;
+}
+function buildPromotionSalary(ctx) {
+  return `${letterHead()}
+    <p><strong>${ctx.date}</strong></p>
+    <p><strong>Dear ${escapeHtml(ctx.name)}:</strong></p>
+    <p class="just">On behalf of Southwest Landscape, I am pleased to offer you a title change as a <strong>${escapeHtml(ctx.empType)}, exempt</strong> position as <strong>${escapeHtml(ctx.position)}</strong>. If accepted, the terms of your employment with Southwest Landscape will be as follows:</p>
+    <p class="just indent"><strong>1. Effective Date.</strong> Your anticipated start date is scheduled for <strong>${ctx.startDate}</strong>.</p>
+    <p class="just indent tight"><strong>2. Compensation.</strong></p>
+    <ul class="tight"><li>You will be paid a starting salary of <strong>${formatMoney(ctx.salary)} per annum.</strong></li></ul>
+    <p class="just">You will be paid on a weekly basis, with each pay period covering work performed Sunday through Saturday. All forms of compensation referred to in this letter are subject to applicable withholding and payroll taxes.</p>
+    <p class="indent tight"><strong>3. Location and Supervisor:</strong></p>
+    <ul>
+      <li>You will be headquartered in our facility located at <strong>${escapeHtml(ctx.address)} – ${escapeHtml(ctx.branchLabel)} Team.</strong></li>
+      <li>You will report to <strong>${escapeHtml(ctx.supervisorName)} – ${escapeHtml(ctx.supervisorTitle)}.</strong></li>
+      <li>Your schedule is as follows: <strong>${escapeHtml(ctx.schedule)}</strong> – Schedule will vary as business needs dictate.</li>
+    </ul>
+    <p class="center">Your location and schedule may be subject to changes as the company's needs may require.</p>
+    <p class="indent section-gap"><strong>4. Benefits.</strong> Your current elected benefits and vacation/sick time accruals remain the same as outlined in our Employee Benefits Guide and Handbook.</p>
+    <p class="section-gap"><strong>5. 90-Day Performance Period.</strong> You will be subject to a 90-day performance review, starting from your first day in the position. The purpose of this period is to assess your suitability for the position and to provide you with feedback, coaching, and training to help you succeed in your role. Your supervisor will conduct a formal performance evaluation at the end of the 90-day performance period to determine if you will continue with this role. If it is determined during or at the end of the 90-day performance period that the position is not a good fit, the Company may, at its discretion, attempt to place you in your former position (or a comparable position) if one is available. However, the Company cannot guarantee such placement.</p>
+    <p class="indent section-gap force-break"><strong>6. Employment Relationship.</strong> Notwithstanding any of the above, your employment with Southwest Landscape is "at will" meaning that you or Southwest Landscape can terminate the employment relationship at any time, with or without cause, and with or without notice.</p>
+    <p>If you wish to accept this offer, please sign and date this letter and return it to me by <strong>${ctx.returnDate}</strong>.</p>
+    ${sigBlock()}
+    ${acceptanceBlock('ACCEPTANCE AND AGREEMENT:', 'Signature', 'Date')}
+    ${pageFooter()}`;
+}
+
+function generateLetterSheet() {
+  const type = document.getElementById('ltr-type').value;
+  const first = document.getElementById('ltr-first').value.trim();
+  const last = document.getElementById('ltr-last').value.trim();
+  const branchKey = document.getElementById('ltr-branch').value;
+  const loc = LOCATIONS[branchKey];
+  const address = document.getElementById('ltr-address').value.trim();
+  const schedule = document.getElementById('ltr-schedule').value.trim();
+  const reportsToId = document.getElementById('ltr-reportsto').value;
+  const reportsTo = employees.find((e) => e.id === reportsToId);
+  const reportsToTitle = document.getElementById('ltr-reportsto-title').value.trim();
+  const letterDate = document.getElementById('ltr-date').value;
+  const startDate = document.getElementById('ltr-start').value;
+  const returnDate = document.getElementById('ltr-return').value;
+  const position = document.getElementById('ltr-position').value.trim();
+  const empType = document.getElementById('ltr-emptype').value;
+  const rate = parseFloat(document.getElementById('ltr-rate').value);
+  const salary = parseFloat(document.getElementById('ltr-salary').value);
+
+  if (!first || !last) return showToast('Enter the employee\'s name.', 'error');
+  if (!loc) return showToast('Select a branch.', 'error');
+  if (!address) return showToast('Enter a facility address.', 'error');
+  if (!schedule) return showToast('Enter a schedule.', 'error');
+  if (!reportsTo) return showToast('Select who this employee reports to.', 'error');
+  if (!letterDate || !startDate || !returnDate) return showToast('Letter date, start date, and return-by date are all required.', 'error');
+  const positionRequired = type !== 'increase-en' && type !== 'increase-es';
+  if (positionRequired && !position) return showToast('Enter a position title.', 'error');
+  const isSalaryType = type === 'salary' || type === 'promotion-salary';
+  if (!isSalaryType && (!rate || rate <= 0)) return showToast('Enter a valid hourly rate.', 'error');
+  if (isSalaryType && (!salary || salary <= 0)) return showToast('Enter a valid annual salary.', 'error');
+
+  const isEs = type === 'hourly-es' || type === 'increase-es';
+  const ctx = {
+    name: `${first} ${last}`,
+    date: longDate(letterDate, isEs), startDate: longDate(startDate, isEs), returnDate: longDate(returnDate, isEs),
+    position, empType, rate, salary, address, schedule, branchLabel: loc.label,
+    supervisorName: `${reportsTo.first_name} ${reportsTo.last_name}`,
+    supervisorTitle: reportsToTitle || reportsTo.position || '',
+  };
+
+  const builders = {
+    'hourly-en': buildHourlyEn, 'hourly-es': buildHourlyEs, salary: buildSalary,
+    'increase-en': buildIncreaseEn, 'increase-es': buildIncreaseEs,
+    'promotion-hourly': buildPromotionHourly, 'promotion-salary': buildPromotionSalary,
+  };
+  const sheet = document.getElementById('ltr-sheet');
   sheet.hidden = false;
-  sheet.innerHTML = `
-    <div class="doc-bar">${isEs ? 'Carta de Oferta' : 'Offer Letter'}</div>
-    <div class="doc-body">
-      <div class="doc-grid">
-        <div><b>${isEs ? 'Candidato' : 'Candidate'}</b>${document.getElementById('offer-name').value}</div>
-        <div><b>${isEs ? 'Puesto' : 'Job title'}</b>${document.getElementById('offer-title').value}</div>
-        <div><b>${isEs ? 'Sucursal' : 'Branch'}</b>${document.getElementById('offer-branch').value}</div>
-        <div><b>${isEs ? 'Reporta a' : 'Reports to'}</b>${document.getElementById('offer-manager').value}</div>
-        <div><b>${isEs ? 'Tarifa' : 'Rate'}</b>${document.getElementById('offer-rate').value}</div>
-        <div><b>${isEs ? 'Horario' : 'Schedule'}</b>${document.getElementById('offer-schedule').value}</div>
-        <div><b>${isEs ? 'Fecha de inicio' : 'Start date'}</b>${formatDate(document.getElementById('offer-start').value)}</div>
-        <div><b>${isEs ? 'Firmar antes de' : 'Sign & return by'}</b>${formatDate(document.getElementById('offer-returnby').value)}</div>
-      </div>
-      <div class="doc-fineprint">${isEs
-        ? 'Esta oferta está condicionada a la verificación de elegibilidad de empleo y otras contingencias estándar. El empleo es a voluntad.'
-        : 'This offer is contingent on employment eligibility verification and other standard contingencies. Employment is at-will.'}</div>
-      <div class="sig-line" style="margin-top:50px;width:60%">${isEs ? 'Firma' : 'Signature'} / ${isEs ? 'Fecha' : 'Date'}</div>
-    </div>
-  `;
+  sheet.innerHTML = builders[type](ctx);
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  showToast('Letter generated.');
 }
 
 // ---- Onboarding packet ----
@@ -474,6 +1443,7 @@ async function renderOnboarding(lang) {
 }
 
 await loadEmployees();
+await loadTerminations();
 </script>
 </body>
 </html>

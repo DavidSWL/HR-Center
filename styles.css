@@ -285,3 +285,34 @@ select.f-in{
   .hero-r{border-left:0;border-top:1px solid var(--line)}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ---- form-style printed documents: Write-up / Termination / 30-60-90
+   review — matches the real printed SWL forms: logo + wordmark header,
+   dark section bars, bordered label/value grids, checkbox rows. Shared
+   here (not per-page) since discipline.html and docgen.html both use it. */
+.form-doc{border:1px solid var(--line);background:#fff;color:#111;max-width:850px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;font-size:12.5px}
+.form-doc-inner{padding:22px}
+.form-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
+.form-head img{height:46px;width:auto;display:block}
+.form-head .wordmark{font-family:var(--display);font-size:15px;text-align:right;color:#444;line-height:1.15;text-transform:uppercase}
+.form-title{font-family:var(--display);font-size:18px;margin:0 0 14px}
+.form-section{background:#3d3d3d;color:#fff;font-weight:700;text-transform:uppercase;font-size:11.5px;letter-spacing:.03em;padding:6px 10px;margin-top:14px}
+.form-section:first-of-type{margin-top:0}
+.form-grid{display:grid;border:1px solid #999;border-top:none}
+.form-grid.c2{grid-template-columns:1fr 1fr}
+.form-grid.c3{grid-template-columns:1fr 1fr 1fr}
+.form-cell{border-top:1px solid #999;border-right:1px solid #999;padding:6px 9px;min-height:30px}
+.form-cell:last-child{border-right:none}
+.form-cell b{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:#333;margin-bottom:2px}
+.form-checks{border:1px solid #999;border-top:none;padding:8px 10px;display:flex;flex-wrap:wrap;gap:6px 22px;font-size:12px}
+.form-checks label{white-space:nowrap}
+.form-checks input[type=checkbox],.form-checks input[type=radio]{margin-right:5px}
+.form-box{border:1px solid #999;border-top:none;padding:8px 10px;min-height:50px;font-size:12.5px;white-space:pre-wrap}
+.form-notice-table{width:100%;border-collapse:collapse;font-size:11.5px}
+.form-notice-table th,.form-notice-table td{border:1px solid #999;padding:5px 8px;text-align:left}
+.form-notice-table th{background:#eee;font-size:9.5px;text-transform:uppercase;letter-spacing:.03em}
+.form-fine{font-size:9.5px;color:#444;font-style:italic;border:1px solid #999;border-top:none;padding:7px 9px;background:#f7f7f7}
+.form-sig{display:grid;grid-template-columns:2fr 1fr;border:1px solid #999;border-top:none}
+.form-sig div{padding:8px 9px;border-right:1px solid #999;font-size:12px}
+.form-sig div:last-child{border-right:none}
+.form-atwill{font-size:10px;font-style:italic;color:#444;margin-top:10px}

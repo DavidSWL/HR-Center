@@ -42,7 +42,13 @@ service cloud.firestore {
         // compensation
         'pay_rate', 'payRate', 'pay_type', 'payType', 'salary',
         'salary_band', 'salaryBand', 'bonus', 'comp_history', 'compHistory',
-        'hourly_rate', 'hourlyRate',
+        'hourly_rate', 'hourlyRate', 'annual_salary', 'annualSalary',
+        // final-pay figures on the termination form — printed only, per the
+        // same rule as any other pay amount
+        'final_wages_amount', 'finalWagesAmount', 'regular_hours',
+        'regularHours', 'ot_hours', 'otHours', 'overtime_hours',
+        'overtimeHours', 'vac_hours', 'vacHours', 'sick_pay', 'sickPay',
+        'cmp_hours', 'cmpHours',
         // identity / financial
         'ssn', 'social_security', 'socialSecurity', 'ssn_last4', 'ssnLast4',
         'bank_account', 'bankAccount', 'bank_routing', 'bankRouting',
@@ -128,6 +134,20 @@ service cloud.firestore {
     }
 
     match /notes_to_file/{noteId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data)
+        && stamped(request.resource.data);
+      allow update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+    }
+
+    // One doc per separation event, FK'd to emp_id — an employee can have
+    // more than one over time (rehire), so this isn't a field on the
+    // employees doc itself. Final-pay dollar figures are typed on the
+    // generator, printed, and never included in the write — see
+    // hasForbiddenFields above, which also rejects them if a future edit
+    // accidentally includes one.
+    match /terminations/{terminationId} {
       allow read: if isHrUser();
       allow create: if isHrUser() && isClean(request.resource.data)
         && stamped(request.resource.data);
