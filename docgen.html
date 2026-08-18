@@ -191,12 +191,18 @@ document.getElementById('lang-select').addEventListener('change', () => renderCu
 
 let employees = [];       // active only — for "who can this happen to" selects
 let allEmployeesEver = []; // includes terminated — for name lookups on old records
+let managerIds = new Set(); // set in Settings — who shows up in "Reports to" on letters
 let currentKey = null;
 
 async function loadEmployees() {
   const snap = await getDocs(collection(db, 'employees'));
   allEmployeesEver = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   employees = allEmployeesEver.filter((e) => e.status !== 'terminated');
+}
+
+async function loadManagerIds() {
+  const snap = await getDoc(doc(db, 'settings', 'managers'));
+  managerIds = new Set(snap.exists() ? (snap.data().employee_ids || []) : []);
 }
 
 function empSelectOptions(list = employees) {
@@ -1064,9 +1070,10 @@ function renderLetters() {
           <div class="field"><label class="f-lab">Schedule (editable)</label><input class="f-in" id="ltr-schedule"></div>
         </div>
         <div class="frow">
-          <div class="field"><label class="f-lab">Reports to</label><select class="f-in" id="ltr-reportsto">${empSelectOptions()}</select></div>
+          <div class="field"><label class="f-lab">Reports to</label><select class="f-in" id="ltr-reportsto">${empSelectOptions(employees.filter((e) => managerIds.has(e.id)))}</select></div>
           <div class="field"><label class="f-lab">Reports-to title</label><input class="f-in" id="ltr-reportsto-title"></div>
         </div>
+        ${managerIds.size === 0 ? '<p class="dim" style="margin:-4px 0 12px">No managers marked yet — add them in Settings → Managers.</p>' : ''}
         <div class="frow" id="ltr-rate-field">
           <div class="field"><label class="f-lab">Hourly rate ($, printed only — never saved)</label><input class="f-in" id="ltr-rate" type="number" step="0.01"></div>
           <div class="field" id="ltr-salary-field" hidden><label class="f-lab">Annual salary ($, printed only — never saved)</label><input class="f-in" id="ltr-salary" type="number" step="0.01"></div>
@@ -1443,6 +1450,7 @@ async function renderOnboarding(lang) {
 }
 
 await loadEmployees();
+await loadManagerIds();
 await loadTerminations();
 </script>
 </body>

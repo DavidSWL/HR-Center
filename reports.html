@@ -110,7 +110,12 @@ async function ensureLoaded(names) {
   for (const name of names) {
     if (!data[name]) {
       const snap = await getDocs(collection(db, name));
-      data[name] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      let rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      // Test employees (flagged in the roster for QA/demo use) never count
+      // toward any report — same reasoning as excluding them from the
+      // dashboard's headcount.
+      if (name === 'employees') rows = rows.filter((e) => !e.is_test);
+      data[name] = rows;
     }
   }
 }

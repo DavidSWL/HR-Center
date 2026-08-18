@@ -82,6 +82,7 @@ if (profile) {
 
     snap.forEach((docSnap) => {
       const e = docSnap.data();
+      if (e.is_test) return;
       if (e.status !== 'terminated') {
         active++;
         if (e.division) divisions.add(e.division);
