@@ -43,7 +43,10 @@
       <div id="library-view">
         <div class="card" style="margin-bottom:16px">
           <div class="card-h"><h3>Course library</h3><span></span></div>
-          <div class="tools"><button class="gh solid" id="add-course-btn" type="button">Add course</button></div>
+          <div class="tools">
+            <button class="gh solid" id="add-course-btn" type="button">Add course</button>
+            <button class="gh" id="load-starter-btn" type="button">Load starter courses</button>
+          </div>
           <table><tbody id="course-rows"></tbody></table>
         </div>
 
@@ -128,6 +131,81 @@ const SHRM_DOMAINS = [
   'Business Acumen', 'Consultation', 'Critical Evaluation', 'Ethical Practice',
   'Global & Cultural Effectiveness', 'Communication', 'Relationship Management',
   'Leadership & Navigation', 'HR Knowledge — People', 'HR Knowledge — Organization', 'HR Knowledge — Workplace',
+];
+
+// Internal practice reference for using the SWL HR Center itself — not a
+// substitute for legal advice or any mandated compliance training (e.g.
+// CA harassment-prevention or Cal/OSHA training has its own delivery
+// requirements and isn't covered here).
+const STARTER_COURSES = [
+  {
+    title: 'Documentation Standards at SWL',
+    description: 'Why every write is signed and dated, and what belongs in which module.',
+    sections: [
+      { title: 'Why every write is signed and dated', type: 'reading', content:
+        'Every write in the HR Center records who did it and when — entered_by is never optional. An undocumented action is, for practical purposes, the same as one that never happened: if a write-up, a coaching conversation, or a corrective action isn\'t in the system, there\'s no record to point to later. This applies the same way whether you\'re logging a write-up, a note to file, an incident, or marking a task complete.' },
+      { title: 'Notes to file vs. disciplinary action', type: 'reading', content:
+        'A note to file is for documented conversations, coaching notes, manager or employee statements — it does not count as a step in progressive discipline. A write-up in Disciplinary actions does count as a step, and moves the employee along the four-step ladder (Verbal, First, Second, Final). Use a note when you want a record of a conversation without starting or advancing formal discipline; use a write-up when the conduct warrants a documented step.' },
+      { title: 'What belongs where', type: 'reading', content:
+        'Quick reference: Attendance — No Call No Show or Other with a required reason, no point system. Disciplinary actions — the write-up ladder. Notes to file — coaching/documented conversations, not a step. Incidents — Cal/OSHA-relevant safety events. Employee relations — harassment, discrimination, retaliation, conduct/violence, and similar issues, handled through intake and interviews, not through a write-up.' },
+    ],
+    test_questions: [
+      { question: 'What\'s the difference between a note to file and a disciplinary action?', choices: ['There is no difference', 'Notes don\'t count as a step in progressive discipline; disciplinary actions do', 'Notes are only for managers, disciplinary actions are only for HR', 'Notes require a witness signature and disciplinary actions don\'t'], correct_index: 1 },
+      { question: 'Who is allowed to leave the entered_by field blank on a write?', choices: ['Managers, but not HR', 'No one — every write in the system requires it', 'David only', 'Anyone using a shared login'], correct_index: 1 },
+      { question: 'How does attendance tracking work in this system?', choices: ['A point system where points expire after 12 months', 'Two occurrence types — No Call No Show, and Other with a required reason — no point system', 'Unlimited absences are allowed before any record is made', 'Attendance is tracked in a separate spreadsheet, not the HR Center'], correct_index: 1 },
+    ],
+  },
+  {
+    title: 'Progressive Discipline & Write-ups',
+    description: 'The four-step ladder, filling out the write-up form, and keeping documentation consistent.',
+    sections: [
+      { title: 'The four-step ladder', type: 'reading', content:
+        'Warnings move through four steps: Verbal, First Warning, Second Warning, Final Warning. The system computes an employee\'s position on the ladder from the sequence of their own prior write-ups, oldest first — not from whatever level you happen to select on a single form. Severity can still justify skipping straight to a later step, or directly to termination, regardless of how many prior steps exist.' },
+      { title: 'Filling out the write-up form', type: 'reading', content:
+        'The write-up form matches the printed SWL Employee Write Up form field for field: Date of Infraction, Type of Warning, Type of Offenses (more than one can apply), Description of Infraction, Plan for Improvement, Follow-Up Review Date, Consequences of Further Infractions, and an optional Employee Comments/Response. Filling it out in the app generates the same printable sheet the employee signs.' },
+      { title: 'Consistency & documentation quality', type: 'reading', content:
+        'Write factual, specific, behavior-based descriptions — dates, what was observed, what was said — rather than characterizations or generalities. Setting a Follow-Up Review Date automatically creates a task, so the follow-up doesn\'t depend on anyone remembering it. Consistent documentation across similar situations is what makes the discipline record defensible later.' },
+    ],
+    test_questions: [
+      { question: 'What determines an employee\'s current step on the four-step ladder?', choices: ['Whatever level the manager selects on the current form', 'The sequence of that employee\'s own prior write-ups, oldest first', 'The employee\'s tenure', 'A company-wide point total'], correct_index: 1 },
+      { question: 'Can a serious incident skip straight to a Final Warning or termination?', choices: ['No, all four steps must be used in order', 'Yes — severity can justify skipping steps', 'Only if HR pre-approves it in writing 30 days in advance', 'Only for safety violations'], correct_index: 1 },
+      { question: 'What happens when you set a Follow-Up Review Date on a write-up?', choices: ['Nothing — it\'s just a note', 'A follow-up task is automatically created', 'The employee is automatically notified by email', 'The write-up is automatically escalated a step'], correct_index: 1 },
+    ],
+  },
+  {
+    title: 'Employee Relations Intake & Confidentiality',
+    description: 'Case types, how interview questions are generated, and what stays out of the system.',
+    sections: [
+      { title: 'Case types & case IDs', type: 'reading', content:
+        'Cases are typed at intake: harassment, discrimination, retaliation, conduct/violence, attendance, performance, safety, or other. Case IDs continue the existing ER-YYYY-### sequence and are never renumbered, even if a case is later found to be unfounded or withdrawn.' },
+      { title: 'Intake, interviews & the generated questions', type: 'reading', content:
+        'The issue type you select at intake drives the questions asked in every interview. The complainant gets questions tailored to that issue type. The accused always starts with a retaliation notice — that retaliating against anyone involved is prohibited and grounds for separate discipline — before being asked for their account, with follow-up questions specific to the issue type. Witnesses are asked to limit their answers to what they personally observed, with a closing question about whether anyone coached them on what to say.' },
+      { title: 'What stays out of the system', type: 'reading', content:
+        'The full narrative, witness statements, and complainant identity live in the Word investigation notes — not in the HR Center. Only the case skeleton and structured question responses are stored here. A case cannot move to review while any interview is still pending. Only David can close an employee relations case, and that\'s enforced in the security rules, not just the interface.' },
+    ],
+    test_questions: [
+      { question: 'Where does the full narrative and witness statement content live?', choices: ['In the case notes field in the HR Center', 'In the Word investigation notes, not the HR Center', 'In the employee\'s personnel file', 'It isn\'t recorded anywhere'], correct_index: 1 },
+      { question: 'Who can close an employee relations case?', choices: ['Any HR staff member', 'Only David', 'The employee\'s manager', 'Whoever opened the case'], correct_index: 1 },
+      { question: 'Can a case move to "review" status while an interview is still pending?', choices: ['Yes, as long as HR notes it', 'No', 'Only for low-severity case types', 'Only if the complainant agrees'], correct_index: 1 },
+    ],
+  },
+  {
+    title: 'Terminations & Final Pay Basics',
+    description: 'Filling out the termination form, final pay timing, and why dollar figures aren\'t stored.',
+    sections: [
+      { title: 'Filling out the termination form', type: 'reading', content:
+        'The termination generator matches the printed SWL Termination Form: reason for termination, description of circumstances, company property return, and required notices (EDD "For Your Benefit" pamphlet, Notice to Employee as to Change in Relationship for involuntary separations, COBRA election notice, HIPP notice). Filling it out in the app files the record and generates the same printable form.' },
+      { title: 'Final pay timing', type: 'reading', content:
+        'The printed form itself states the timing rule: involuntary termination — wages due immediately, same day. Voluntary resignation with less than 72 hours\' notice — wages due within 72 hours. Late final pay may trigger waiting-time penalties under Labor Code §201-203. Always confirm current requirements before issuing a final check — this is a starting reference, not a substitute for checking current law.' },
+      { title: 'Why final pay figures aren\'t saved in this system', type: 'reading', content:
+        'Regular hours, OT hours, vacation, sick pay, CMP, and the final wages amount are typed directly on the termination generator, printed on the form, and then discarded — none of it is written to the employee\'s record. This follows the same rule as every other compensation figure in the HR Center: rates and pay amounts are never stored, only printed.' },
+    ],
+    test_questions: [
+      { question: 'Per the termination form, when are final wages generally due for an involuntary termination?', choices: ['Within 30 days', 'Immediately, on the same day', 'On the next regular payday', 'Within 72 hours'], correct_index: 1 },
+      { question: 'Are the final-pay dollar amounts entered on the termination generator saved to the employee\'s record?', choices: ['Yes, permanently', 'No — they\'re typed, printed, and never saved', 'Only if HR checks a box to save them', 'Only David can save them'], correct_index: 1 },
+      { question: 'What Labor Code section does the termination form reference for late final pay?', choices: ['§201-203', '§2810.5', '§512', '§226'], correct_index: 0 },
+    ],
+  },
 ];
 
 let courses = [];
@@ -307,6 +385,24 @@ function showCertificate() {
     `${currentCompletion.certificate_no || ''} · Completed ${formatDate(currentCompletion.completed_date)}`;
 }
 document.getElementById('print-cert-btn').addEventListener('click', () => window.print());
+
+document.getElementById('load-starter-btn').addEventListener('click', async () => {
+  const existingTitles = new Set(courses.map((c) => c.title));
+  const toAdd = STARTER_COURSES.filter((c) => !existingTitles.has(c.title));
+  if (!toAdd.length) { showToast('Starter courses are already loaded.'); return; }
+  try {
+    for (const course of toAdd) {
+      await setDoc(doc(collection(db, 'training_modules')), {
+        ...course, entered_by: profile.uid, created_at: serverTimestamp(),
+      });
+    }
+    showToast(`Added ${toAdd.length} starter course${toAdd.length === 1 ? '' : 's'}.`);
+    await loadCourses();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not load starter courses — ' + err.message, 'error');
+  }
+});
 
 // ---- add course ----
 

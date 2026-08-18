@@ -36,6 +36,7 @@
         <div class="tools">
           <button class="gh solid" id="add-btn" type="button">Add new hire</button>
           <button class="gh" id="import-btn" type="button">Import roster</button>
+          <button class="gh" id="add-test-btn" type="button">Add test employee</button>
           <input class="inp" id="search" placeholder="Search name or ID" style="min-width:190px">
           <select class="inp" id="division-filter">
             <option value="">All divisions</option>
@@ -390,6 +391,25 @@ function openAdd() {
   document.getElementById('terminate-section').hidden = true;
   overlay.hidden = false;
 }
+
+// Pre-fills the same Add New Hire modal with placeholder data so it's
+// obvious at a glance this isn't a real person — HR still reviews and
+// clicks Save like any other add, nothing is written silently.
+function openAddTest() {
+  openAdd();
+  let n = 1;
+  while (allEmployees.some((e) => e.id === `TEST-${String(n).padStart(3, '0')}`)) n++;
+  document.getElementById('modal-title').textContent = 'Add test employee';
+  document.getElementById('emp-id').value = `TEST-${String(n).padStart(3, '0')}`;
+  document.getElementById('first-name').value = 'Test';
+  document.getElementById('last-name').value = `Employee ${n}`;
+  document.getElementById('division').value = 'Maintenance';
+  document.getElementById('emp-location').value = 'OC';
+  document.getElementById('position').value = 'Gardener 1';
+  document.getElementById('hire-date').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('is-test').checked = true;
+}
+document.getElementById('add-test-btn').addEventListener('click', openAddTest);
 
 function openEdit(id) {
   const emp = allEmployees.find((e) => e.id === id);
