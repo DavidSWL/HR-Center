@@ -40,6 +40,15 @@
           <select class="inp" id="division-filter">
             <option value="">All divisions</option>
           </select>
+          <select class="inp" id="location-filter">
+            <option value="">All locations</option>
+            <option value="OC">OC</option>
+            <option value="LA">LA</option>
+            <option value="IE">IE</option>
+            <option value="Trees">Trees</option>
+            <option value="Enhancements">Enhancements</option>
+            <option value="Corporate">Corporate</option>
+          </select>
           <select class="inp" id="status-filter">
             <option value="active">Active + onboarding</option>
             <option value="all">All, including terminated</option>
@@ -52,6 +61,7 @@
               <th class="sortable" data-key="name">Name<span class="sort-arrow"></span></th>
               <th class="sortable" data-key="position">Job title<span class="sort-arrow"></span></th>
               <th class="sortable" data-key="division">Div<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="location">Location<span class="sort-arrow"></span></th>
               <th class="sortable" data-key="manager">Reports to<span class="sort-arrow"></span></th>
               <th class="sortable" data-key="dotted">Dotted line<span class="sort-arrow"></span></th>
               <th class="sortable" data-key="start">Start<span class="sort-arrow"></span></th>
@@ -101,6 +111,21 @@
             <label class="f-lab" for="position">Job title</label>
             <input class="f-in" id="position" required>
           </div>
+        </div>
+        <div class="frow">
+          <div class="field">
+            <label class="f-lab" for="emp-location">Location</label>
+            <select class="f-in" id="emp-location">
+              <option value="">Select…</option>
+              <option value="OC">OC</option>
+              <option value="LA">LA</option>
+              <option value="IE">IE</option>
+              <option value="Trees">Trees</option>
+              <option value="Enhancements">Enhancements</option>
+              <option value="Corporate">Corporate</option>
+            </select>
+          </div>
+          <div class="field"></div>
         </div>
         <div class="frow">
           <div class="field">
@@ -234,6 +259,7 @@ const SORT_ACCESSORS = {
   name: (e) => `${e.last_name || ''} ${e.first_name || ''}`.trim().toLowerCase(),
   position: (e) => (e.position || '').toLowerCase(),
   division: (e) => (e.division || '').toLowerCase(),
+  location: (e) => (e.location || '').toLowerCase(),
   manager: (e) => managerName(e.manager_emp_id).toLowerCase(),
   dotted: (e) => managerName(e.dotted_line_emp_id).toLowerCase(),
   start: (e) => e.hire_date || '',
@@ -266,11 +292,13 @@ document.querySelectorAll('#head-row .sortable').forEach((th) => {
 function render() {
   const q = document.getElementById('search').value.trim().toLowerCase();
   const divisionFilter = document.getElementById('division-filter').value;
+  const locationFilter = document.getElementById('location-filter').value;
   const statusFilter = document.getElementById('status-filter').value;
 
   const visible = allEmployees.filter((e) => {
     if (statusFilter === 'active' && e.status === 'terminated') return false;
     if (divisionFilter && e.division !== divisionFilter) return false;
+    if (locationFilter && e.location !== locationFilter) return false;
     if (q && !`${e.first_name} ${e.last_name} ${e.id}`.toLowerCase().includes(q)) return false;
     return true;
   });
@@ -290,6 +318,7 @@ function render() {
       <td><b>${e.first_name} ${e.last_name}</b></td>
       <td>${e.position || '—'}</td>
       <td class="mono">${e.division || '—'}</td>
+      <td class="mono">${e.location || '—'}</td>
       <td>${managerName(e.manager_emp_id)}</td>
       <td>${managerName(e.dotted_line_emp_id)}</td>
       <td class="mono">${formatDate(e.hire_date)}</td>
@@ -366,6 +395,7 @@ function openEdit(id) {
   document.getElementById('first-name').value = emp.first_name || '';
   document.getElementById('last-name').value = emp.last_name || '';
   document.getElementById('division').value = emp.division || '';
+  document.getElementById('emp-location').value = emp.location || '';
   document.getElementById('position').value = emp.position || '';
   document.getElementById('manager').value = emp.manager_emp_id || '';
   document.getElementById('dotted-line').value = emp.dotted_line_emp_id || '';
@@ -387,6 +417,7 @@ document.getElementById('cancel-btn').addEventListener('click', closeModal);
 document.getElementById('modal-close').addEventListener('click', closeModal);
 document.getElementById('search').addEventListener('input', render);
 document.getElementById('division-filter').addEventListener('change', render);
+document.getElementById('location-filter').addEventListener('change', render);
 document.getElementById('status-filter').addEventListener('change', render);
 
 document.getElementById('terminate-btn').addEventListener('click', () => {
@@ -402,6 +433,7 @@ form.addEventListener('submit', async (e) => {
     first_name: document.getElementById('first-name').value.trim(),
     last_name: document.getElementById('last-name').value.trim(),
     division: document.getElementById('division').value,
+    location: document.getElementById('emp-location').value,
     position: document.getElementById('position').value.trim(),
     manager_emp_id: document.getElementById('manager').value || null,
     dotted_line_emp_id: document.getElementById('dotted-line').value || null,
@@ -598,6 +630,7 @@ document.getElementById('csv-file').addEventListener('change', async (e) => {
 
     return {
       id, first_name: first, last_name: last, division,
+      location: pick(row, 'location', 'branch', 'region'),
       position: pick(row, 'position', 'job_title', 'title'),
       hire_date: hireDateStr,
       phone: pick(row, 'phone', 'phone_number'),
@@ -661,7 +694,7 @@ document.getElementById('import-confirm-btn').addEventListener('click', async ()
       chunk.forEach((r) => {
         const empData = {
           first_name: r.first_name, last_name: r.last_name, division: r.division,
-          position: r.position, hire_date: r.hire_date, phone: r.phone, email: r.email,
+          location: r.location, position: r.position, hire_date: r.hire_date, phone: r.phone, email: r.email,
           manager_emp_id: r.manager_emp_id, dotted_line_emp_id: r.dotted_line_emp_id,
           status: r.isNewHire ? 'onboarding' : 'active',
           entered_by: profile.uid, entered_at: serverTimestamp(),
