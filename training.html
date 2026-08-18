@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team training — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>
+@media print { .side, .bar, .no-print { display:none !important; } .app{display:block} }
+.section-item{border:1px solid var(--line);padding:14px;margin-bottom:10px;background:var(--raise)}
+.section-item.locked{opacity:.5}
+.cert{border:4px solid var(--oregon);padding:40px;text-align:center;background:var(--raise)}
+.cert h2{font-family:var(--display);font-size:28px;margin:0 0 6px}
+@keyframes cert-in{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+.cert{animation:cert-in .5s ease-out}
+.domain-row{display:grid;grid-template-columns:1fr 200px 50px;gap:12px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1 id="page-title">Team training</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+
+      <!-- LIBRARY -->
+      <div id="library-view">
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-h"><h3>Course library</h3><span></span></div>
+          <div class="tools"><button class="gh solid" id="add-course-btn" type="button">Add course</button></div>
+          <table><tbody id="course-rows"></tbody></table>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><h3>SHRM-CP exam prep — progress by domain</h3><span>Self-tracked</span></div>
+          <div class="card-body" id="shrm-body"></div>
+        </div>
+      </div>
+
+      <!-- COURSE DETAIL -->
+      <div id="course-view" hidden>
+        <button class="gh no-print" id="back-btn" type="button" style="margin-bottom:16px">&larr; Course library</button>
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-h"><h3 id="course-title">—</h3><span></span></div>
+          <div class="card-body" id="course-desc"></div>
+        </div>
+        <div id="sections-list"></div>
+        <div class="card" id="test-card" hidden style="margin-top:16px">
+          <div class="card-h"><h3>Final test</h3><span>Every question must be correct to pass</span></div>
+          <div class="card-body" id="test-body"></div>
+        </div>
+        <div id="cert-view" hidden style="margin-top:16px">
+          <div class="cert">
+            <div style="font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--faint);text-transform:uppercase;margin-bottom:14px">SouthWest Landscape HR</div>
+            <h2>Certificate of Completion</h2>
+            <p id="cert-name" style="font-size:16px;margin:10px 0"></p>
+            <p id="cert-course" class="dim"></p>
+            <p id="cert-meta" class="mono dim" style="font-size:11px;margin-top:16px"></p>
+            <button class="gh solid no-print" id="print-cert-btn" type="button" style="margin-top:20px">Print certificate</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- add course modal -->
+<div class="modal-overlay" id="modal-overlay" hidden>
+  <div class="modal" style="width:640px">
+    <div class="modal-h"><h3>Add course</h3><button class="modal-close" id="modal-close" type="button">&times;</button></div>
+    <div class="modal-body">
+      <div class="field">
+        <label class="f-lab" for="new-title">Title</label>
+        <input class="f-in" id="new-title" required>
+      </div>
+      <div class="field">
+        <label class="f-lab" for="new-desc">Description</label>
+        <input class="f-in" id="new-desc">
+      </div>
+
+      <div class="card-h" style="margin:14px -18px 10px"><h3>Sections</h3><span></span></div>
+      <div id="new-sections"></div>
+      <button class="gh" id="add-section-btn" type="button" style="margin-bottom:16px">+ Add section</button>
+
+      <div class="card-h" style="margin:14px -18px 10px"><h3>Test questions</h3><span>Multiple choice, one correct answer each</span></div>
+      <div id="new-questions"></div>
+      <button class="gh" id="add-question-btn" type="button">+ Add question</button>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="gh" id="new-course-cancel">Cancel</button>
+      <button type="button" class="gh solid" id="new-course-save">Save course</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, showToast, formatDate } from './app.js';
+import { db } from './firebaseconfig.js';
+import {
+  collection, doc, getDoc, getDocs, setDoc, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('training', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+const SHRM_DOMAINS = [
+  'Business Acumen', 'Consultation', 'Critical Evaluation', 'Ethical Practice',
+  'Global & Cultural Effectiveness', 'Communication', 'Relationship Management',
+  'Leadership & Navigation', 'HR Knowledge — People', 'HR Knowledge — Organization', 'HR Knowledge — Workplace',
+];
+
+let courses = [];
+let currentCourse = null;
+let currentCompletion = null;
+let readSections = new Set();
+let newSections = [];
+let newQuestions = [];
+
+async function loadCourses() {
+  const snap = await getDocs(collection(db, 'training_modules'));
+  courses = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  await renderLibrary();
+}
+
+async function renderLibrary() {
+  const rows = await Promise.all(courses.map(async (c) => {
+    const compSnap = await getDoc(doc(db, 'training_modules', c.id, 'completions', profile.uid));
+    const comp = compSnap.exists() ? compSnap.data() : null;
+    const status = comp?.passed ? '<span class="pill ok">Completed</span>' : (comp ? '<span class="pill mid">In progress</span>' : '<span class="pill">Not started</span>');
+    return `
+      <tr class="row-clickable" data-id="${c.id}" style="cursor:pointer">
+        <td><b>${c.title}</b><div class="dim" style="font-size:12px">${c.description || ''}</div></td>
+        <td class="mono dim">${(c.sections || []).length} sections</td>
+        <td>${status}</td>
+      </tr>
+    `;
+  }));
+  document.getElementById('course-rows').innerHTML = rows.join('') || '<tr><td class="dim">No courses yet — add one to get started.</td></tr>';
+  document.querySelectorAll('#course-rows tr').forEach((tr) => {
+    tr.addEventListener('click', () => openCourse(tr.dataset.id));
+  });
+}
+
+async function openCourse(courseId) {
+  currentCourse = courses.find((c) => c.id === courseId);
+  const compSnap = await getDoc(doc(db, 'training_modules', courseId, 'completions', profile.uid));
+  currentCompletion = compSnap.exists() ? compSnap.data() : { attempts: 0, passed: false };
+  readSections = new Set(currentCompletion.read_sections || []);
+
+  document.getElementById('library-view').hidden = true;
+  document.getElementById('course-view').hidden = false;
+  document.getElementById('page-title').textContent = currentCourse.title;
+  document.getElementById('course-title').textContent = currentCourse.title;
+  document.getElementById('course-desc').textContent = currentCourse.description || '';
+  document.getElementById('cert-view').hidden = true;
+
+  if (currentCompletion.passed) {
+    showCertificate();
+  } else {
+    renderSections();
+  }
+}
+
+document.getElementById('back-btn').addEventListener('click', () => {
+  document.getElementById('library-view').hidden = false;
+  document.getElementById('course-view').hidden = true;
+  document.getElementById('page-title').textContent = 'Team training';
+  loadCourses();
+});
+
+function renderSections() {
+  const sections = currentCourse.sections || [];
+  document.getElementById('sections-list').innerHTML = sections.map((s, i) => {
+    const unlocked = i === 0 || readSections.has(i - 1);
+    const done = readSections.has(i);
+    return `
+      <div class="section-item${unlocked ? '' : ' locked'}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <b>${i + 1}. ${s.title}</b>
+          <span class="mono dim">${s.type === 'video' ? 'Video' : 'Reading'}</span>
+        </div>
+        ${unlocked ? (s.type === 'video'
+          ? `<a href="${s.content}" target="_blank" rel="noopener">Open video material →</a>`
+          : `<div style="white-space:pre-wrap;font-size:13px">${s.content}</div>`)
+          : '<div class="dim">Complete the previous section to unlock this one.</div>'}
+        ${unlocked && !done ? `<button class="gh solid mark-read-btn" data-i="${i}" type="button" style="margin-top:10px">Mark as read</button>` : ''}
+        ${done ? '<span class="pill ok" style="margin-top:8px;display:inline-block">Read</span>' : ''}
+      </div>
+    `;
+  }).join('');
+
+  document.querySelectorAll('.mark-read-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      readSections.add(parseInt(btn.dataset.i, 10));
+      await saveProgress();
+      renderSections();
+    });
+  });
+
+  const allRead = sections.length > 0 && sections.every((_, i) => readSections.has(i));
+  const testCard = document.getElementById('test-card');
+  testCard.hidden = !allRead;
+  if (allRead) renderTest();
+}
+
+async function saveProgress() {
+  await setDoc(doc(db, 'training_modules', currentCourse.id, 'completions', profile.uid), {
+    ...currentCompletion,
+    read_sections: [...readSections],
+    entered_by: profile.uid,
+    updated_at: serverTimestamp(),
+  }, { merge: true });
+}
+
+function renderTest() {
+  const questions = currentCourse.test_questions || [];
+  document.getElementById('test-body').innerHTML = questions.map((q, qi) => `
+    <div class="field">
+      <label class="f-lab">${qi + 1}. ${q.question}</label>
+      ${q.choices.map((c, ci) => `
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 0">
+          <input type="radio" name="q${qi}" value="${ci}"> ${c}
+        </label>
+      `).join('')}
+    </div>
+  `).join('') + `<button class="gh solid" id="submit-test-btn" type="button">Submit</button>`;
+
+  document.getElementById('submit-test-btn').addEventListener('click', submitTest);
+}
+
+async function submitTest() {
+  const questions = currentCourse.test_questions || [];
+  let correct = 0;
+  questions.forEach((q, qi) => {
+    const picked = document.querySelector(`input[name="q${qi}"]:checked`);
+    if (picked && parseInt(picked.value, 10) === q.correct_index) correct++;
+  });
+
+  const passed = correct === questions.length;
+  const attempts = (currentCompletion.attempts || 0) + 1;
+  currentCompletion = {
+    ...currentCompletion,
+    attempts,
+    score: correct,
+    total: questions.length,
+    passed,
+    read_sections: [...readSections],
+    entered_by: profile.uid,
+    updated_at: serverTimestamp(),
+  };
+  if (passed) {
+    currentCompletion.completed_date = new Date().toISOString().slice(0, 10);
+    currentCompletion.certificate_no = 'CERT-' + Date.now().toString(36).toUpperCase();
+  }
+
+  try {
+    await setDoc(doc(db, 'training_modules', currentCourse.id, 'completions', profile.uid), currentCompletion, { merge: true });
+    if (passed) {
+      await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js').then(({ collection: c, addDoc: ad, serverTimestamp: st }) =>
+        ad(c(db, 'activity'), {
+          module: 'training',
+          item: `Completed "${currentCourse.title}"`,
+          entered_by: profile.uid,
+          entered_at: st(),
+        })
+      );
+      showToast(`You got ${correct} of ${questions.length} correct — passed.`);
+      showCertificate();
+    } else {
+      showToast(`You got ${correct} of ${questions.length} correct — not a pass. Review the material and try again.`, 'error');
+      renderSections();
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+}
+
+function showCertificate() {
+  document.getElementById('sections-list').innerHTML = '';
+  document.getElementById('test-card').hidden = true;
+  document.getElementById('cert-view').hidden = false;
+  document.getElementById('cert-name').textContent = profile.name || profile.email;
+  document.getElementById('cert-course').textContent = currentCourse.title;
+  document.getElementById('cert-meta').textContent =
+    `${currentCompletion.certificate_no || ''} · Completed ${formatDate(currentCompletion.completed_date)}`;
+}
+document.getElementById('print-cert-btn').addEventListener('click', () => window.print());
+
+// ---- add course ----
+
+const overlay = document.getElementById('modal-overlay');
+document.getElementById('add-course-btn').addEventListener('click', () => {
+  newSections = []; newQuestions = [];
+  document.getElementById('new-title').value = '';
+  document.getElementById('new-desc').value = '';
+  renderNewSections();
+  renderNewQuestions();
+  overlay.hidden = false;
+});
+document.getElementById('modal-close').addEventListener('click', () => { overlay.hidden = true; });
+document.getElementById('new-course-cancel').addEventListener('click', () => { overlay.hidden = true; });
+
+function renderNewSections() {
+  document.getElementById('new-sections').innerHTML = newSections.map((s, i) => `
+    <div class="frow" style="margin-bottom:8px">
+      <input class="f-in" placeholder="Section title" value="${s.title}" data-i="${i}" data-f="title">
+      <select class="f-in" data-i="${i}" data-f="type">
+        <option value="reading" ${s.type === 'reading' ? 'selected' : ''}>Reading</option>
+        <option value="video" ${s.type === 'video' ? 'selected' : ''}>Video (link)</option>
+      </select>
+    </div>
+    <textarea class="f-in" placeholder="Content or video URL" rows="2" style="resize:vertical;margin-bottom:10px" data-i="${i}" data-f="content">${s.content}</textarea>
+  `).join('');
+  document.querySelectorAll('#new-sections [data-f]').forEach((el) => {
+    el.addEventListener('input', () => { newSections[el.dataset.i][el.dataset.f] = el.value; });
+    el.addEventListener('change', () => { newSections[el.dataset.i][el.dataset.f] = el.value; });
+  });
+}
+document.getElementById('add-section-btn').addEventListener('click', () => {
+  newSections.push({ title: '', type: 'reading', content: '' });
+  renderNewSections();
+});
+
+function renderNewQuestions() {
+  document.getElementById('new-questions').innerHTML = newQuestions.map((q, qi) => `
+    <div class="field">
+      <input class="f-in" placeholder="Question" value="${q.question}" data-qi="${qi}" data-f="question" style="margin-bottom:6px">
+      ${q.choices.map((c, ci) => `
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
+          <input type="radio" name="correct${qi}" ${q.correct_index === ci ? 'checked' : ''} data-qi="${qi}" data-ci="${ci}" class="correct-radio">
+          <input class="f-in" placeholder="Choice ${ci + 1}" value="${c}" data-qi="${qi}" data-ci="${ci}" class="choice-input" style="flex:1">
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+  document.querySelectorAll('.choice-input').forEach((el) => {
+    el.addEventListener('input', () => { newQuestions[el.dataset.qi].choices[el.dataset.ci] = el.value; });
+  });
+  document.querySelectorAll('[data-f="question"]').forEach((el) => {
+    el.addEventListener('input', () => { newQuestions[el.dataset.qi].question = el.value; });
+  });
+  document.querySelectorAll('.correct-radio').forEach((el) => {
+    el.addEventListener('change', () => { newQuestions[el.dataset.qi].correct_index = parseInt(el.dataset.ci, 10); });
+  });
+}
+document.getElementById('add-question-btn').addEventListener('click', () => {
+  newQuestions.push({ question: '', choices: ['', '', '', ''], correct_index: 0 });
+  renderNewQuestions();
+});
+
+document.getElementById('new-course-save').addEventListener('click', async () => {
+  const title = document.getElementById('new-title').value.trim();
+  if (!title) { showToast('Title is required.', 'error'); return; }
+  try {
+    const ref = doc(collection(db, 'training_modules'));
+    await setDoc(ref, {
+      title,
+      description: document.getElementById('new-desc').value.trim(),
+      sections: newSections,
+      test_questions: newQuestions,
+      entered_by: profile.uid,
+      created_at: serverTimestamp(),
+    });
+    overlay.hidden = true;
+    showToast('Course added.');
+    await loadCourses();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+});
+
+// ---- SHRM-CP domain tracker ----
+
+async function loadShrm() {
+  const snap = await getDoc(doc(db, 'shrm_progress', profile.uid));
+  const values = snap.exists() ? (snap.data().domains || {}) : {};
+  document.getElementById('shrm-body').innerHTML = SHRM_DOMAINS.map((d) => `
+    <div class="domain-row">
+      <div>${d}</div>
+      <input type="range" min="0" max="100" value="${values[d] || 0}" class="shrm-slider" data-domain="${d}">
+      <div class="mono shrm-value" data-domain-value="${d}">${values[d] || 0}%</div>
+    </div>
+  `).join('');
+  document.querySelectorAll('.shrm-slider').forEach((el) => {
+    el.addEventListener('input', () => {
+      document.querySelector(`[data-domain-value="${el.dataset.domain}"]`).textContent = el.value + '%';
+    });
+    el.addEventListener('change', saveShrm);
+  });
+}
+
+async function saveShrm() {
+  const domains = {};
+  document.querySelectorAll('.shrm-slider').forEach((el) => { domains[el.dataset.domain] = parseInt(el.value, 10); });
+  try {
+    await setDoc(doc(db, 'shrm_progress', profile.uid), {
+      domains,
+      entered_by: profile.uid,
+      updated_at: serverTimestamp(),
+    }, { merge: true });
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+await loadCourses();
+await loadShrm();
+</script>
+</body>
+</html>

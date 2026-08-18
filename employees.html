@@ -38,11 +38,13 @@
           <input class="inp" id="search" placeholder="Search name or ID" style="min-width:190px">
           <select class="inp" id="division-filter">
             <option value="">All divisions</option>
-            <option>Maintenance</option>
+            <option>Maintenance OC</option>
+            <option>Maintenance LA</option>
+            <option>Maintenance IE</option>
+            <option>Trees</option>
+            <option>Yard</option>
             <option>Enhancement</option>
-            <option>Irrigation</option>
-            <option>Hardscape</option>
-            <option>Admin</option>
+            <option>Corporate</option>
           </select>
           <select class="inp" id="status-filter">
             <option value="active">Active + onboarding</option>
@@ -52,7 +54,7 @@
         <table>
           <thead>
             <tr>
-              <th>ID</th><th>Name</th><th>Job title</th><th>Div</th><th>Start</th><th>Yrs</th><th>Status</th>
+              <th>ID</th><th>Name</th><th>Job title</th><th>Div</th><th>Reports to</th><th>Dotted line</th><th>Start</th><th>Yrs</th><th>Status</th>
             </tr>
           </thead>
           <tbody id="rows"></tbody>
@@ -73,7 +75,10 @@
     </div>
     <form id="employee-form">
       <div class="modal-body">
-        <input type="hidden" id="emp-id">
+        <div class="field" id="emp-id-field">
+          <label class="f-lab" for="emp-id">Employee ID</label>
+          <input class="f-in" id="emp-id" placeholder="e.g. SWL-1041">
+        </div>
         <div class="frow">
           <div class="field">
             <label class="f-lab" for="first-name">First name</label>
@@ -89,16 +94,28 @@
             <label class="f-lab" for="division">Division</label>
             <select class="f-in" id="division" required>
               <option value="">Select…</option>
-              <option>Maintenance</option>
+              <option>Maintenance OC</option>
+              <option>Maintenance LA</option>
+              <option>Maintenance IE</option>
+              <option>Trees</option>
+              <option>Yard</option>
               <option>Enhancement</option>
-              <option>Irrigation</option>
-              <option>Hardscape</option>
-              <option>Admin</option>
+              <option>Corporate</option>
             </select>
           </div>
           <div class="field">
             <label class="f-lab" for="position">Job title</label>
             <input class="f-in" id="position" required>
+          </div>
+        </div>
+        <div class="frow">
+          <div class="field">
+            <label class="f-lab" for="manager">Reports to (solid line)</label>
+            <select class="f-in" id="manager"><option value="">None</option></select>
+          </div>
+          <div class="field">
+            <label class="f-lab" for="dotted-line">Dotted line</label>
+            <select class="f-in" id="dotted-line"><option value="">None</option></select>
           </div>
         </div>
         <div class="frow">
@@ -171,6 +188,16 @@ function statusPill(emp) {
   return '<span class="pill ok">Active</span>';
 }
 
+// Manager name is never stored — only the linked ID is. This looks the
+// name up fresh every render, so a manager's own name change or
+// termination is reflected everywhere instantly, not just where it was
+// typed.
+function managerName(id) {
+  if (!id) return '—';
+  const m = allEmployees.find((e) => e.id === id);
+  return m ? `${m.first_name} ${m.last_name}` : '—';
+}
+
 function render() {
   const q = document.getElementById('search').value.trim().toLowerCase();
   const divisionFilter = document.getElementById('division-filter').value;
@@ -189,6 +216,8 @@ function render() {
       <td><b>${e.first_name} ${e.last_name}</b></td>
       <td>${e.position || '—'}</td>
       <td class="mono">${e.division || '—'}</td>
+      <td>${managerName(e.manager_emp_id)}</td>
+      <td>${managerName(e.dotted_line_emp_id)}</td>
       <td class="mono">${formatDate(e.hire_date)}</td>
       <td class="mono">${e.status === 'terminated' ? '—' : yearsSince(e.hire_date)}</td>
       <td>${statusPill(e)}</td>
@@ -213,18 +242,23 @@ async function loadEmployees() {
   render();
 }
 
-function nextEmployeeId() {
-  const nums = allEmployees
-    .map((e) => parseInt(String(e.id).replace(/\D/g, ''), 10))
-    .filter((n) => !Number.isNaN(n));
-  const next = (nums.length ? Math.max(...nums) : 1000) + 1;
-  return 'SWL-' + String(next).padStart(4, '0');
+function populateManagerSelects(excludeId) {
+  const options = '<option value="">None</option>' + allEmployees
+    .filter((e) => e.id !== excludeId && e.status !== 'terminated')
+    .map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name} — ${e.position || e.division || ''}</option>`)
+    .join('');
+  document.getElementById('manager').innerHTML = options;
+  document.getElementById('dotted-line').innerHTML = options;
 }
 
 function openAdd() {
   editingId = null;
   form.reset();
+  populateManagerSelects(null);
   document.getElementById('modal-title').textContent = 'Add new hire';
+  document.getElementById('emp-id').value = '';
+  document.getElementById('emp-id').disabled = false;
+  document.getElementById('emp-id-field').hidden = false;
   document.getElementById('terminate-btn').hidden = true;
   document.getElementById('terminate-section').hidden = true;
   overlay.hidden = false;
@@ -234,11 +268,17 @@ function openEdit(id) {
   const emp = allEmployees.find((e) => e.id === id);
   if (!emp) return;
   editingId = id;
+  populateManagerSelects(id);
   document.getElementById('modal-title').textContent = `${emp.first_name} ${emp.last_name}`;
+  document.getElementById('emp-id').value = id;
+  document.getElementById('emp-id').disabled = true; // the ID is the document ID — it can't change after creation
+  document.getElementById('emp-id-field').hidden = false;
   document.getElementById('first-name').value = emp.first_name || '';
   document.getElementById('last-name').value = emp.last_name || '';
   document.getElementById('division').value = emp.division || '';
   document.getElementById('position').value = emp.position || '';
+  document.getElementById('manager').value = emp.manager_emp_id || '';
+  document.getElementById('dotted-line').value = emp.dotted_line_emp_id || '';
   document.getElementById('hire-date').value = emp.hire_date || '';
   document.getElementById('phone').value = emp.phone || '';
   document.getElementById('email').value = emp.email || '';
@@ -273,6 +313,8 @@ form.addEventListener('submit', async (e) => {
     last_name: document.getElementById('last-name').value.trim(),
     division: document.getElementById('division').value,
     position: document.getElementById('position').value.trim(),
+    manager_emp_id: document.getElementById('manager').value || null,
+    dotted_line_emp_id: document.getElementById('dotted-line').value || null,
     hire_date: document.getElementById('hire-date').value,
     phone: document.getElementById('phone').value.trim(),
     email: document.getElementById('email').value.trim(),
@@ -294,12 +336,25 @@ form.addEventListener('submit', async (e) => {
     data.separation_type = sepType;
   }
 
+  const newId = document.getElementById('emp-id').value.trim();
+  if (!editingId) {
+    if (!newId) {
+      showToast('Employee ID is required.', 'error');
+      saveBtn.disabled = false;
+      return;
+    }
+    if (allEmployees.some((e) => e.id === newId)) {
+      showToast(`Employee ID ${newId} is already in use.`, 'error');
+      saveBtn.disabled = false;
+      return;
+    }
+  }
+
   try {
     if (editingId) {
       await updateDoc(doc(db, 'employees', editingId), data);
       showToast('Employee updated.');
     } else {
-      const newId = nextEmployeeId();
       data.status = 'onboarding';
       data.entered_at = serverTimestamp();
 

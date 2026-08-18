@@ -6,6 +6,8 @@
  */
 
 import { logout } from './auth.js';
+import { db } from './firebaseconfig.js';
+import { collection, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const IDLE_LIMIT_MS = 30 * 60 * 1000; // matches the login page's stated policy
 
@@ -38,16 +40,16 @@ export const NAV_SECTIONS = [
     label: 'HR team',
     items: [
       { key: 'tasks', label: 'Tasks', href: 'tasks.html', built: true },
-      { key: 'training', label: 'Team training', href: '#', built: false },
+      { key: 'training', label: 'Team training', href: 'training.html', built: true },
       { key: 'completed', label: 'Completed work', href: 'activity.html', built: true },
     ],
   },
   {
     label: 'Reporting',
     items: [
-      { key: 'reports', label: 'Reports', href: '#', built: false },
-      { key: 'er', label: 'Employee relations', href: '#', built: false },
-      { key: 'docgen', label: 'Document generator', href: '#', built: false },
+      { key: 'reports', label: 'Reports', href: 'reports.html', built: true },
+      { key: 'er', label: 'Employee relations', href: 'er.html', built: true },
+      { key: 'docgen', label: 'Document generator', href: 'docgen.html', built: true },
     ],
   },
   {
@@ -140,6 +142,50 @@ export function initShell(activeKey, profile) {
   }
   initTheme();
   initIdleTimeout();
+  initErNotifications(profile);
+}
+
+/**
+ * Cases waiting on David's review get a badge on the nav item everywhere
+ * in the app, not just inside Employee Relations itself — that's the
+ * point of a notification. The pulse/chime only fire for David, since
+ * he's the one being notified, not whoever pushed the case forward.
+ */
+async function initErNotifications(profile) {
+  const erLink = document.querySelector('.nv[href="er.html"]');
+  if (!erLink) return;
+  try {
+    const snap = await getDocs(query(collection(db, 'er_cases'), where('status', '==', 'review')));
+    const count = snap.size;
+    if (count === 0) return;
+
+    const badge = document.createElement('span');
+    badge.className = 'b';
+    badge.textContent = String(count);
+    erLink.appendChild(badge);
+
+    if (profile?.role === 'david') {
+      erLink.classList.add('er-flash');
+      badge.classList.add('er-pulse');
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx && !sessionStorage.getItem('er-chime-played')) {
+          const ctx = new AudioCtx();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.frequency.value = 660;
+          gain.gain.setValueAtTime(0.15, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+          osc.connect(gain).connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.6);
+          sessionStorage.setItem('er-chime-played', '1');
+        }
+      } catch { /* autoplay can be blocked — the visual flash still shows */ }
+    }
+  } catch (err) {
+    console.error('ER notification check failed', err);
+  }
 }
 
 export function showToast(message, type = '') {

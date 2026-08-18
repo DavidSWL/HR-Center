@@ -263,6 +263,13 @@ select.f-in{
 .toast.error{background:var(--alert)}
 .toast[hidden]{display:none}
 
+/* Employee relations review notification — only fires for David, only
+   when a case is actually waiting on him. */
+@keyframes er-flash{0%,100%{background:rgba(179,38,30,0)}50%{background:rgba(179,38,30,.22)}}
+.nv.er-flash{animation:er-flash 1.6s ease-in-out 3}
+@keyframes er-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
+.b.er-pulse{animation:er-pulse 1s ease-in-out 4}
+
 @media (max-width:900px){
   .app{grid-template-columns:1fr}
   .side{position:static;height:auto}

@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reports — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>
+@media print {
+  .side, .bar .toggle, .acts, #range-bar, .no-print { display:none !important; }
+  .app { display:block; }
+  .view { padding:0; }
+}
+.report-menu{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.report-tile{border:1px solid var(--line);background:var(--raise);padding:16px;cursor:pointer;text-align:left}
+.report-tile:hover{border-color:var(--accent)}
+.report-tile h4{font-family:var(--display);font-size:14px;margin:0 0 4px;letter-spacing:-.005em}
+.report-tile p{font-size:11.5px;color:var(--faint);margin:0}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1 id="page-title">Reports</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+
+      <!-- MENU -->
+      <div id="menu-view">
+        <p class="dim" style="margin-bottom:16px">Nothing renders until you pick a report.</p>
+        <div class="report-menu" id="report-tiles"></div>
+      </div>
+
+      <!-- REPORT VIEW -->
+      <div id="report-view" hidden>
+        <div class="acts">
+          <button class="gh" id="back-btn" type="button">&larr; All reports</button>
+          <button class="gh" id="print-btn" type="button">Print</button>
+          <button class="gh" id="export-btn" type="button">Export CSV</button>
+        </div>
+        <div class="card" id="range-bar" style="margin-bottom:16px">
+          <div class="card-body" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+            <div class="field" style="margin:0">
+              <label class="f-lab" for="range-start">From</label>
+              <input class="f-in" id="range-start" type="date">
+            </div>
+            <div class="field" style="margin:0">
+              <label class="f-lab" for="range-end">To</label>
+              <input class="f-in" id="range-end" type="date">
+            </div>
+            <button class="gh solid" id="apply-range-btn" type="button">Apply</button>
+          </div>
+        </div>
+        <div id="report-body"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, formatDate } from './app.js';
+import { db } from './firebaseconfig.js';
+import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('reports', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+const REPORTS = [
+  { key: 'turnover', title: 'Turnover', desc: 'Rate by division, department, tenure band; retention' },
+  { key: 'er', title: 'Employee relations', desc: 'Case volume, type mix, time to close' },
+  { key: 'discipline', title: 'Disciplinary actions', desc: 'Rate per 100 by division, repeat individuals' },
+  { key: 'attendance', title: 'Attendance', desc: 'Occurrences by type, division, weekday' },
+  { key: 'safety', title: 'Safety and cost', desc: 'Cost by type, incident rankings' },
+  { key: 'compliance', title: 'Policy compliance', desc: 'Current snapshot — missing by document' },
+  { key: 'reviews', title: 'New hires and reviews', desc: 'Onboarding volume, overdue reviews' },
+  { key: 'recurring', title: 'Recurring issues', desc: 'Employees showing up across multiple modules' },
+  { key: 'output', title: 'Team output', desc: 'Completed work by person, from the activity log' },
+];
+
+document.getElementById('report-tiles').innerHTML = REPORTS.map((r) => `
+  <button class="report-tile" data-key="${r.key}" type="button">
+    <h4>${r.title}</h4>
+    <p>${r.desc}</p>
+  </button>
+`).join('');
+
+let data = {}; // lazy-loaded collections cache
+async function ensureLoaded(names) {
+  for (const name of names) {
+    if (!data[name]) {
+      const snap = await getDocs(collection(db, name));
+      data[name] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    }
+  }
+}
+
+function rangeDates() {
+  return {
+    start: document.getElementById('range-start').value,
+    end: document.getElementById('range-end').value,
+  };
+}
+function inRange(dateStr, { start, end }) {
+  if (!dateStr) return false;
+  if (start && dateStr < start) return false;
+  if (end && dateStr > end) return false;
+  return true;
+}
+function tsToDateStr(ts) {
+  return ts?.seconds ? new Date(ts.seconds * 1000).toISOString().slice(0, 10) : null;
+}
+
+let currentKey = null;
+let lastCsv = [['No data']];
+
+document.querySelectorAll('.report-tile').forEach((btn) => {
+  btn.addEventListener('click', () => openReport(btn.dataset.key));
+});
+document.getElementById('back-btn').addEventListener('click', () => {
+  document.getElementById('menu-view').hidden = false;
+  document.getElementById('report-view').hidden = true;
+  document.getElementById('page-title').textContent = 'Reports';
+});
+document.getElementById('print-btn').addEventListener('click', () => window.print());
+document.getElementById('apply-range-btn').addEventListener('click', () => renderReport(currentKey));
+document.getElementById('export-btn').addEventListener('click', () => {
+  const csv = lastCsv.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${currentKey}-report-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+async function openReport(key) {
+  currentKey = key;
+  const yearStart = `${new Date().getFullYear()}-01-01`;
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('range-start').value = yearStart;
+  document.getElementById('range-end').value = today;
+  document.getElementById('menu-view').hidden = true;
+  document.getElementById('report-view').hidden = false;
+  document.getElementById('page-title').textContent = REPORTS.find((r) => r.key === key).title;
+  document.getElementById('report-body').innerHTML = '<p class="dim">Loading…</p>';
+  await renderReport(key);
+}
+
+function statLine(range, denominatorNote) {
+  return `<p class="dim mono" style="font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:16px">
+    ${formatDate(range.start)} – ${formatDate(range.end)} · ${denominatorNote}
+  </p>`;
+}
+
+async function renderReport(key) {
+  const range = rangeDates();
+  const body = document.getElementById('report-body');
+
+  if (key === 'turnover') {
+    await ensureLoaded(['employees']);
+    const emps = data.employees;
+    const separations = emps.filter((e) => e.status === 'terminated' && inRange(e.separation_date, range));
+    const activeAvg = emps.filter((e) => e.status !== 'terminated').length; // simple proxy, stated as such
+    const rate = activeAvg ? ((separations.length / activeAvg) * 100).toFixed(1) : '0.0';
+    const vol = separations.filter((e) => e.separation_type === 'voluntary').length;
+    const invol = separations.filter((e) => e.separation_type === 'involuntary').length;
+
+    const byDivision = {};
+    separations.forEach((e) => { byDivision[e.division || 'Unspecified'] = (byDivision[e.division || 'Unspecified'] || 0) + 1; });
+
+    body.innerHTML = statLine(range, `denominator: ${activeAvg} currently active (average headcount for the period is not tracked historically — this uses current headcount as the closest available proxy)`) + `
+      <div class="big">
+        <div><div class="v n">${rate}%</div><div class="k">Turnover, annualized</div></div>
+        <div><div class="v n">${separations.length}</div><div class="k">Separations</div></div>
+        <div><div class="v n">${vol} / ${invol}</div><div class="k">Voluntary / involuntary</div></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>By division</h3><span></span></div>
+        <table><tbody>${Object.entries(byDivision).map(([d, c]) => `<tr><td>${d}</td><td class="mono" style="text-align:right">${c}</td></tr>`).join('') || '<tr><td class="dim">No separations in range.</td></tr>'}</tbody></table>
+      </div>
+    `;
+    lastCsv = [['Division', 'Separations'], ...Object.entries(byDivision)];
+  }
+
+  else if (key === 'er') {
+    await ensureLoaded(['er_cases']);
+    const cases = data.er_cases.filter((c) => inRange(tsToDateStr(c.opened_at), range));
+    const byType = {};
+    let totalDaysToClose = 0, closedCount = 0;
+    cases.forEach((c) => {
+      byType[c.type] = (byType[c.type] || 0) + 1;
+      if (c.status === 'closed' && c.opened_at?.seconds && c.closed_date) {
+        const days = Math.round((new Date(c.closed_date).getTime() - c.opened_at.seconds * 1000) / 86400000);
+        totalDaysToClose += days; closedCount++;
+      }
+    });
+    body.innerHTML = statLine(range, `denominator: ${cases.length} cases opened in range`) + `
+      <div class="big">
+        <div><div class="v n">${cases.length}</div><div class="k">Cases opened</div></div>
+        <div><div class="v n">${cases.filter((c) => c.status === 'closed').length}</div><div class="k">Closed</div></div>
+        <div><div class="v n">${closedCount ? Math.round(totalDaysToClose / closedCount) : '—'}</div><div class="k">Avg days to close</div></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>By type</h3><span></span></div>
+        <table><tbody>${Object.entries(byType).map(([t, c]) => `<tr><td style="text-transform:capitalize">${t.replace('_', ' ')}</td><td class="mono" style="text-align:right">${c}</td></tr>`).join('') || '<tr><td class="dim">No cases in range.</td></tr>'}</tbody></table>
+      </div>
+    `;
+    lastCsv = [['Type', 'Count'], ...Object.entries(byType)];
+  }
+
+  else if (key === 'discipline') {
+    await ensureLoaded(['disciplinary_actions', 'employees']);
+    const actions = data.disciplinary_actions.filter((a) => inRange(tsToDateStr(a.entered_at), range));
+    const byDivision = {}, byCategory = {}, byEmployee = {};
+    actions.forEach((a) => {
+      byDivision[a.division || 'Unspecified'] = (byDivision[a.division || 'Unspecified'] || 0) + 1;
+      byCategory[a.category] = (byCategory[a.category] || 0) + 1;
+      byEmployee[a.emp_id] = (byEmployee[a.emp_id] || 0) + 1;
+    });
+    const repeat = Object.values(byEmployee).filter((c) => c >= 2).length;
+    body.innerHTML = statLine(range, `denominator: ${data.employees.filter((e) => e.status !== 'terminated').length} active employees`) + `
+      <div class="big">
+        <div><div class="v n">${actions.length}</div><div class="k">Actions in range</div></div>
+        <div><div class="v hot">${actions.filter((a) => a.level >= 4).length}</div><div class="k">At final step</div></div>
+        <div><div class="v n">${repeat}</div><div class="k">Repeat individuals (2+)</div></div>
+      </div>
+      <div class="two">
+        <div class="card">
+          <div class="card-h"><h3>By division</h3><span></span></div>
+          <table><tbody>${Object.entries(byDivision).map(([d, c]) => `<tr><td>${d}</td><td class="mono" style="text-align:right">${c}</td></tr>`).join('') || '<tr><td class="dim">None in range.</td></tr>'}</tbody></table>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>By category</h3><span></span></div>
+          <table><tbody>${Object.entries(byCategory).map(([c, n]) => `<tr><td>${c}</td><td class="mono" style="text-align:right">${n}</td></tr>`).join('') || '<tr><td class="dim">None in range.</td></tr>'}</tbody></table>
+        </div>
+      </div>
+    `;
+    lastCsv = [['Division', 'Count'], ...Object.entries(byDivision)];
+  }
+
+  else if (key === 'attendance') {
+    await ensureLoaded(['attendance']);
+    const occs = data.attendance.filter((a) => inRange(a.date, range));
+    const ncns = occs.filter((o) => o.type === 'ncns').length;
+    const other = occs.length - ncns;
+    const byDivision = {};
+    occs.forEach((o) => { byDivision[o.division || 'Unspecified'] = (byDivision[o.division || 'Unspecified'] || 0) + 1; });
+    body.innerHTML = statLine(range, `denominator: ${occs.length} occurrences in range`) + `
+      <div class="big">
+        <div><div class="v n">${occs.length}</div><div class="k">Total occurrences</div></div>
+        <div><div class="v hot">${ncns}</div><div class="k">No Call No Show</div></div>
+        <div><div class="v n">${other}</div><div class="k">Other</div></div>
+      </div>
+    `;
+    lastCsv = [['Division', 'Count'], ...Object.entries(byDivision)];
+  }
+
+  else if (key === 'safety') {
+    await ensureLoaded(['incidents']);
+    const incs = data.incidents.filter((i) => inRange(i.date, range));
+    const cost = incs.reduce((s, i) => s + Number(i.cost || 0), 0);
+    const byType = {};
+    incs.forEach((i) => { byType[i.incident_type] = (byType[i.incident_type] || 0) + 1; });
+    body.innerHTML = statLine(range, `denominator: ${incs.length} incidents in range`) + `
+      <div class="big">
+        <div><div class="v n">${incs.length}</div><div class="k">Total incidents</div></div>
+        <div><div class="v hot">$${cost.toLocaleString()}</div><div class="k">Total cost</div></div>
+        <div><div class="v n">${incs.filter((i) => i.recordable).length}</div><div class="k">Recordable</div></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>By type</h3><span></span></div>
+        <table><tbody>${Object.entries(byType).map(([t, c]) => `<tr><td>${t}</td><td class="mono" style="text-align:right">${c}</td></tr>`).join('') || '<tr><td class="dim">None in range.</td></tr>'}</tbody></table>
+      </div>
+    `;
+    lastCsv = [['Type', 'Count'], ...Object.entries(byType)];
+  }
+
+  else if (key === 'compliance') {
+    await ensureLoaded(['employees', 'policy_documents']);
+    const active = data.employees.filter((e) => e.status !== 'terminated');
+    const docs = data.policy_documents.filter((d) => d.active !== false);
+    let missingTotal = 0;
+    const perDoc = {};
+    for (const doc of docs) {
+      let missing = 0;
+      for (const emp of active) {
+        const ackSnap = await getDocs(collection(db, 'employees', emp.id, 'acknowledgments'));
+        const ack = ackSnap.docs.find((d) => d.id === doc.id);
+        const status = ack?.data()?.status;
+        if (status !== 'on_file' && status !== 'na') missing++;
+      }
+      perDoc[doc.title] = missing;
+      missingTotal += missing;
+    }
+    body.innerHTML = `<p class="dim mono" style="font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:16px">
+        Current snapshot — not date-ranged · denominator: ${active.length} active employees × ${docs.length} documents
+      </p>
+      <div class="big">
+        <div><div class="v hot">${missingTotal}</div><div class="k">Missing acknowledgments</div></div>
+        <div><div class="v n">${active.length}</div><div class="k">Active employees</div></div>
+        <div><div class="v n">${docs.length}</div><div class="k">Active documents</div></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Missing by document</h3><span></span></div>
+        <table><tbody>${Object.entries(perDoc).map(([t, c]) => `<tr><td>${t}</td><td class="mono" style="text-align:right">${c}</td></tr>`).join('') || '<tr><td class="dim">No documents.</td></tr>'}</tbody></table>
+      </div>
+    `;
+    lastCsv = [['Document', 'Missing'], ...Object.entries(perDoc)];
+  }
+
+  else if (key === 'reviews') {
+    await ensureLoaded(['employees']);
+    const onboarding = data.employees.filter((e) => e.status === 'onboarding');
+    body.innerHTML = statLine(range, `denominator: ${onboarding.length} currently onboarding (snapshot, not date-ranged)`) + `
+      <div class="big">
+        <div><div class="v n">${onboarding.length}</div><div class="k">Currently onboarding</div></div>
+      </div>
+      <p class="dim">Full review-by-review detail lives on the New hires &amp; reviews tab.</p>
+    `;
+    lastCsv = [['Onboarding count'], [onboarding.length]];
+  }
+
+  else if (key === 'recurring') {
+    await ensureLoaded(['employees', 'disciplinary_actions', 'attendance', 'incidents']);
+    const counts = {};
+    data.disciplinary_actions.forEach((a) => { counts[a.emp_id] = (counts[a.emp_id] || 0) + 1; });
+    data.attendance.forEach((a) => { counts[a.emp_id] = (counts[a.emp_id] || 0) + 1; });
+    data.incidents.forEach((i) => { if (i.emp_id) counts[i.emp_id] = (counts[i.emp_id] || 0) + 1; });
+    const rows = Object.entries(counts)
+      .filter(([, c]) => c >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .map(([id, c]) => {
+        const emp = data.employees.find((e) => e.id === id);
+        return [emp ? `${emp.first_name} ${emp.last_name}` : id, c];
+      });
+    body.innerHTML = `<p class="dim mono" style="font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:16px">
+        All time · denominator: ${data.employees.length} employees · combines discipline + attendance + incidents
+      </p>
+      <div class="card">
+        <div class="card-h"><h3>Employees appearing 2+ times across modules</h3><span></span></div>
+        <table><tbody>${rows.map(([n, c]) => `<tr><td>${n}</td><td class="mono" style="text-align:right">${c}</td></tr>`).join('') || '<tr><td class="dim">Nobody meets that threshold.</td></tr>'}</tbody></table>
+      </div>
+    `;
+    lastCsv = [['Employee', 'Total across modules'], ...rows];
+  }
+
+  else if (key === 'output') {
+    await ensureLoaded(['activity', 'users']);
+    const entries = data.activity.filter((a) => inRange(tsToDateStr(a.entered_at), range));
+    const byPerson = {};
+    entries.forEach((a) => { byPerson[a.entered_by] = (byPerson[a.entered_by] || 0) + 1; });
+    const rows = Object.entries(byPerson).map(([uid, c]) => {
+      const u = data.users.find((x) => x.id === uid);
+      return [u ? u.name : uid, c];
+    });
+    body.innerHTML = statLine(range, `denominator: ${entries.length} completed items in range`) + `
+      <div class="card">
+        <div class="card-h"><h3>Completed work by person</h3><span></span></div>
+        <table><tbody>${rows.map(([n, c]) => `<tr><td>${n}</td><td class="mono" style="text-align:right">${c}</td></tr>`).join('') || '<tr><td class="dim">Nothing logged in range.</td></tr>'}</tbody></table>
+      </div>
+    `;
+    lastCsv = [['Person', 'Completed items'], ...rows];
+  }
+}
+</script>
+</body>
+</html>
