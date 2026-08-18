@@ -36,6 +36,7 @@
         <div class="tools">
           <button class="gh solid" id="add-btn" type="button">Add new hire</button>
           <button class="gh" id="import-btn" type="button">Import roster</button>
+          <button class="gh" id="add-test-btn" type="button">Add test employee</button>
           <input class="inp" id="search" placeholder="Search name or ID" style="min-width:190px">
           <select class="inp" id="division-filter">
             <option value="">All divisions</option>
@@ -153,6 +154,11 @@
           <label class="f-lab" for="email">Work email</label>
           <input class="f-in" id="email" type="email">
         </div>
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted)">
+            <input type="checkbox" id="is-test">Test employee — excluded from reports and dashboard counts
+          </label>
+        </div>
 
         <div id="terminate-section" hidden>
           <div class="frow">
@@ -241,9 +247,10 @@ const overlay = document.getElementById('modal-overlay');
 const form = document.getElementById('employee-form');
 
 function statusPill(emp) {
-  if (emp.status === 'terminated') return '<span class="pill bad">Terminated</span>';
-  if (emp.status === 'onboarding') return '<span class="pill mid">Onboarding</span>';
-  return '<span class="pill ok">Active</span>';
+  const base = emp.status === 'terminated' ? '<span class="pill bad">Terminated</span>'
+    : emp.status === 'onboarding' ? '<span class="pill mid">Onboarding</span>'
+    : '<span class="pill ok">Active</span>';
+  return emp.is_test ? `${base} <span class="pill">Test</span>` : base;
 }
 
 // Manager name is never stored — only the linked ID is. This looks the
@@ -334,8 +341,8 @@ function render() {
     tr.addEventListener('click', () => openEdit(tr.dataset.id));
   });
 
-  const activeCount = allEmployees.filter((e) => e.status !== 'terminated').length;
-  const divisions = new Set(allEmployees.filter((e) => e.status !== 'terminated').map((e) => e.division).filter(Boolean));
+  const activeCount = allEmployees.filter((e) => e.status !== 'terminated' && !e.is_test).length;
+  const divisions = new Set(allEmployees.filter((e) => e.status !== 'terminated' && !e.is_test).map((e) => e.division).filter(Boolean));
   document.getElementById('roster-summary').textContent = `${activeCount} active · ${divisions.size} division${divisions.size === 1 ? '' : 's'}`;
 }
 
@@ -385,6 +392,25 @@ function openAdd() {
   overlay.hidden = false;
 }
 
+// Pre-fills the same Add New Hire modal with placeholder data so it's
+// obvious at a glance this isn't a real person — HR still reviews and
+// clicks Save like any other add, nothing is written silently.
+function openAddTest() {
+  openAdd();
+  let n = 1;
+  while (allEmployees.some((e) => e.id === `TEST-${String(n).padStart(3, '0')}`)) n++;
+  document.getElementById('modal-title').textContent = 'Add test employee';
+  document.getElementById('emp-id').value = `TEST-${String(n).padStart(3, '0')}`;
+  document.getElementById('first-name').value = 'Test';
+  document.getElementById('last-name').value = `Employee ${n}`;
+  document.getElementById('division').value = 'Maintenance';
+  document.getElementById('emp-location').value = 'OC';
+  document.getElementById('position').value = 'Gardener 1';
+  document.getElementById('hire-date').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('is-test').checked = true;
+}
+document.getElementById('add-test-btn').addEventListener('click', openAddTest);
+
 function openEdit(id) {
   const emp = allEmployees.find((e) => e.id === id);
   if (!emp) return;
@@ -404,6 +430,7 @@ function openEdit(id) {
   document.getElementById('hire-date').value = emp.hire_date || '';
   document.getElementById('phone').value = emp.phone || '';
   document.getElementById('email').value = emp.email || '';
+  document.getElementById('is-test').checked = !!emp.is_test;
   document.getElementById('terminate-btn').hidden = emp.status === 'terminated';
   document.getElementById('terminate-section').hidden = true;
   overlay.hidden = false;
@@ -442,6 +469,7 @@ form.addEventListener('submit', async (e) => {
     hire_date: document.getElementById('hire-date').value,
     phone: document.getElementById('phone').value.trim(),
     email: document.getElementById('email').value.trim(),
+    is_test: document.getElementById('is-test').checked,
     entered_by: profile.uid,
     updated_at: serverTimestamp(),
   };
