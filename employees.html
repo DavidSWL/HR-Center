@@ -47,8 +47,16 @@
         </div>
         <table>
           <thead>
-            <tr>
-              <th>ID</th><th>Name</th><th>Job title</th><th>Div</th><th>Reports to</th><th>Dotted line</th><th>Start</th><th>Yrs</th><th>Status</th>
+            <tr id="head-row">
+              <th class="sortable" data-key="id">ID<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="name">Name<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="position">Job title<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="division">Div<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="manager">Reports to<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="dotted">Dotted line<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="start">Start<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="yrs">Yrs<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="status">Status<span class="sort-arrow"></span></th>
             </tr>
           </thead>
           <tbody id="rows"></tbody>
@@ -221,6 +229,40 @@ function managerName(id) {
   return m ? `${m.first_name} ${m.last_name}` : '—';
 }
 
+const SORT_ACCESSORS = {
+  id: (e) => e.id || '',
+  name: (e) => `${e.last_name || ''} ${e.first_name || ''}`.trim().toLowerCase(),
+  position: (e) => (e.position || '').toLowerCase(),
+  division: (e) => (e.division || '').toLowerCase(),
+  manager: (e) => managerName(e.manager_emp_id).toLowerCase(),
+  dotted: (e) => managerName(e.dotted_line_emp_id).toLowerCase(),
+  start: (e) => e.hire_date || '',
+  yrs: (e) => (e.status === 'terminated' ? -1 : (Number(yearsSince(e.hire_date)) || 0)),
+  status: (e) => e.status || '',
+};
+let sortKey = 'name';
+let sortDir = 'asc';
+
+function updateSortIndicators() {
+  document.querySelectorAll('#head-row .sortable').forEach((th) => {
+    const arrow = th.querySelector('.sort-arrow');
+    arrow.textContent = th.dataset.key === sortKey ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+  });
+}
+
+document.querySelectorAll('#head-row .sortable').forEach((th) => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.key;
+    if (sortKey === key) {
+      sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      sortKey = key;
+      sortDir = 'asc';
+    }
+    render();
+  });
+});
+
 function render() {
   const q = document.getElementById('search').value.trim().toLowerCase();
   const divisionFilter = document.getElementById('division-filter').value;
@@ -232,6 +274,15 @@ function render() {
     if (q && !`${e.first_name} ${e.last_name} ${e.id}`.toLowerCase().includes(q)) return false;
     return true;
   });
+
+  const accessor = SORT_ACCESSORS[sortKey] || SORT_ACCESSORS.name;
+  visible.sort((a, b) => {
+    const av = accessor(a);
+    const bv = accessor(b);
+    const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv));
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+  updateSortIndicators();
 
   rowsEl.innerHTML = visible.map((e) => `
     <tr class="row-clickable" data-id="${e.id}" style="cursor:pointer">

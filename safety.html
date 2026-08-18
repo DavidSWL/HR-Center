@@ -66,6 +66,7 @@
         <div class="tools">
           <button class="gh solid" id="add-btn" type="button">Log incident</button>
           <button class="gh" id="import-btn" type="button">Import incidents</button>
+          <input class="inp" id="search" placeholder="Search employee, location, division" style="min-width:220px">
           <select class="inp" id="type-filter">
             <option value="">All types</option>
             <option>Injury</option>
@@ -76,7 +77,16 @@
           <button class="gh" id="export-btn" type="button">Export Form 300 CSV</button>
         </div>
         <table>
-          <thead><tr><th>Date</th><th>Employee</th><th>Type</th><th>Recordable</th><th>Division</th><th>Cost</th></tr></thead>
+          <thead>
+            <tr id="head-row">
+              <th class="sortable" data-key="date">Date<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="employee">Employee<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="type">Type<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="recordable">Recordable<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="division">Division<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="cost">Cost<span class="sort-arrow"></span></th>
+            </tr>
+          </thead>
           <tbody id="rows"></tbody>
         </table>
       </div>
@@ -293,9 +303,61 @@ async function loadIncidents() {
   render();
 }
 
+function empNameFor(i) {
+  if (i.privacy_case) return 'Privacy case';
+  const emp = empById(i.emp_id);
+  return emp ? `${emp.first_name} ${emp.last_name}` : (i.emp_name_raw || '');
+}
+
+const SORT_ACCESSORS = {
+  date: (i) => i.date || '',
+  employee: (i) => empNameFor(i).toLowerCase(),
+  type: (i) => (i.incident_type || '').toLowerCase(),
+  recordable: (i) => (i.recordable ? 1 : 0),
+  division: (i) => (i.division || '').toLowerCase(),
+  cost: (i) => Number(i.cost || 0),
+};
+let sortKey = 'date';
+let sortDir = 'desc';
+
+function updateSortIndicators() {
+  document.querySelectorAll('#head-row .sortable').forEach((th) => {
+    const arrow = th.querySelector('.sort-arrow');
+    arrow.textContent = th.dataset.key === sortKey ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+  });
+}
+
+document.querySelectorAll('#head-row .sortable').forEach((th) => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.key;
+    if (sortKey === key) {
+      sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      sortKey = key;
+      sortDir = 'asc';
+    }
+    render();
+  });
+});
+
 function render() {
   const typeFilter = document.getElementById('type-filter').value;
-  const visible = incidents.filter((i) => !typeFilter || i.incident_type === typeFilter);
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const visible = incidents.filter((i) => {
+    if (typeFilter && i.incident_type !== typeFilter) return false;
+    if (q && !`${empNameFor(i)} ${i.location || ''} ${i.division || ''}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  const accessor = SORT_ACCESSORS[sortKey] || SORT_ACCESSORS.date;
+  visible.sort((a, b) => {
+    const av = accessor(a);
+    const bv = accessor(b);
+    const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv));
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+  updateSortIndicators();
+
   document.getElementById('log-summary').textContent = `${visible.length} of ${incidents.length}`;
 
   document.getElementById('rows').innerHTML = visible.length ? visible.map((i) => {
@@ -545,6 +607,7 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
 });
 
 document.getElementById('type-filter').addEventListener('change', render);
+document.getElementById('search').addEventListener('input', render);
 document.getElementById('export-btn').addEventListener('click', exportCsv);
 
 // ---- incident import ----
