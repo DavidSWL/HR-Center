@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1>Settings</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+      <div class="acts" id="list-tabs"></div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3 id="list-title">—</h3><span id="list-summary">—</span></div>
+        <div class="tools">
+          <input class="inp" id="new-value" placeholder="Add a new entry" style="min-width:220px">
+          <button class="gh solid" id="add-value-btn" type="button">Add</button>
+        </div>
+        <table>
+          <thead><tr><th>Entry</th><th>Status</th><th></th></tr></thead>
+          <tbody id="value-rows"></tbody>
+        </table>
+        <div class="legend"><span>Entries in use are retired, not deleted — historical records keep their label either way.</span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>HR team &amp; access</h3><span>Read-only here</span></div>
+        <table>
+          <thead><tr><th>Name</th><th>Role</th></tr></thead>
+          <tbody id="staff-rows"></tbody>
+        </table>
+        <div class="foot">Accounts and roles are managed in the Firebase Console, not from the app — the same account that could add a role here could otherwise grant itself David's closing authority on employee relations cases, so this list is deliberately read-only.</div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, showToast } from './app.js';
+import { db } from './firebaseconfig.js';
+import {
+  collection, doc, getDoc, setDoc, getDocs, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('settings', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+const LISTS = [
+  { key: 'divisions', label: 'Divisions' },
+  { key: 'departments', label: 'Departments' },
+  { key: 'crews', label: 'Crews' },
+  { key: 'job_titles', label: 'Job titles' },
+  { key: 'discipline_categories', label: 'Discipline categories' },
+  { key: 'separation_types', label: 'Separation types' },
+  { key: 'er_types', label: 'Employee relations types' },
+  { key: 'injury_types', label: 'Injury types' },
+];
+
+let activeList = LISTS[0].key;
+let currentValues = [];
+
+function renderTabs() {
+  document.getElementById('list-tabs').innerHTML = LISTS.map((l) =>
+    `<button class="gh${l.key === activeList ? ' solid' : ''}" data-key="${l.key}" type="button">${l.label}</button>`
+  ).join('');
+  document.querySelectorAll('#list-tabs button').forEach((btn) => {
+    btn.addEventListener('click', () => { activeList = btn.dataset.key; renderTabs(); loadList(); });
+  });
+}
+
+async function loadList() {
+  document.getElementById('list-title').textContent = LISTS.find((l) => l.key === activeList).label;
+  const snap = await getDoc(doc(db, 'settings', activeList));
+  currentValues = snap.exists() ? (snap.data().values || []) : [];
+  renderValues();
+}
+
+function renderValues() {
+  const activeCount = currentValues.filter((v) => v.active !== false).length;
+  document.getElementById('list-summary').textContent = `${activeCount} active of ${currentValues.length}`;
+  document.getElementById('value-rows').innerHTML = currentValues.length ? currentValues.map((v, i) => `
+    <tr>
+      <td>${v.label}</td>
+      <td>${v.active !== false ? '<span class="pill ok">Active</span>' : '<span class="pill bad">Retired</span>'}</td>
+      <td style="text-align:right">
+        <button class="gh toggle-value-btn" data-i="${i}" type="button">${v.active !== false ? 'Retire' : 'Reactivate'}</button>
+      </td>
+    </tr>
+  `).join('') : '<tr><td colspan="3" class="dim">Nothing added yet.</td></tr>';
+
+  document.querySelectorAll('.toggle-value-btn').forEach((btn) => {
+    btn.addEventListener('click', () => toggleValue(parseInt(btn.dataset.i, 10)));
+  });
+}
+
+async function saveList() {
+  await setDoc(doc(db, 'settings', activeList), {
+    values: currentValues,
+    entered_by: profile.uid,
+    updated_at: serverTimestamp(),
+  });
+}
+
+async function toggleValue(i) {
+  currentValues[i].active = currentValues[i].active === false ? true : false;
+  try {
+    await saveList();
+    renderValues();
+    showToast('Updated.');
+  } catch (err) {
+    console.error(err);
+    showToast('Could not update — ' + err.message, 'error');
+  }
+}
+
+document.getElementById('add-value-btn').addEventListener('click', async () => {
+  const input = document.getElementById('new-value');
+  const label = input.value.trim();
+  if (!label) return;
+  currentValues.push({ label, active: true });
+  try {
+    await saveList();
+    input.value = '';
+    renderValues();
+    showToast('Added.');
+  } catch (err) {
+    console.error(err);
+    showToast('Could not add — ' + err.message, 'error');
+  }
+});
+
+async function loadStaff() {
+  const snap = await getDocs(collection(db, 'users'));
+  const ROLE_LABELS = { david: 'David (can close ER cases)', tanya: 'Tanya', admin_assistant: 'Admin Assistant' };
+  document.getElementById('staff-rows').innerHTML = snap.docs.map((d) => {
+    const u = d.data();
+    return `<tr><td>${u.name}</td><td class="mono dim">${ROLE_LABELS[u.role] || u.role}</td></tr>`;
+  }).join('');
+}
+
+renderTabs();
+await loadList();
+await loadStaff();
+</script>
+</body>
+</html>

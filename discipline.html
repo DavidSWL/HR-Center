@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Disciplinary actions — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>
+.step-bar{display:flex;gap:2px;width:64px}
+.step-bar i{flex:1;height:6px;background:var(--line)}
+.step-bar i.on{background:var(--accent)}
+.step-bar.final i.on{background:var(--alertTx)}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1>Disciplinary actions</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+
+      <div class="big" id="report-cards"></div>
+
+      <div class="card">
+        <div class="card-h">
+          <h3>Log</h3>
+          <span id="log-summary">—</span>
+        </div>
+        <div class="tools">
+          <button class="gh solid" id="add-btn" type="button">Write up</button>
+          <input class="inp" id="search" placeholder="Search employee, category, manager, text" style="min-width:240px">
+          <select class="inp" id="level-filter">
+            <option value="">All levels</option>
+            <option value="1">Level 1</option>
+            <option value="2">Level 2</option>
+            <option value="3">Level 3</option>
+            <option value="4">Level 4 / Final</option>
+          </select>
+          <select class="inp" id="division-filter">
+            <option value="">All divisions</option>
+          </select>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)">
+            <input type="checkbox" id="final-only"> At final step only
+          </label>
+        </div>
+        <table>
+          <thead><tr><th>Date</th><th>Employee</th><th>Division</th><th>Category</th><th>Step</th><th>Issued by</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- add action modal -->
+<div class="modal-overlay" id="modal-overlay" hidden>
+  <div class="modal">
+    <div class="modal-h">
+      <h3>Write up</h3>
+      <button class="modal-close" id="modal-close" type="button">&times;</button>
+    </div>
+    <form id="action-form">
+      <div class="modal-body">
+        <div class="field">
+          <label class="f-lab" for="emp-select">Employee</label>
+          <select class="f-in" id="emp-select" required></select>
+        </div>
+        <div id="sequence-hint" class="login-error" style="background:var(--hover);color:var(--muted);border-color:var(--line)" hidden></div>
+        <div class="frow">
+          <div class="field">
+            <label class="f-lab" for="category">Category</label>
+            <input class="f-in" id="category" required placeholder="e.g. Attendance">
+          </div>
+          <div class="field">
+            <label class="f-lab" for="level">Level</label>
+            <select class="f-in" id="level" required>
+              <option value="1">1 of 4</option>
+              <option value="2">2 of 4</option>
+              <option value="3">3 of 4</option>
+              <option value="4">4 of 4 — Final</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label class="f-lab" for="description">Description of infraction</label>
+          <textarea class="f-in" id="description" rows="4" style="resize:vertical" required></textarea>
+        </div>
+        <div class="frow">
+          <div class="field">
+            <label class="f-lab" for="issued-by">Issued by (manager)</label>
+            <input class="f-in" id="issued-by" required>
+          </div>
+          <div class="field">
+            <label class="f-lab" for="doc-file">Signed document</label>
+            <input class="f-in" id="doc-file" type="file" accept="application/pdf,image/*">
+          </div>
+        </div>
+        <div class="field">
+          <label class="f-lab" for="follow-up-date">Follow-up date (creates a task)</label>
+          <input class="f-in" id="follow-up-date" type="date">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="gh" id="cancel-btn">Cancel</button>
+        <button type="submit" class="gh solid" id="save-btn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, showToast, formatDate } from './app.js';
+import { db, storage } from './firebaseconfig.js';
+import {
+  collection, doc, getDocs, setDoc, addDoc, writeBatch, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('discipline', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+let employees = [];
+let actions = [];
+
+function empById(id) { return employees.find((e) => e.id === id); }
+
+async function loadEmployees() {
+  const snap = await getDocs(collection(db, 'employees'));
+  employees = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((e) => e.status !== 'terminated')
+    .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''));
+  document.getElementById('emp-select').innerHTML = employees
+    .map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name} (${e.id})</option>`).join('');
+
+  const divisions = [...new Set(employees.map((e) => e.division).filter(Boolean))].sort();
+  document.getElementById('division-filter').innerHTML =
+    '<option value="">All divisions</option>' + divisions.map((d) => `<option>${d}</option>`).join('');
+}
+
+async function loadActions() {
+  const snap = await getDocs(collection(db, 'disciplinary_actions'));
+  actions = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.entered_at?.seconds || 0) - (a.entered_at?.seconds || 0));
+  renderReport();
+  render();
+}
+
+// Sequence within an employee's history, oldest first — this is what
+// "final step reached" / "next step is final" is computed from, not
+// the level field itself (a serious act can jump straight to final).
+function sequenceFor(empId, actionId) {
+  const forEmp = actions
+    .filter((a) => a.emp_id === empId)
+    .sort((a, b) => (a.entered_at?.seconds || 0) - (b.entered_at?.seconds || 0));
+  return forEmp.findIndex((a) => a.id === actionId) + 1;
+}
+
+function render() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const levelFilter = document.getElementById('level-filter').value;
+  const divisionFilter = document.getElementById('division-filter').value;
+  const finalOnly = document.getElementById('final-only').checked;
+
+  let visible = actions.filter((a) => {
+    const emp = empById(a.emp_id);
+    if (!emp) return false;
+    if (levelFilter && String(a.level) !== levelFilter) return false;
+    if (divisionFilter && a.division !== divisionFilter) return false;
+    if (finalOnly && a.level < 4) return false;
+    if (q) {
+      const hay = `${emp.first_name} ${emp.last_name} ${a.category} ${a.issued_by} ${a.description}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  document.getElementById('log-summary').textContent = `${visible.length} of ${actions.length}`;
+
+  document.getElementById('rows').innerHTML = visible.length ? visible.map((a) => {
+    const emp = empById(a.emp_id);
+    const seq = sequenceFor(a.emp_id, a.id);
+    const isFinal = a.level >= 4;
+    const nextIsFinal = !isFinal && seq === 3;
+    return `
+      <tr>
+        <td class="mono">${a.entered_at?.seconds ? formatDate(new Date(a.entered_at.seconds * 1000)) : '—'}</td>
+        <td><b>${emp.first_name} ${emp.last_name}</b></td>
+        <td class="mono dim">${a.division || '—'}</td>
+        <td>${a.category}</td>
+        <td>
+          <div class="step-bar${isFinal ? ' final' : ''}">${[1, 2, 3, 4].map((n) => `<i class="${n <= a.level ? 'on' : ''}"></i>`).join('')}</div>
+          ${isFinal ? '<span class="pill bad">Final step — consider termination</span>' : ''}
+          ${nextIsFinal ? '<span class="pill mid">Next step is final</span>' : ''}
+        </td>
+        <td class="dim">${a.issued_by || '—'}</td>
+        <td style="text-align:right">
+          ${a.file_url ? `<a href="${a.file_url}" target="_blank" rel="noopener" class="gh" style="text-decoration:none;display:inline-block">View</a>` : ''}
+        </td>
+      </tr>
+    `;
+  }).join('') : '<tr><td colspan="7" class="dim">No actions match.</td></tr>';
+}
+
+function renderReport() {
+  const activeEmployees = employees.length || 1;
+  const byDivision = {};
+  const repeatCounts = {};
+  actions.forEach((a) => {
+    byDivision[a.division] = (byDivision[a.division] || 0) + 1;
+    repeatCounts[a.emp_id] = (repeatCounts[a.emp_id] || 0) + 1;
+  });
+  const repeatIndividuals = Object.values(repeatCounts).filter((c) => c >= 2).length;
+  const finalStepCount = actions.filter((a) => a.level >= 4).length;
+
+  const divisionCounts = employees.reduce((acc, e) => {
+    if (e.status !== 'terminated' && e.division) acc[e.division] = (acc[e.division] || 0) + 1;
+    return acc;
+  }, {});
+  const topDivision = Object.entries(byDivision).sort((a, b) => b[1] - a[1])[0];
+  const topRate = topDivision && divisionCounts[topDivision[0]]
+    ? ((topDivision[1] / divisionCounts[topDivision[0]]) * 100).toFixed(0)
+    : '—';
+
+  document.getElementById('report-cards').innerHTML = `
+    <div><div class="v n">${actions.length}</div><div class="k">Total actions on file</div></div>
+    <div><div class="v hot">${finalStepCount}</div><div class="k">At final step</div></div>
+    <div><div class="v n">${repeatIndividuals}</div><div class="k">Repeat individuals (2+)</div></div>
+    <div><div class="v n">${topDivision ? topDivision[0] : '—'}${topRate !== '—' ? ` · ${topRate}/100` : ''}</div><div class="k">Highest rate, by division</div></div>
+  `;
+}
+
+const overlay = document.getElementById('modal-overlay');
+
+function openModal() {
+  document.getElementById('action-form').reset();
+  document.getElementById('sequence-hint').hidden = true;
+  overlay.hidden = false;
+  updateSequenceHint();
+}
+document.getElementById('add-btn').addEventListener('click', openModal);
+document.getElementById('modal-close').addEventListener('click', () => { overlay.hidden = true; });
+document.getElementById('cancel-btn').addEventListener('click', () => { overlay.hidden = true; });
+
+function updateSequenceHint() {
+  const empId = document.getElementById('emp-select').value;
+  const priorCount = actions.filter((a) => a.emp_id === empId).length;
+  const suggestedLevel = Math.min(priorCount + 1, 4);
+  document.getElementById('level').value = String(suggestedLevel);
+  const hint = document.getElementById('sequence-hint');
+  if (priorCount === 0) { hint.hidden = true; return; }
+  hint.hidden = false;
+  hint.textContent = priorCount >= 3
+    ? `This employee already has ${priorCount} prior actions on file — this would reach the final step.`
+    : `This employee has ${priorCount} prior action${priorCount === 1 ? '' : 's'} on file.`;
+}
+document.getElementById('emp-select').addEventListener('change', updateSequenceHint);
+
+document.getElementById('action-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const saveBtn = document.getElementById('save-btn');
+  saveBtn.disabled = true;
+
+  try {
+    const empId = document.getElementById('emp-select').value;
+    const emp = empById(empId);
+    const actionRef = doc(collection(db, 'disciplinary_actions'));
+
+    let fileUrl = null, filePath = null;
+    const file = document.getElementById('doc-file').files[0];
+    if (file) {
+      filePath = `disciplinary/${actionRef.id}/${file.name}`;
+      const storageRef = ref(storage, filePath);
+      await uploadBytes(storageRef, file);
+      fileUrl = await getDownloadURL(storageRef);
+    }
+
+    const batch = writeBatch(db);
+    batch.set(actionRef, {
+      emp_id: empId,
+      division: emp.division || '', // denormalized at write time, per the data model rule
+      category: document.getElementById('category').value.trim(),
+      level: parseInt(document.getElementById('level').value, 10),
+      description: document.getElementById('description').value.trim(),
+      issued_by: document.getElementById('issued-by').value.trim(),
+      form_on_file: !!file,
+      file_path: filePath,
+      file_url: fileUrl,
+      entered_by: profile.uid,
+      entered_at: serverTimestamp(),
+    });
+
+    const followUp = document.getElementById('follow-up-date').value;
+    if (followUp) {
+      batch.set(doc(collection(db, 'tasks')), {
+        assigned_to: profile.uid,
+        due_date: followUp,
+        instructions: `Follow up on write-up (${document.getElementById('category').value.trim()}) — ${emp.first_name} ${emp.last_name}`,
+        recurring: 'none',
+        status: 'open',
+        entered_by: profile.uid,
+        entered_at: serverTimestamp(),
+      });
+    }
+
+    await batch.commit();
+    overlay.hidden = true;
+    showToast('Write-up filed.' + (followUp ? ' Follow-up task created.' : ''));
+    await loadActions();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  } finally {
+    saveBtn.disabled = false;
+  }
+});
+
+document.getElementById('search').addEventListener('input', render);
+document.getElementById('level-filter').addEventListener('change', render);
+document.getElementById('division-filter').addEventListener('change', render);
+document.getElementById('final-only').addEventListener('change', render);
+
+await loadEmployees();
+await loadActions();
+</script>
+</body>
+</html>
