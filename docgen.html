@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Document generator — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>
+@media print {
+  .side, .bar, .no-print { display:none !important; }
+  .app { display:block; }
+  .view { padding:0; }
+  .doc-sheet { border:none !important; box-shadow:none !important; }
+}
+.gen-menu{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:20px}
+.gen-tile{border:1px solid var(--line);background:var(--raise);padding:16px;cursor:pointer;text-align:left}
+.gen-tile:hover{border-color:var(--accent)}
+.gen-tile h4{font-family:var(--display);font-size:14px;margin:0 0 4px}
+.gen-tile p{font-size:11.5px;color:var(--faint);margin:0}
+.gen-tile.linkout{opacity:.85}
+
+.doc-sheet{border:1px solid var(--line);background:#fff;color:#111;max-width:800px;margin:0 auto}
+.doc-bar{background:var(--oregon);color:#fff;padding:14px 24px;font-family:var(--display);font-size:16px;letter-spacing:.02em;text-transform:uppercase}
+.doc-body{padding:24px}
+.doc-body h4{font-family:var(--display);font-size:13px;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid var(--oregon);padding-bottom:4px;margin:20px 0 10px}
+.doc-body h4:first-child{margin-top:0}
+.doc-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;font-size:13px;margin-bottom:10px}
+.doc-grid div b{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:#666}
+.doc-fineprint{font-size:10.5px;color:#555;font-style:italic;border:1px solid #ccc;padding:10px;margin-top:14px}
+.sig-line{border-top:1px solid #333;margin-top:36px;padding-top:4px;font-size:11px}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1 id="page-title">Document generator</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle no-print">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+
+      <div id="menu-view">
+        <p class="dim" style="margin-bottom:16px">
+          Built to our own house style (Oregon green section bars) since the production forms and logo haven't
+          been supplied yet — swap in the real forms whenever they're ready. Every generator here produces a
+          print view; use your browser's Print → Save as PDF for a PDF copy. Word (.docx) export isn't included.
+        </p>
+        <div class="gen-menu" id="tiles"></div>
+      </div>
+
+      <div id="gen-view" hidden>
+        <div class="acts no-print">
+          <button class="gh" id="back-btn" type="button">&larr; All documents</button>
+          <button class="gh" id="print-btn" type="button">Print</button>
+          <select class="inp" id="lang-select">
+            <option value="en">English</option>
+            <option value="es">Español</option>
+          </select>
+        </div>
+        <div id="gen-body"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, showToast, formatDate } from './app.js';
+import { db } from './firebaseconfig.js';
+import {
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, writeBatch, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('docgen', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+const T = {
+  en: { employee: 'Employee', id: 'Employee ID', title: 'Job title', division: 'Division', hireDate: 'Hire date',
+        manager: 'Reports to', language: 'Language', print: 'Print', save: 'Save' },
+  es: { employee: 'Empleado', id: 'ID de empleado', title: 'Puesto', division: 'División', hireDate: 'Fecha de contratación',
+        manager: 'Reporta a', language: 'Idioma', print: 'Imprimir', save: 'Guardar' },
+};
+
+const GENERATORS = [
+  { key: 'writeup', title: 'Write-up', desc: 'Lives in Disciplinary actions', linkout: 'discipline.html' },
+  { key: 'pip', title: 'Performance Improvement Plan', desc: 'PIP with a four-check-in schedule' },
+  { key: 'review', title: '30 / 60 / 90 review', desc: 'Nine-area rating with an on-track routing question' },
+  { key: 'termination', title: 'Termination', desc: 'Lives in Employee roster — open an employee, use Terminate', linkout: 'employees.html' },
+  { key: 'offer', title: 'Offer letter', desc: 'Rate is typed, printed, and never stored' },
+  { key: 'onboarding', title: 'Onboarding packet', desc: 'Assembles the required document checklist' },
+];
+
+document.getElementById('tiles').innerHTML = GENERATORS.map((g) => `
+  <button class="gen-tile${g.linkout ? ' linkout' : ''}" data-key="${g.key}" type="button">
+    <h4>${g.title}</h4>
+    <p>${g.desc}</p>
+  </button>
+`).join('');
+
+document.querySelectorAll('.gen-tile').forEach((btn) => {
+  const g = GENERATORS.find((x) => x.key === btn.dataset.key);
+  btn.addEventListener('click', () => {
+    if (g.linkout) { window.location.href = g.linkout; return; }
+    openGenerator(g.key);
+  });
+});
+
+document.getElementById('back-btn').addEventListener('click', () => {
+  document.getElementById('menu-view').hidden = false;
+  document.getElementById('gen-view').hidden = true;
+  document.getElementById('page-title').textContent = 'Document generator';
+});
+document.getElementById('print-btn').addEventListener('click', () => window.print());
+document.getElementById('lang-select').addEventListener('change', () => renderCurrent());
+
+let employees = [];
+let currentKey = null;
+
+async function loadEmployees() {
+  const snap = await getDocs(collection(db, 'employees'));
+  employees = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => e.status !== 'terminated');
+}
+
+function empSelectOptions() {
+  return employees
+    .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''))
+    .map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name} (${e.id})</option>`).join('');
+}
+
+function openGenerator(key) {
+  currentKey = key;
+  document.getElementById('menu-view').hidden = true;
+  document.getElementById('gen-view').hidden = false;
+  document.getElementById('page-title').textContent = GENERATORS.find((g) => g.key === key).title;
+  renderCurrent();
+}
+
+function renderCurrent() {
+  const lang = document.getElementById('lang-select').value;
+  if (currentKey === 'pip') renderPip(lang);
+  if (currentKey === 'review') renderReview(lang);
+  if (currentKey === 'offer') renderOffer(lang);
+  if (currentKey === 'onboarding') renderOnboarding(lang);
+}
+
+// ---- PIP ----
+
+function renderPip(lang) {
+  const t = T[lang];
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <div class="frow">
+          <div class="field"><label class="f-lab">${t.employee}</label><select class="f-in" id="pip-emp">${empSelectOptions()}</select></div>
+          <div class="field"><label class="f-lab">Start date</label><input class="f-in" id="pip-start" type="date"></div>
+        </div>
+        <div class="field"><label class="f-lab">Final review date</label><input class="f-in" id="pip-final" type="date"></div>
+        <div class="field"><label class="f-lab">Performance gaps (use specific behaviors and dates, not generalities)</label><textarea class="f-in" id="pip-gaps" rows="3" style="resize:vertical"></textarea></div>
+        <div class="field"><label class="f-lab">Expectations going forward (specific, measurable, time-bound)</label><textarea class="f-in" id="pip-expect" rows="3" style="resize:vertical"></textarea></div>
+        <div class="field">
+          <label class="f-lab">Support provided</label>
+          <label style="display:block;font-size:12.5px;margin-bottom:4px"><input type="checkbox" class="pip-support" value="Additional training"> Additional training</label>
+          <label style="display:block;font-size:12.5px;margin-bottom:4px"><input type="checkbox" class="pip-support" value="Regular check-ins"> Regular check-ins</label>
+          <label style="display:block;font-size:12.5px;margin-bottom:4px"><input type="checkbox" class="pip-support" value="Written resources"> Written resources</label>
+          <label style="display:block;font-size:12.5px"><input type="checkbox" class="pip-support" value="Shadowing"> Shadowing a peer</label>
+        </div>
+        <button class="gh solid" id="pip-generate-btn" type="button">Generate &amp; file</button>
+      </div>
+    </div>
+    <div class="doc-sheet" id="pip-sheet" hidden></div>
+  `;
+
+  document.getElementById('pip-generate-btn').addEventListener('click', async () => {
+    const empId = document.getElementById('pip-emp').value;
+    const emp = employees.find((e) => e.id === empId);
+    const start = document.getElementById('pip-start').value;
+    const final = document.getElementById('pip-final').value;
+    const gaps = document.getElementById('pip-gaps').value.trim();
+    const expect = document.getElementById('pip-expect').value.trim();
+    const support = [...document.querySelectorAll('.pip-support:checked')].map((c) => c.value);
+
+    if (!start || !final) { showToast('Start and final review dates are required.', 'error'); return; }
+
+    const checkIns = [];
+    const startD = new Date(start + 'T00:00:00'), finalD = new Date(final + 'T00:00:00');
+    const span = (finalD - startD) / 4;
+    for (let i = 1; i <= 4; i++) {
+      checkIns.push(new Date(startD.getTime() + span * i).toISOString().slice(0, 10));
+    }
+
+    try {
+      const pipRef = doc(collection(db, 'pips'));
+      const batch = writeBatch(db);
+      batch.set(pipRef, {
+        emp_id: empId, division: emp.division || '', start_date: start, final_review_date: final,
+        performance_gaps: gaps, expectations: expect, support_provided: support,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      checkIns.forEach((d, i) => {
+        batch.set(doc(collection(db, 'tasks')), {
+          assigned_to: profile.uid, due_date: d,
+          instructions: `PIP check-in ${i + 1} of 4 — ${emp.first_name} ${emp.last_name}`,
+          recurring: 'none', status: 'open', entered_by: profile.uid, entered_at: serverTimestamp(),
+        });
+      });
+      await batch.commit();
+      await addDoc(collection(db, 'activity'), {
+        module: 'documents', item: `PIP generated — ${emp.first_name} ${emp.last_name}`,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast('PIP filed. 4 check-in tasks created.');
+      renderPipSheet(lang, emp, { start, final, gaps, expect, support, checkIns });
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
+}
+
+function renderPipSheet(lang, emp, p) {
+  const t = T[lang];
+  const isEs = lang === 'es';
+  const sheet = document.getElementById('pip-sheet');
+  sheet.hidden = false;
+  sheet.innerHTML = `
+    <div class="doc-bar">${isEs ? 'Plan de Mejora del Desempeño' : 'Performance Improvement Plan'}</div>
+    <div class="doc-body">
+      <div class="doc-grid">
+        <div><b>${t.employee}</b>${emp.first_name} ${emp.last_name}</div>
+        <div><b>${t.id}</b>${emp.id}</div>
+        <div><b>${t.title}</b>${emp.position || ''}</div>
+        <div><b>${t.division}</b>${emp.division || ''}</div>
+        <div><b>${isEs ? 'Fecha de inicio' : 'Start date'}</b>${formatDate(p.start)}</div>
+        <div><b>${isEs ? 'Revisión final' : 'Final review'}</b>${formatDate(p.final)}</div>
+      </div>
+      <h4>${isEs ? 'Brechas de desempeño' : 'Performance gaps'}</h4>
+      <p>${p.gaps || '—'}</p>
+      <h4>${isEs ? 'Expectativas' : 'Expectations going forward'}</h4>
+      <p>${p.expect || '—'}</p>
+      <h4>${isEs ? 'Apoyo proporcionado' : 'Support provided'}</h4>
+      <p>${p.support.join(', ') || '—'}</p>
+      <h4>${isEs ? 'Calendario de seguimiento' : 'Check-in schedule'}</h4>
+      <table><tbody>
+        ${p.checkIns.map((d, i) => `<tr><td>${isEs ? 'Revisión' : 'Check-in'} ${i + 1}</td><td>${formatDate(d)}</td><td>Manager: ______</td><td>Employee: ______</td></tr>`).join('')}
+      </table>
+      <div class="sig-line" style="display:inline-block;width:45%">${isEs ? 'Firma del empleado' : 'Employee signature'} / ${isEs ? 'Fecha' : 'Date'}</div>
+      <div class="sig-line" style="display:inline-block;width:45%;margin-left:5%">${isEs ? 'Firma del gerente' : 'Manager signature'} / ${isEs ? 'Fecha' : 'Date'}</div>
+      <div class="doc-fineprint">${isEs
+        ? 'El acuse de recibo de este plan no constituye acuerdo con su contenido, solo confirma que fue entregado y explicado.'
+        : 'Acknowledgment of this plan does not indicate agreement with its content, only that it was delivered and explained.'}</div>
+    </div>
+  `;
+}
+
+// ---- 30/60/90 review ----
+
+const AREAS = ['Job knowledge', 'Quality of work', 'Productivity', 'Attendance & punctuality',
+  'Communication', 'Teamwork', 'Safety compliance', 'Initiative', 'Adherence to policies'];
+
+function renderReview(lang) {
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <div class="frow">
+          <div class="field"><label class="f-lab">Employee</label><select class="f-in" id="rev-emp">${empSelectOptions()}</select></div>
+          <div class="field"><label class="f-lab">Milestone</label><select class="f-in" id="rev-milestone"><option value="30">30-day</option><option value="60">60-day</option><option value="90">90-day</option></select></div>
+        </div>
+        <div id="rev-areas"></div>
+        <div class="field"><label class="f-lab">Is the employee on track?</label>
+          <select class="f-in" id="rev-ontrack"><option value="yes">Yes</option><option value="no">No — route to HR</option></select>
+        </div>
+        <div class="field"><label class="f-lab">Manager notes</label><textarea class="f-in" id="rev-notes" rows="3" style="resize:vertical"></textarea></div>
+        <button class="gh solid" id="rev-generate-btn" type="button">Save &amp; generate</button>
+      </div>
+    </div>
+    <div class="doc-sheet" id="rev-sheet" hidden></div>
+  `;
+  document.getElementById('rev-areas').innerHTML = AREAS.map((a, i) => `
+    <div class="field">
+      <label class="f-lab">${a}</label>
+      <div style="display:flex;gap:16px;margin-bottom:4px">
+        <label><input type="radio" name="area${i}" value="E"> Exceeds</label>
+        <label><input type="radio" name="area${i}" value="M" checked> Meets</label>
+        <label><input type="radio" name="area${i}" value="N"> Needs improvement</label>
+      </div>
+      <input class="f-in" placeholder="Comment (optional)" id="area-comment-${i}">
+    </div>
+  `).join('');
+
+  document.getElementById('rev-generate-btn').addEventListener('click', async () => {
+    const empId = document.getElementById('rev-emp').value;
+    const emp = employees.find((e) => e.id === empId);
+    const milestone = document.getElementById('rev-milestone').value;
+    const onTrack = document.getElementById('rev-ontrack').value === 'yes';
+    const notes = document.getElementById('rev-notes').value.trim();
+
+    const ratings = AREAS.map((a, i) => ({
+      area: a,
+      rating: document.querySelector(`input[name="area${i}"]:checked`).value,
+      comment: document.getElementById(`area-comment-${i}`).value.trim(),
+    }));
+
+    try {
+      await setDoc(doc(db, 'employees', empId, 'reviews', milestone), {
+        ratings, manager_notes: notes, on_track: onTrack,
+        review_completed: true, entered_by: profile.uid, updated_at: serverTimestamp(),
+      }, { merge: true });
+      await addDoc(collection(db, 'activity'), {
+        module: 'reviews', item: `${milestone}-day review generated — ${emp.first_name} ${emp.last_name}`,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      if (!onTrack) {
+        await addDoc(collection(db, 'tasks'), {
+          assigned_to: profile.uid, due_date: new Date().toISOString().slice(0, 10),
+          instructions: `Not on track — ${milestone}-day review for ${emp.first_name} ${emp.last_name} routed to HR`,
+          recurring: 'none', status: 'open', entered_by: profile.uid, entered_at: serverTimestamp(),
+        });
+      }
+      showToast('Review saved.' + (!onTrack ? ' Routed to HR as a task.' : ''));
+      renderReviewSheet(lang, emp, milestone, ratings, notes, onTrack);
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
+}
+
+function renderReviewSheet(lang, emp, milestone, ratings, notes, onTrack) {
+  const isEs = lang === 'es';
+  const sheet = document.getElementById('rev-sheet');
+  sheet.hidden = false;
+  sheet.innerHTML = `
+    <div class="doc-bar">${milestone}-${isEs ? 'Día Revisión de Desempeño' : 'Day Performance Review'}</div>
+    <div class="doc-body">
+      <div class="doc-grid">
+        <div><b>${isEs ? 'Empleado' : 'Employee'}</b>${emp.first_name} ${emp.last_name}</div>
+        <div><b>${isEs ? 'Puesto' : 'Job title'}</b>${emp.position || ''}</div>
+      </div>
+      <table><tbody>
+        ${ratings.map((r) => `<tr><td>${r.area}</td><td class="mono">${r.rating}</td><td class="dim">${r.comment || ''}</td></tr>`).join('')}
+      </table>
+      <h4>${isEs ? '¿En camino?' : 'On track?'}</h4>
+      <p>${onTrack ? (isEs ? 'Sí' : 'Yes') : (isEs ? 'No — remitido a RR.HH.' : 'No — routed to HR')}</p>
+      <h4>${isEs ? 'Notas del gerente' : 'Manager notes'}</h4>
+      <p>${notes || '—'}</p>
+      <div class="sig-line" style="display:inline-block;width:45%">${isEs ? 'Firma del empleado' : 'Employee signature'} / ${isEs ? 'Fecha' : 'Date'}</div>
+      <div class="sig-line" style="display:inline-block;width:45%;margin-left:5%">${isEs ? 'Firma del gerente' : 'Manager signature'} / ${isEs ? 'Fecha' : 'Date'}</div>
+    </div>
+  `;
+}
+
+// ---- Offer letter (rate never stored) ----
+
+function renderOffer(lang) {
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <div class="frow">
+          <div class="field"><label class="f-lab">Candidate name</label><input class="f-in" id="offer-name"></div>
+          <div class="field"><label class="f-lab">Job title</label><input class="f-in" id="offer-title"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Branch / division</label><input class="f-in" id="offer-branch"></div>
+          <div class="field"><label class="f-lab">Reports to</label><input class="f-in" id="offer-manager"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Pay rate (printed only — never saved)</label><input class="f-in" id="offer-rate" placeholder="e.g. $22.00/hr"></div>
+          <div class="field"><label class="f-lab">Schedule</label><input class="f-in" id="offer-schedule" placeholder="e.g. Mon–Fri, 6:30am–3:00pm"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Start date</label><input class="f-in" id="offer-start" type="date"></div>
+          <div class="field"><label class="f-lab">Sign and return by</label><input class="f-in" id="offer-returnby" type="date"></div>
+        </div>
+        <button class="gh solid" id="offer-generate-btn" type="button">Generate</button>
+        <button class="gh" id="offer-log-btn" type="button">Mark as sent (logs to activity — no rate included)</button>
+      </div>
+    </div>
+    <div class="doc-sheet" id="offer-sheet" hidden></div>
+  `;
+  document.getElementById('offer-generate-btn').addEventListener('click', () => renderOfferSheet(lang));
+  document.getElementById('offer-log-btn').addEventListener('click', async () => {
+    const name = document.getElementById('offer-name').value.trim();
+    if (!name) { showToast('Candidate name is required.', 'error'); return; }
+    try {
+      await addDoc(collection(db, 'activity'), {
+        module: 'documents', item: `Offer letter sent — ${name}`,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast('Logged — no rate or salary data was recorded.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not log — ' + err.message, 'error');
+    }
+  });
+}
+
+function renderOfferSheet(lang) {
+  const isEs = lang === 'es';
+  const sheet = document.getElementById('offer-sheet');
+  sheet.hidden = false;
+  sheet.innerHTML = `
+    <div class="doc-bar">${isEs ? 'Carta de Oferta' : 'Offer Letter'}</div>
+    <div class="doc-body">
+      <div class="doc-grid">
+        <div><b>${isEs ? 'Candidato' : 'Candidate'}</b>${document.getElementById('offer-name').value}</div>
+        <div><b>${isEs ? 'Puesto' : 'Job title'}</b>${document.getElementById('offer-title').value}</div>
+        <div><b>${isEs ? 'Sucursal' : 'Branch'}</b>${document.getElementById('offer-branch').value}</div>
+        <div><b>${isEs ? 'Reporta a' : 'Reports to'}</b>${document.getElementById('offer-manager').value}</div>
+        <div><b>${isEs ? 'Tarifa' : 'Rate'}</b>${document.getElementById('offer-rate').value}</div>
+        <div><b>${isEs ? 'Horario' : 'Schedule'}</b>${document.getElementById('offer-schedule').value}</div>
+        <div><b>${isEs ? 'Fecha de inicio' : 'Start date'}</b>${formatDate(document.getElementById('offer-start').value)}</div>
+        <div><b>${isEs ? 'Firmar antes de' : 'Sign & return by'}</b>${formatDate(document.getElementById('offer-returnby').value)}</div>
+      </div>
+      <div class="doc-fineprint">${isEs
+        ? 'Esta oferta está condicionada a la verificación de elegibilidad de empleo y otras contingencias estándar. El empleo es a voluntad.'
+        : 'This offer is contingent on employment eligibility verification and other standard contingencies. Employment is at-will.'}</div>
+      <div class="sig-line" style="margin-top:50px;width:60%">${isEs ? 'Firma' : 'Signature'} / ${isEs ? 'Fecha' : 'Date'}</div>
+    </div>
+  `;
+}
+
+// ---- Onboarding packet ----
+
+async function renderOnboarding(lang) {
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <div class="field"><label class="f-lab">Employee</label><select class="f-in" id="onb-emp">${empSelectOptions()}</select></div>
+        <button class="gh solid" id="onb-load-btn" type="button">Load checklist</button>
+      </div>
+    </div>
+    <div class="doc-sheet" id="onb-sheet" hidden></div>
+  `;
+  document.getElementById('onb-load-btn').addEventListener('click', async () => {
+    const empId = document.getElementById('onb-emp').value;
+    const emp = employees.find((e) => e.id === empId);
+    const snap = await getDocs(collection(db, 'employees', empId, 'onboarding_docs'));
+    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const isEs = lang === 'es';
+    const sheet = document.getElementById('onb-sheet');
+    sheet.hidden = false;
+    sheet.innerHTML = `
+      <div class="doc-bar">${isEs ? 'Paquete de Incorporación' : 'Onboarding Packet'}</div>
+      <div class="doc-body">
+        <div class="doc-grid">
+          <div><b>${isEs ? 'Empleado' : 'Employee'}</b>${emp.first_name} ${emp.last_name}</div>
+          <div><b>${isEs ? 'Puesto' : 'Job title'}</b>${emp.position || ''}</div>
+        </div>
+        <h4>${isEs ? 'Documentos requeridos' : 'Required documents'}</h4>
+        <table><tbody>
+          ${items.map((it) => `<tr><td>${it.title}</td><td>${it.on_file ? (isEs ? 'En archivo' : 'On file') : (isEs ? 'Pendiente' : 'Outstanding')}</td></tr>`).join('') || '<tr><td class="dim">No checklist found.</td></tr>'}
+        </tbody></table>
+      </div>
+    `;
+  });
+}
+
+await loadEmployees();
+</script>
+</body>
+</html>

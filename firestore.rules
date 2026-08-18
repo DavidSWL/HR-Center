@@ -135,6 +135,22 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /pips/{pipId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data)
+        && stamped(request.resource.data);
+      allow update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+    }
+
+    // Self-tracked SHRM-CP study progress. Nothing sensitive, no
+    // exclusion concerns — same open HR-staff access as everything else.
+    match /shrm_progress/{uid} {
+      allow read: if isHrUser();
+      allow create, update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+    }
+
     // ---- safety -------------------------------------------------------
     match /incidents/{incidentId} {
       allow read: if isHrUser();

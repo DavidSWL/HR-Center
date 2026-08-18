@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Employee relations — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>
+.er-tabs{display:flex;gap:8px;margin-bottom:16px}
+.er-tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.qa{border-bottom:1px solid var(--line);padding:12px 0}
+.qa:last-child{border-bottom:0}
+.qa .q{font-size:12.5px;font-weight:600;margin-bottom:6px}
+.banner{background:var(--alert-tint,rgba(179,38,30,.1));border:1px solid var(--alertTx);color:var(--alertTx);padding:12px 16px;margin-bottom:16px;font-size:13px}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1 id="page-title">Employee relations</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+      <div id="review-banner" class="banner" hidden></div>
+
+      <!-- LIST VIEW -->
+      <div id="list-view">
+        <div class="card">
+          <div class="card-h">
+            <h3>Cases</h3>
+            <span id="case-summary">—</span>
+          </div>
+          <div class="tools">
+            <button class="gh solid" id="new-case-btn" type="button">New case</button>
+          </div>
+          <table>
+            <thead><tr><th>Case</th><th>Type</th><th>Status</th><th>Opened</th><th>Days open</th></tr></thead>
+            <tbody id="case-rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- CASE DETAIL VIEW -->
+      <div id="detail-view" hidden>
+        <button class="gh" id="back-btn" type="button" style="margin-bottom:16px">&larr; All cases</button>
+
+        <div class="er-tabs">
+          <button class="gh on" data-tab="intake" type="button">Intake</button>
+          <button class="gh" data-tab="people" type="button">People involved</button>
+          <button class="gh" data-tab="interviews" type="button">Interviews</button>
+          <button class="gh" data-tab="review" type="button">Review &amp; close</button>
+        </div>
+
+        <div class="tab-pane" id="tab-intake">
+          <div class="card"><div class="card-body" id="intake-body"></div></div>
+        </div>
+
+        <div class="tab-pane" id="tab-people" hidden>
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-h"><h3>People</h3><span></span></div>
+            <table><tbody id="people-rows"></tbody></table>
+          </div>
+          <div class="card">
+            <div class="card-h"><h3>Add a witness</h3><span>Adding someone creates their interview automatically</span></div>
+            <div class="card-body" style="display:flex;gap:8px">
+              <input class="f-in" id="new-witness-name" placeholder="Full name">
+              <button class="gh solid" id="add-witness-btn" type="button" style="white-space:nowrap">Add witness</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-pane" id="tab-interviews" hidden>
+          <div class="card">
+            <div class="card-h"><h3>Interviews</h3><span id="interview-summary">—</span></div>
+            <table><tbody id="interview-rows"></tbody></table>
+          </div>
+          <div class="card" id="interview-form-card" style="margin-top:16px" hidden>
+            <div class="card-h"><h3 id="interview-form-title">Interview</h3><span></span></div>
+            <div class="card-body" id="interview-form-body"></div>
+            <div class="modal-actions">
+              <button class="gh" id="cancel-interview-btn" type="button">Cancel</button>
+              <button class="gh solid" id="save-interview-btn" type="button">Mark complete</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-pane" id="tab-review" hidden>
+          <div class="card">
+            <div class="card-h"><h3>Review &amp; close</h3><span></span></div>
+            <div class="card-body">
+              <div id="gate-status" style="margin-bottom:16px"></div>
+              <button class="gh solid" id="move-review-btn" type="button">Move to review</button>
+
+              <div id="review-fields" hidden style="margin-top:16px">
+                <div class="field">
+                  <label class="f-lab" for="findings">Findings</label>
+                  <textarea class="f-in" id="findings" rows="4" style="resize:vertical"></textarea>
+                </div>
+                <div class="field">
+                  <label class="f-lab" for="action">Action taken</label>
+                  <textarea class="f-in" id="action" rows="3" style="resize:vertical"></textarea>
+                </div>
+                <div id="close-gate-note" class="dim" style="font-size:12.5px;margin-bottom:10px"></div>
+                <button class="gh solid" id="close-case-btn" type="button">Close case</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- new case modal -->
+<div class="modal-overlay" id="modal-overlay" hidden>
+  <div class="modal" style="width:600px">
+    <div class="modal-h"><h3>New case</h3><button class="modal-close" id="modal-close" type="button">&times;</button></div>
+    <form id="new-case-form">
+      <div class="modal-body">
+        <div class="field">
+          <label class="f-lab" for="case-type">Issue type</label>
+          <select class="f-in" id="case-type" required>
+            <option value="harassment">Harassment</option>
+            <option value="discrimination">Discrimination</option>
+            <option value="retaliation">Retaliation</option>
+            <option value="conduct_violence">Conduct / violence</option>
+            <option value="attendance">Attendance</option>
+            <option value="performance">Performance</option>
+            <option value="safety">Safety</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="frow">
+          <div class="field">
+            <label class="f-lab" for="complainant-select">Complainant</label>
+            <select class="f-in" id="complainant-select" required></select>
+          </div>
+          <div class="field">
+            <label class="f-lab" for="accused-select">Person the complaint is about</label>
+            <select class="f-in" id="accused-select" required></select>
+          </div>
+        </div>
+        <div id="intake-questions"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="gh" id="new-case-cancel">Cancel</button>
+        <button type="submit" class="gh solid">Open case</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, showToast, formatDate } from './app.js';
+import { db } from './firebaseconfig.js';
+import {
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('er', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+const TYPE_LABELS = {
+  harassment: 'Harassment', discrimination: 'Discrimination', retaliation: 'Retaliation',
+  conduct_violence: 'Conduct / violence', attendance: 'Attendance', performance: 'Performance',
+  safety: 'Safety', other: 'Other',
+};
+
+const INTAKE_QUESTIONS = {
+  harassment: ['What happened, in your own words?', 'When and where did this occur?', 'Who else was present or may have witnessed this?', 'Has this happened before, and if so when?', 'Have you told anyone else about this?', 'What outcome are you hoping for?'],
+  discrimination: ['What happened, in your own words?', 'What protected characteristic do you believe this relates to?', 'When and where did this occur?', 'Who else was present or may have witnessed this?', 'Has this happened before?', 'What outcome are you hoping for?'],
+  retaliation: ['What protected activity did you engage in (e.g. a complaint, a report)?', 'What happened after that you believe was retaliatory?', 'When did the protected activity happen, and when did the retaliation happen?', 'Who was involved?', 'What outcome are you hoping for?'],
+  conduct_violence: ['What happened, in your own words?', 'Was any threat, weapon, or physical contact involved?', 'When and where did this occur?', 'Who else was present?', 'Do you feel physically safe right now?', 'What outcome are you hoping for?'],
+  attendance: ['What is the attendance concern?', 'Over what time period?', 'Have you discussed this with the employee’s supervisor?', 'What outcome are you hoping for?'],
+  performance: ['What is the performance concern?', 'Over what time period?', 'Has this been documented before?', 'What outcome are you hoping for?'],
+  safety: ['What happened or what safety concern are you raising?', 'When and where?', 'Was anyone hurt or at risk?', 'Who else was present?', 'What outcome are you hoping for?'],
+  other: ['What happened, in your own words?', 'When and where did this occur?', 'Who else was involved or may have witnessed this?', 'What outcome are you hoping for?'],
+};
+
+const ACCUSED_BASE = [
+  'Retaliation notice: retaliating against anyone involved in this matter — including the complainant or any witness — is prohibited and will result in separate discipline, up to and including termination. Do you understand?',
+  'Before we discuss anything specific, walk us through your account of what happened, in your own words.',
+];
+const ACCUSED_TYPE_EXTRA = {
+  harassment: 'Did you engage in the conduct described? If so, describe what happened from your perspective.',
+  discrimination: 'Were you aware of the relevant protected characteristic at the time of the decision or action in question?',
+  retaliation: 'When did you learn that a complaint or report had been made, and were you involved in what followed?',
+  conduct_violence: 'Was any physical contact, threat, or weapon involved, from your perspective?',
+  attendance: 'Walk us through the attendance pattern from your perspective.',
+  performance: 'Walk us through the performance concern from your perspective.',
+  safety: 'What PPE or safety equipment was available and in use at the time?',
+  other: 'Is there context you think is important that hasn’t come up yet?',
+};
+const ACCUSED_CLOSE = 'Is there anything else relevant you want us to know?';
+
+const WITNESS_BASE = [
+  'What did you personally see or hear? Limit your answer to what you directly observed, not what others told you.',
+  'When and where did you observe this?',
+];
+const WITNESS_TYPE_EXTRA = {
+  harassment: 'Did you directly witness the conduct described, or only hear about it afterward?',
+  discrimination: 'Did you observe how this person was treated compared to others in similar situations?',
+  retaliation: 'Did you observe any change in how the complainant was treated after the complaint was made?',
+  conduct_violence: 'Did you witness any physical contact, threat, or weapon?',
+  safety: 'Did you witness the safety concern directly?',
+};
+const WITNESS_CLOSE = 'Has anyone spoken to you about what to say in this interview, or asked you to say or not say anything specific?';
+
+let employees = [];
+let cases = [];
+let currentCase = null;
+let currentInterviews = [];
+let currentInterviewId = null;
+
+function empById(id) { return employees.find((e) => e.id === id); }
+function empName(id) { const e = empById(id); return e ? `${e.first_name} ${e.last_name}` : id; }
+
+function questionsFor(role, type) {
+  if (role === 'accused') {
+    const extra = ACCUSED_TYPE_EXTRA[type] ? [ACCUSED_TYPE_EXTRA[type]] : [];
+    return [...ACCUSED_BASE, ...extra, ACCUSED_CLOSE];
+  }
+  if (role === 'witness') {
+    const extra = WITNESS_TYPE_EXTRA[type] ? [WITNESS_TYPE_EXTRA[type]] : [];
+    return [...WITNESS_BASE, ...extra, WITNESS_CLOSE];
+  }
+  return INTAKE_QUESTIONS[type] || INTAKE_QUESTIONS.other; // complainant's own interview
+}
+
+async function loadEmployees() {
+  const snap = await getDocs(collection(db, 'employees'));
+  employees = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((e) => e.status !== 'terminated')
+    .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''));
+  const options = employees.map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name}</option>`).join('');
+  document.getElementById('complainant-select').innerHTML = options;
+  document.getElementById('accused-select').innerHTML = options;
+}
+
+async function loadCases() {
+  const snap = await getDocs(collection(db, 'er_cases'));
+  cases = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => b.id.localeCompare(a.id));
+  renderBanner();
+  renderList();
+}
+
+function renderBanner() {
+  const waiting = cases.filter((c) => c.status === 'review');
+  const banner = document.getElementById('review-banner');
+  if (!waiting.length) { banner.hidden = true; return; }
+  banner.hidden = false;
+  banner.textContent = `Waiting on your review: ${waiting.map((c) => c.id).join(', ')}`;
+}
+
+function renderList() {
+  document.getElementById('case-summary').textContent = `${cases.length} total`;
+  document.getElementById('case-rows').innerHTML = cases.length ? cases.map((c) => {
+    const opened = c.opened_at?.seconds ? new Date(c.opened_at.seconds * 1000) : null;
+    const days = opened ? Math.round((Date.now() - opened.getTime()) / 86400000) : '—';
+    const statusPill = {
+      intake: '<span class="pill">Intake</span>',
+      interviews: '<span class="pill mid">Interviews</span>',
+      review: '<span class="pill bad">Waiting on review</span>',
+      closed: '<span class="pill ok">Closed</span>',
+    }[c.status] || c.status;
+    return `
+      <tr class="row-clickable" data-id="${c.id}" style="cursor:pointer">
+        <td class="mono"><b>${c.id}</b></td>
+        <td>${TYPE_LABELS[c.type] || c.type}</td>
+        <td>${statusPill}</td>
+        <td class="mono">${opened ? formatDate(opened) : '—'}</td>
+        <td class="mono">${days}</td>
+      </tr>
+    `;
+  }).join('') : '<tr><td colspan="5" class="dim">No cases yet.</td></tr>';
+
+  document.querySelectorAll('#case-rows tr').forEach((tr) => {
+    tr.addEventListener('click', () => openCase(tr.dataset.id));
+  });
+}
+
+function nextCaseId() {
+  const year = new Date().getFullYear();
+  const prefix = `ER-${year}-`;
+  const nums = cases
+    .filter((c) => c.id.startsWith(prefix))
+    .map((c) => parseInt(c.id.slice(prefix.length), 10))
+    .filter((n) => !Number.isNaN(n));
+  const next = (nums.length ? Math.max(...nums) : 0) + 1;
+  return prefix + String(next).padStart(3, '0');
+}
+
+// ---- new case ----
+
+document.getElementById('case-type').addEventListener('change', renderIntakeQuestions);
+function renderIntakeQuestions() {
+  const type = document.getElementById('case-type').value;
+  document.getElementById('intake-questions').innerHTML = INTAKE_QUESTIONS[type].map((q, i) => `
+    <div class="field">
+      <label class="f-lab">${q}</label>
+      <textarea class="f-in intake-answer" data-i="${i}" rows="2" style="resize:vertical"></textarea>
+    </div>
+  `).join('');
+}
+
+const overlay = document.getElementById('modal-overlay');
+document.getElementById('new-case-btn').addEventListener('click', () => {
+  document.getElementById('new-case-form').reset();
+  renderIntakeQuestions();
+  overlay.hidden = false;
+});
+document.getElementById('modal-close').addEventListener('click', () => { overlay.hidden = true; });
+document.getElementById('new-case-cancel').addEventListener('click', () => { overlay.hidden = true; });
+
+document.getElementById('new-case-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const type = document.getElementById('case-type').value;
+  const complainantId = document.getElementById('complainant-select').value;
+  const accusedId = document.getElementById('accused-select').value;
+  if (complainantId === accusedId) {
+    showToast('Complainant and accused can’t be the same person.', 'error');
+    return;
+  }
+
+  const intakeResponses = [...document.querySelectorAll('.intake-answer')].map((el, i) => ({
+    question: INTAKE_QUESTIONS[type][i],
+    response: el.value.trim(),
+  }));
+
+  const caseId = nextCaseId();
+  try {
+    await setDoc(doc(db, 'er_cases', caseId), {
+      type,
+      status: 'intake',
+      complainant_emp_id: complainantId,
+      accused_emp_id: accusedId,
+      intake_responses: intakeResponses,
+      opened_by: profile.uid,
+      opened_at: serverTimestamp(),
+    });
+
+    // Everyone named becomes an interview.
+    await addDoc(collection(db, 'er_cases', caseId, 'interviews'), {
+      person_name: empName(complainantId), emp_id: complainantId, role: 'complainant',
+      status: 'pending', entered_by: profile.uid,
+    });
+    await addDoc(collection(db, 'er_cases', caseId, 'interviews'), {
+      person_name: empName(accusedId), emp_id: accusedId, role: 'accused',
+      status: 'pending', entered_by: profile.uid,
+    });
+
+    overlay.hidden = true;
+    showToast(`Case ${caseId} opened.`);
+    await loadCases();
+    openCase(caseId);
+  } catch (err) {
+    console.error(err);
+    showToast('Could not open case — ' + err.message, 'error');
+  }
+});
+
+// ---- case detail ----
+
+async function openCase(caseId) {
+  const snap = await getDoc(doc(db, 'er_cases', caseId));
+  currentCase = { id: caseId, ...snap.data() };
+  document.getElementById('page-title').textContent = `${caseId} — ${TYPE_LABELS[currentCase.type]}`;
+  document.getElementById('list-view').hidden = true;
+  document.getElementById('detail-view').hidden = false;
+  await loadInterviews();
+  switchTab('intake');
+}
+
+document.getElementById('back-btn').addEventListener('click', () => {
+  document.getElementById('page-title').textContent = 'Employee relations';
+  document.getElementById('list-view').hidden = false;
+  document.getElementById('detail-view').hidden = true;
+  loadCases();
+});
+
+document.querySelectorAll('.er-tabs button').forEach((btn) => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+function switchTab(tab) {
+  document.querySelectorAll('.er-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
+  ['intake', 'people', 'interviews', 'review'].forEach((t) => {
+    document.getElementById(`tab-${t}`).hidden = t !== tab;
+  });
+  if (tab === 'intake') renderIntake();
+  if (tab === 'people') renderPeople();
+  if (tab === 'interviews') renderInterviews();
+  if (tab === 'review') renderReview();
+}
+
+function renderIntake() {
+  document.getElementById('intake-body').innerHTML = (currentCase.intake_responses || []).map((qa) => `
+    <div class="qa"><div class="q">${qa.question}</div><div>${qa.response || '<span class="dim">No answer recorded</span>'}</div></div>
+  `).join('') || '<div class="dim">No intake responses.</div>';
+}
+
+function renderPeople() {
+  document.getElementById('people-rows').innerHTML = currentInterviews.map((iv) => `
+    <tr>
+      <td><b>${iv.person_name}</b></td>
+      <td class="dim" style="text-transform:capitalize">${iv.role}</td>
+      <td>${iv.status === 'complete' ? '<span class="pill ok">Interviewed</span>' : '<span class="pill mid">Pending</span>'}</td>
+    </tr>
+  `).join('');
+}
+
+document.getElementById('add-witness-btn').addEventListener('click', async () => {
+  const name = document.getElementById('new-witness-name').value.trim();
+  if (!name) return;
+  try {
+    await addDoc(collection(db, 'er_cases', currentCase.id, 'interviews'), {
+      person_name: name, emp_id: null, role: 'witness', status: 'pending', entered_by: profile.uid,
+    });
+    document.getElementById('new-witness-name').value = '';
+    showToast('Witness added.');
+    await loadInterviews();
+    renderPeople();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not add — ' + err.message, 'error');
+  }
+});
+
+async function loadInterviews() {
+  const snap = await getDocs(collection(db, 'er_cases', currentCase.id, 'interviews'));
+  currentInterviews = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+function renderInterviews() {
+  const done = currentInterviews.filter((i) => i.status === 'complete').length;
+  document.getElementById('interview-summary').textContent = `${done} of ${currentInterviews.length} complete`;
+  document.getElementById('interview-rows').innerHTML = currentInterviews.map((iv) => `
+    <tr>
+      <td><b>${iv.person_name}</b></td>
+      <td class="dim" style="text-transform:capitalize">${iv.role}</td>
+      <td>${iv.status === 'complete' ? '<span class="pill ok">Complete</span>' : '<span class="pill mid">Pending</span>'}</td>
+      <td style="text-align:right">
+        ${iv.status !== 'complete' ? `<button class="gh conduct-btn" data-id="${iv.id}" type="button">Conduct interview</button>` : ''}
+      </td>
+    </tr>
+  `).join('');
+  document.querySelectorAll('.conduct-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openInterviewForm(btn.dataset.id));
+  });
+  document.getElementById('interview-form-card').hidden = true;
+}
+
+function openInterviewForm(interviewId) {
+  currentInterviewId = interviewId;
+  const iv = currentInterviews.find((i) => i.id === interviewId);
+  document.getElementById('interview-form-title').textContent = `${iv.person_name} — ${iv.role}`;
+  const questions = questionsFor(iv.role, currentCase.type);
+  document.getElementById('interview-form-body').innerHTML = questions.map((q, i) => `
+    <div class="field">
+      <label class="f-lab">${q}</label>
+      <textarea class="f-in interview-answer" data-i="${i}" rows="2" style="resize:vertical"></textarea>
+    </div>
+  `).join('');
+  document.getElementById('interview-form-card').hidden = false;
+}
+
+document.getElementById('cancel-interview-btn').addEventListener('click', () => {
+  document.getElementById('interview-form-card').hidden = true;
+});
+
+document.getElementById('save-interview-btn').addEventListener('click', async () => {
+  const iv = currentInterviews.find((i) => i.id === currentInterviewId);
+  const questions = questionsFor(iv.role, currentCase.type);
+  const answers = [...document.querySelectorAll('.interview-answer')];
+
+  try {
+    for (let i = 0; i < questions.length; i++) {
+      await setDoc(doc(db, 'er_cases', currentCase.id, 'interviews', currentInterviewId, 'responses', String(i)), {
+        question: questions[i],
+        response: answers[i]?.value.trim() || '',
+      });
+    }
+    await updateDoc(doc(db, 'er_cases', currentCase.id, 'interviews', currentInterviewId), {
+      status: 'complete',
+      interviewed_by: profile.uid,
+      interviewed_at: serverTimestamp(),
+    });
+    showToast('Interview recorded.');
+    await loadInterviews();
+    renderInterviews();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+});
+
+function renderReview() {
+  const pending = currentInterviews.filter((i) => i.status !== 'complete');
+  const gate = document.getElementById('gate-status');
+  const moveBtn = document.getElementById('move-review-btn');
+  const reviewFields = document.getElementById('review-fields');
+
+  if (currentCase.status === 'closed') {
+    gate.innerHTML = `<span class="pill ok">Closed ${formatDate(currentCase.closed_date)}</span>`;
+    moveBtn.hidden = true;
+    reviewFields.hidden = true;
+    document.getElementById('findings').value = currentCase.findings || '';
+    document.getElementById('action').value = currentCase.action || '';
+    reviewFields.hidden = false;
+    document.getElementById('close-case-btn').hidden = true;
+    return;
+  }
+
+  if (pending.length) {
+    gate.innerHTML = `<span class="pill bad">${pending.length} interview${pending.length === 1 ? '' : 's'} still pending</span> — a case can’t move to review while any interview is pending.`;
+    moveBtn.hidden = true;
+    reviewFields.hidden = true;
+    return;
+  }
+
+  if (currentCase.status !== 'review') {
+    gate.innerHTML = `<span class="pill ok">All interviews complete</span>`;
+    moveBtn.hidden = false;
+    reviewFields.hidden = true;
+    return;
+  }
+
+  gate.innerHTML = `<span class="pill bad">Waiting on review</span>`;
+  moveBtn.hidden = true;
+  reviewFields.hidden = false;
+  document.getElementById('findings').value = currentCase.findings || '';
+  document.getElementById('action').value = currentCase.action || '';
+
+  const closeBtn = document.getElementById('close-case-btn');
+  if (profile.role === 'david') {
+    closeBtn.hidden = false;
+    document.getElementById('close-gate-note').textContent = '';
+  } else {
+    closeBtn.hidden = true;
+    document.getElementById('close-gate-note').textContent = 'Only David can close a case — enforced in the security rules.';
+  }
+}
+
+document.getElementById('move-review-btn').addEventListener('click', async () => {
+  try {
+    await updateDoc(doc(db, 'er_cases', currentCase.id), { status: 'review' });
+    currentCase.status = 'review';
+    showToast('Moved to review.');
+    renderReview();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not update — ' + err.message, 'error');
+  }
+});
+
+document.getElementById('close-case-btn').addEventListener('click', async () => {
+  try {
+    await updateDoc(doc(db, 'er_cases', currentCase.id), {
+      status: 'closed',
+      findings: document.getElementById('findings').value.trim(),
+      action: document.getElementById('action').value.trim(),
+      closed_by: profile.uid,
+      closed_date: new Date().toISOString().slice(0, 10),
+    });
+    showToast('Case closed.');
+    currentCase.status = 'closed';
+    renderReview();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not close — ' + err.message + ' (only David can close a case)', 'error');
+  }
+});
+
+await loadEmployees();
+await loadCases();
+</script>
+</body>
+</html>
