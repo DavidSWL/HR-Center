@@ -233,6 +233,7 @@
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate, yearsSince, readSpreadsheetSheets, objectsFromRows } from './app.js';
 import { db } from './firebaseconfig.js';
+import { ONBOARDING_CHECKLIST } from './letterhead-assets.js';
 import {
   collection, doc, getDoc, getDocs, updateDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -548,10 +549,10 @@ form.addEventListener('submit', async (e) => {
         });
       });
 
-      ['I-9 Verification', 'Employee Handbook Acknowledgment', 'Direct Deposit Enrollment', 'Emergency Contact Form']
-        .forEach((docTitle, i) => {
+      ONBOARDING_CHECKLIST
+        .forEach((docItem, i) => {
           batch.set(doc(db, 'employees', newId, 'onboarding_docs', String(i)), {
-            title: docTitle,
+            title: docItem.en,
             on_file: false,
             entered_by: profile.uid,
           });
@@ -777,10 +778,10 @@ document.getElementById('import-confirm-btn').addEventListener('click', async ()
               review_completed: false, form_received: false, entered_by: profile.uid,
             });
           });
-          ['I-9 Verification', 'Employee Handbook Acknowledgment', 'Direct Deposit Enrollment', 'Emergency Contact Form']
-            .forEach((docTitle, i) => {
+          ONBOARDING_CHECKLIST
+            .forEach((docItem, i) => {
               batch.set(doc(db, 'employees', r.id, 'onboarding_docs', String(i)), {
-                title: docTitle, on_file: false, entered_by: profile.uid,
+                title: docItem.en, on_file: false, entered_by: profile.uid,
               });
             });
         }

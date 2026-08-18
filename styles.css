@@ -18,6 +18,12 @@
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;height:100%}
 body{font-family:var(--sans);font-size:14px;line-height:1.5;background:#000;color:#fff;-webkit-font-smoothing:antialiased}
+/* The login page's body is black on purpose — but every page's print
+   stylesheet only hides specific elements (sidebar, toolbars), it never
+   touches body itself. Without this, any printed document that doesn't
+   fill the entire page (everything except the full-bleed offer letters)
+   leaves the rest of the printed page showing through as solid black. */
+@media print{ body{background:#fff !important;color:#000 !important} }
 
 /* ============================================================
    LOGIN — black ombré with Oregon green accents
