@@ -228,7 +228,7 @@ import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate, yearsSince, readSpreadsheetSheets, objectsFromRows } from './app.js';
 import { db } from './firebaseconfig.js';
 import {
-  collection, doc, getDocs, updateDoc, writeBatch, serverTimestamp,
+  collection, doc, getDoc, getDocs, updateDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
@@ -239,6 +239,7 @@ document.getElementById('header-date').textContent =
   new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
 
 let allEmployees = [];
+let managerIds = new Set();
 let editingId = null;
 
 const rowsEl = document.getElementById('rows');
@@ -370,9 +371,20 @@ async function loadEmployees() {
   render();
 }
 
-function populateManagerSelects(excludeId) {
-  const options = '<option value="">None</option>' + allEmployees
-    .filter((e) => e.id !== excludeId && e.status !== 'terminated')
+async function loadManagerIds() {
+  const snap = await getDoc(doc(db, 'settings', 'managers'));
+  managerIds = new Set(snap.exists() ? (snap.data().employee_ids || []) : []);
+}
+
+// Restricted to whoever's flagged as a manager in Settings. If the
+// employee being edited already reports to someone who isn't (or isn't
+// anymore) flagged as a manager, that person is still added so editing
+// doesn't silently blank out — and look like it removed — a real
+// assignment just because the dropdown got more restrictive.
+function populateManagerSelects(excludeId, keepIds = []) {
+  const pool = allEmployees.filter((e) => e.id !== excludeId && e.status !== 'terminated');
+  const managers = pool.filter((e) => managerIds.has(e.id) || keepIds.includes(e.id));
+  const options = '<option value="">None</option>' + managers
     .map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name} — ${e.position || e.division || ''}</option>`)
     .join('');
   document.getElementById('manager').innerHTML = options;
@@ -415,7 +427,7 @@ function openEdit(id) {
   const emp = allEmployees.find((e) => e.id === id);
   if (!emp) return;
   editingId = id;
-  populateManagerSelects(id);
+  populateManagerSelects(id, [emp.manager_emp_id, emp.dotted_line_emp_id].filter(Boolean));
   document.getElementById('modal-title').textContent = `${emp.first_name} ${emp.last_name}`;
   document.getElementById('emp-id').value = id;
   document.getElementById('emp-id').disabled = true; // the ID is the document ID — it can't change after creation
@@ -778,6 +790,7 @@ document.getElementById('import-confirm-btn').addEventListener('click', async ()
 });
 
 await loadEmployees();
+await loadManagerIds();
 </script>
 </body>
 </html>
