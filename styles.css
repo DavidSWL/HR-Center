@@ -238,6 +238,20 @@ tbody tr:hover td{background:var(--hover)}
 .modal-body .f-lab{color:var(--faint)}
 .modal-body .f-in{background:var(--bg);border-color:var(--edge);color:var(--text)}
 .modal-body .f-in:focus{border-color:var(--accent);background:var(--hover)}
+.card-body .f-in{background:var(--bg);border-color:var(--edge);color:var(--text)}
+.card-body .f-in:focus{border-color:var(--accent);background:var(--hover)}
+.card-body .f-in::placeholder{color:var(--faint)}
+
+/* explicit sizing + a visible arrow so <select> can't render oddly on
+   any browser regardless of how many options it holds */
+select.f-in{
+  -webkit-appearance:none;appearance:none;height:44px;padding-right:34px;
+  background-image:url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%237E8C82' stroke-width='1.6'%3E%3Cpath d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center;background-size:14px;
+}
+.modal-body select.f-in,.card-body select.f-in{
+  background-image:url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%2369705F' stroke-width='1.6'%3E%3Cpath d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+}
 .frow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .field{margin-bottom:14px}
 .modal-actions{display:flex;justify-content:flex-end;gap:8px;padding:14px 18px;border-top:1px solid var(--line);background:var(--panel)}
