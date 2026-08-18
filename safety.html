@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Safety &amp; incidents — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1>Safety &amp; incidents</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+
+      <div class="big" id="cost-cards"></div>
+
+      <div class="two" style="margin-bottom:20px">
+        <div class="card">
+          <div class="card-h"><h3>Most common injuries</h3></div>
+          <div id="rank-injuries"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Most frequent employees</h3></div>
+          <div id="rank-employees"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Department — total incidents</h3></div>
+          <div id="rank-dept-total"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Department — near misses</h3></div>
+          <div id="rank-dept-nearmiss"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Department — property damage</h3></div>
+          <div id="rank-dept-property"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Division — vehicle accidents</h3></div>
+          <div id="rank-div-vehicle"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h">
+          <h3>Incident log</h3>
+          <span id="log-summary">—</span>
+        </div>
+        <div class="tools">
+          <button class="gh solid" id="add-btn" type="button">Log incident</button>
+          <select class="inp" id="type-filter">
+            <option value="">All types</option>
+            <option>Injury</option>
+            <option>Near miss</option>
+            <option>Property damage</option>
+            <option>Vehicle accident</option>
+          </select>
+          <button class="gh" id="export-btn" type="button">Export Form 300 CSV</button>
+        </div>
+        <table>
+          <thead><tr><th>Date</th><th>Employee</th><th>Type</th><th>Recordable</th><th>Division</th><th>Cost</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- add incident modal -->
+<div class="modal-overlay" id="modal-overlay" hidden>
+  <div class="modal" style="width:600px">
+    <div class="modal-h">
+      <h3>Log incident</h3>
+      <button class="modal-close" id="modal-close" type="button">&times;</button>
+    </div>
+    <form id="incident-form">
+      <div class="modal-body">
+        <div class="frow">
+          <div class="field">
+            <label class="f-lab" for="inc-date">Date</label>
+            <input class="f-in" id="inc-date" type="date" required>
+          </div>
+          <div class="field">
+            <label class="f-lab" for="inc-time">Time</label>
+            <input class="f-in" id="inc-time" type="time">
+          </div>
+        </div>
+        <div class="frow">
+          <div class="field">
+            <label class="f-lab" for="emp-select">Employee</label>
+            <select class="f-in" id="emp-select" required></select>
+          </div>
+          <div class="field">
+            <label class="f-lab" for="supervisor">Supervisor</label>
+            <input class="f-in" id="supervisor" required>
+          </div>
+        </div>
+        <div class="frow">
+          <div class="field">
+            <label class="f-lab" for="department">Department</label>
+            <input class="f-in" id="department" placeholder="Optional">
+          </div>
+          <div class="field">
+            <label class="f-lab" for="location">Location / client site</label>
+            <input class="f-in" id="location" required>
+          </div>
+        </div>
+        <div class="field">
+          <label class="f-lab" for="inc-type">Incident type</label>
+          <select class="f-in" id="inc-type" required>
+            <option>Injury</option>
+            <option>Near miss</option>
+            <option>Property damage</option>
+            <option>Vehicle accident</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="f-lab" for="what-happened">What happened</label>
+          <textarea class="f-in" id="what-happened" rows="3" style="resize:vertical" required></textarea>
+        </div>
+
+        <div id="injury-fields" hidden>
+          <div class="frow">
+            <div class="field">
+              <label class="f-lab" for="injury-type">Injury type</label>
+              <input class="f-in" id="injury-type" placeholder="e.g. Laceration">
+            </div>
+            <div class="field">
+              <label class="f-lab" for="body-part">Body part</label>
+              <input class="f-in" id="body-part">
+            </div>
+          </div>
+          <div class="field">
+            <label class="f-lab" for="treatment-level">Treatment level</label>
+            <select class="f-in" id="treatment-level">
+              <option value="none">None needed</option>
+              <option value="first_aid">First aid</option>
+              <option value="clinic">Clinic</option>
+              <option value="er">Emergency room</option>
+              <option value="hospitalization">Hospitalization</option>
+            </select>
+          </div>
+          <div class="frow">
+            <div class="field">
+              <label class="f-lab" for="days-away">Days away</label>
+              <input class="f-in" id="days-away" type="number" min="0" value="0">
+            </div>
+            <div class="field">
+              <label class="f-lab" for="restricted-days">Restricted days</label>
+              <input class="f-in" id="restricted-days" type="number" min="0" value="0">
+            </div>
+          </div>
+          <div id="recordable-hint" class="login-error" style="background:var(--hover);color:var(--muted);border-color:var(--line)" hidden></div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:14px">
+            <input type="checkbox" id="recordable"> Recordable (Cal/OSHA Form 300)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:14px">
+            <input type="checkbox" id="privacy-case"> Privacy case — withhold name from Form 300 export
+          </label>
+        </div>
+
+        <div class="frow">
+          <div class="field">
+            <label class="f-lab" for="cost">Cost ($)</label>
+            <input class="f-in" id="cost" type="number" min="0" step="0.01" value="0">
+          </div>
+          <div class="field">
+            <label class="f-lab" for="root-cause">Root cause</label>
+            <input class="f-in" id="root-cause">
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="f-lab" for="corrective-action">Corrective action</label>
+          <textarea class="f-in" id="corrective-action" rows="2" style="resize:vertical"></textarea>
+        </div>
+        <div class="frow">
+          <div class="field">
+            <label class="f-lab" for="corrective-owner">Owner</label>
+            <select class="f-in" id="corrective-owner"><option value="">No corrective action</option></select>
+          </div>
+          <div class="field">
+            <label class="f-lab" for="corrective-due">Due date</label>
+            <input class="f-in" id="corrective-due" type="date">
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="gh" id="cancel-btn">Cancel</button>
+        <button type="submit" class="gh solid" id="save-btn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, showToast, formatDate } from './app.js';
+import { db } from './firebaseconfig.js';
+import {
+  collection, doc, getDocs, writeBatch, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('incidents', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+let employees = [];
+let staff = [];
+let incidents = [];
+
+function empById(id) { return employees.find((e) => e.id === id); }
+
+async function loadEmployees() {
+  const snap = await getDocs(collection(db, 'employees'));
+  employees = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => e.status !== 'terminated');
+  document.getElementById('emp-select').innerHTML = employees
+    .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''))
+    .map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name}</option>`).join('');
+}
+
+async function loadStaff() {
+  const snap = await getDocs(collection(db, 'users'));
+  staff = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  document.getElementById('corrective-owner').innerHTML =
+    '<option value="">No corrective action</option>' + staff.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+}
+
+async function loadIncidents() {
+  const snap = await getDocs(collection(db, 'incidents'));
+  incidents = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  renderReport();
+  render();
+}
+
+function render() {
+  const typeFilter = document.getElementById('type-filter').value;
+  const visible = incidents.filter((i) => !typeFilter || i.incident_type === typeFilter);
+  document.getElementById('log-summary').textContent = `${visible.length} of ${incidents.length}`;
+
+  document.getElementById('rows').innerHTML = visible.length ? visible.map((i) => {
+    const emp = empById(i.emp_id);
+    const name = i.privacy_case ? '<span class="dim">Privacy case</span>' : (emp ? `${emp.first_name} ${emp.last_name}` : '—');
+    return `
+      <tr>
+        <td class="mono">${formatDate(i.date)}</td>
+        <td>${name}</td>
+        <td>${i.incident_type}</td>
+        <td>${i.recordable ? '<span class="pill bad">Recordable</span>' : '<span class="pill">Not recordable</span>'}</td>
+        <td class="mono dim">${i.division || '—'}</td>
+        <td class="mono">${i.cost ? '$' + Number(i.cost).toLocaleString() : '—'}</td>
+      </tr>
+    `;
+  }).join('') : '<tr><td colspan="6" class="dim">No incidents logged yet.</td></tr>';
+}
+
+function topN(counts, n = 6) {
+  return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, n);
+}
+function rankHtml(pairs, emptyMsg) {
+  if (!pairs.length) return `<div class="card-body dim">${emptyMsg}</div>`;
+  const max = pairs[0][1] || 1;
+  return pairs.map(([label, count]) => `
+    <div class="rowbar">
+      <div class="l">${label}</div>
+      <div class="trk"><i style="width:${(count / max) * 100}%"></i></div>
+      <div class="mono" style="text-align:right">${count}</div>
+    </div>
+  `).join('');
+}
+
+function renderReport() {
+  const costByType = {};
+  incidents.forEach((i) => { costByType[i.incident_type] = (costByType[i.incident_type] || 0) + Number(i.cost || 0); });
+  const totalCost = incidents.reduce((s, i) => s + Number(i.cost || 0), 0);
+
+  document.getElementById('cost-cards').innerHTML = `
+    <div><div class="v n">${incidents.length}</div><div class="k">Total incidents</div></div>
+    <div><div class="v hot">$${totalCost.toLocaleString()}</div><div class="k">Total cost</div></div>
+    <div><div class="v n">$${(costByType['Injury'] || 0).toLocaleString()}</div><div class="k">Injuries</div></div>
+    <div><div class="v n">$${(costByType['Property damage'] || 0).toLocaleString()}</div><div class="k">Property damage</div></div>
+    <div><div class="v n">$${(costByType['Vehicle accident'] || 0).toLocaleString()}</div><div class="k">Vehicle accidents</div></div>
+    <div><div class="v n">$${(costByType['Near miss'] || 0).toLocaleString()}</div><div class="k">Near misses</div></div>
+  `;
+
+  const injuryTypes = {};
+  incidents.filter((i) => i.incident_type === 'Injury' && i.injury_type).forEach((i) => {
+    injuryTypes[i.injury_type] = (injuryTypes[i.injury_type] || 0) + 1;
+  });
+  document.getElementById('rank-injuries').innerHTML = rankHtml(topN(injuryTypes), 'No injuries logged yet.');
+
+  const empCounts = {};
+  incidents.forEach((i) => { if (i.emp_id && !i.privacy_case) empCounts[i.emp_id] = (empCounts[i.emp_id] || 0) + 1; });
+  const empPairs = topN(empCounts).map(([id, c]) => [empById(id) ? `${empById(id).first_name} ${empById(id).last_name}` : id, c]);
+  document.getElementById('rank-employees').innerHTML = rankHtml(empPairs, 'No incidents logged yet.');
+
+  const byDeptTotal = {}, byDeptNearMiss = {}, byDeptProperty = {}, byDivVehicle = {};
+  incidents.forEach((i) => {
+    const dept = i.department || 'Unspecified';
+    byDeptTotal[dept] = (byDeptTotal[dept] || 0) + 1;
+    if (i.incident_type === 'Near miss') byDeptNearMiss[dept] = (byDeptNearMiss[dept] || 0) + 1;
+    if (i.incident_type === 'Property damage') byDeptProperty[dept] = (byDeptProperty[dept] || 0) + 1;
+    if (i.incident_type === 'Vehicle accident') {
+      const div = i.division || 'Unspecified';
+      byDivVehicle[div] = (byDivVehicle[div] || 0) + 1;
+    }
+  });
+  document.getElementById('rank-dept-total').innerHTML = rankHtml(topN(byDeptTotal), 'No incidents logged yet.');
+  document.getElementById('rank-dept-nearmiss').innerHTML = rankHtml(topN(byDeptNearMiss), 'No near misses logged yet.');
+  document.getElementById('rank-dept-property').innerHTML = rankHtml(topN(byDeptProperty), 'No property damage logged yet.');
+  document.getElementById('rank-div-vehicle').innerHTML = rankHtml(topN(byDivVehicle), 'No vehicle accidents logged yet.');
+}
+
+function exportCsv() {
+  const rows = [['Date', 'Employee', 'Division', 'Department', 'Injury type', 'Body part', 'Treatment level', 'Days away', 'Restricted days', 'Recordable']];
+  incidents.filter((i) => i.recordable).forEach((i) => {
+    const emp = empById(i.emp_id);
+    const name = i.privacy_case ? 'Privacy case' : (emp ? `${emp.first_name} ${emp.last_name}` : '');
+    rows.push([i.date, name, i.division || '', i.department || '', i.injury_type || '', i.body_part || '',
+      i.treatment_level || '', i.days_away || 0, i.restricted_days || 0, 'Yes']);
+  });
+  const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `form-300-export-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const overlay = document.getElementById('modal-overlay');
+document.getElementById('add-btn').addEventListener('click', () => {
+  document.getElementById('incident-form').reset();
+  document.getElementById('inc-date').value = new Date().toISOString().slice(0, 10);
+  overlay.hidden = false;
+});
+document.getElementById('modal-close').addEventListener('click', () => { overlay.hidden = true; });
+document.getElementById('cancel-btn').addEventListener('click', () => { overlay.hidden = true; });
+
+document.getElementById('inc-type').addEventListener('change', (e) => {
+  document.getElementById('injury-fields').hidden = e.target.value !== 'Injury';
+});
+
+// Guided recordability -- suggests, never silently decides for you.
+function updateRecordableHint() {
+  const level = document.getElementById('treatment-level').value;
+  const daysAway = parseInt(document.getElementById('days-away').value || '0', 10);
+  const restrictedDays = parseInt(document.getElementById('restricted-days').value || '0', 10);
+  const hint = document.getElementById('recordable-hint');
+  const checkbox = document.getElementById('recordable');
+
+  if (daysAway > 0 || restrictedDays > 0) {
+    checkbox.checked = true;
+    hint.hidden = false;
+    hint.textContent = 'Days away or restricted days were entered — this is recordable regardless of treatment level.';
+  } else if (level === 'clinic' || level === 'er' || level === 'hospitalization') {
+    checkbox.checked = true;
+    hint.hidden = false;
+    hint.textContent = 'Clinic/ER/hospitalization treatment is likely recordable — pre-checked, but review before saving.';
+  } else if (level === 'first_aid') {
+    checkbox.checked = false;
+    hint.hidden = false;
+    hint.textContent = 'First aid only is usually not recordable — unless days away or restricted work apply.';
+  } else {
+    hint.hidden = true;
+  }
+}
+['treatment-level', 'days-away', 'restricted-days'].forEach((id) => {
+  document.getElementById(id).addEventListener('input', updateRecordableHint);
+  document.getElementById(id).addEventListener('change', updateRecordableHint);
+});
+
+document.getElementById('incident-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const saveBtn = document.getElementById('save-btn');
+  saveBtn.disabled = true;
+
+  try {
+    const empId = document.getElementById('emp-select').value;
+    const emp = empById(empId);
+    const isInjury = document.getElementById('inc-type').value === 'Injury';
+
+    const batch = writeBatch(db);
+    const incidentRef = doc(collection(db, 'incidents'));
+    const correctiveOwner = document.getElementById('corrective-owner').value;
+    const correctiveDue = document.getElementById('corrective-due').value;
+
+    batch.set(incidentRef, {
+      date: document.getElementById('inc-date').value,
+      time: document.getElementById('inc-time').value,
+      emp_id: empId,
+      division: emp.division || '', // denormalized at write time
+      department: document.getElementById('department').value.trim(),
+      supervisor: document.getElementById('supervisor').value.trim(),
+      location: document.getElementById('location').value.trim(),
+      incident_type: document.getElementById('inc-type').value,
+      what_happened: document.getElementById('what-happened').value.trim(),
+      injury_type: isInjury ? document.getElementById('injury-type').value.trim() : '',
+      body_part: isInjury ? document.getElementById('body-part').value.trim() : '',
+      treatment_level: isInjury ? document.getElementById('treatment-level').value : '',
+      days_away: isInjury ? parseInt(document.getElementById('days-away').value || '0', 10) : 0,
+      restricted_days: isInjury ? parseInt(document.getElementById('restricted-days').value || '0', 10) : 0,
+      recordable: isInjury ? document.getElementById('recordable').checked : false,
+      privacy_case: isInjury ? document.getElementById('privacy-case').checked : false,
+      cost: parseFloat(document.getElementById('cost').value || '0'),
+      root_cause: document.getElementById('root-cause').value.trim(),
+      corrective_action: document.getElementById('corrective-action').value.trim(),
+      corrective_owner: correctiveOwner,
+      corrective_due: correctiveDue,
+      entered_by: profile.uid,
+      entered_at: serverTimestamp(),
+    });
+
+    // A corrective action shouldn't exist without someone owning it.
+    if (correctiveOwner && correctiveDue) {
+      batch.set(doc(collection(db, 'tasks')), {
+        assigned_to: correctiveOwner,
+        due_date: correctiveDue,
+        instructions: `Corrective action — ${document.getElementById('corrective-action').value.trim()} (${document.getElementById('inc-type').value}, ${emp.first_name} ${emp.last_name})`,
+        recurring: 'none',
+        status: 'open',
+        entered_by: profile.uid,
+        entered_at: serverTimestamp(),
+      });
+    }
+
+    await batch.commit();
+    overlay.hidden = true;
+    showToast('Incident logged.' + (correctiveOwner ? ' Corrective action task created.' : ''));
+    await loadIncidents();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  } finally {
+    saveBtn.disabled = false;
+  }
+});
+
+document.getElementById('type-filter').addEventListener('change', render);
+document.getElementById('export-btn').addEventListener('click', exportCsv);
+
+await loadEmployees();
+await loadStaff();
+await loadIncidents();
+</script>
+</body>
+</html>

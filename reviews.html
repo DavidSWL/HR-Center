@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>New hires &amp; reviews — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1>New hires &amp; reviews</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>New hire board</h3><span id="board-summary">— inside 90 days</span></div>
+        <table>
+          <thead><tr><th>Employee</th><th>Division</th><th>Day</th><th>Next milestone</th><th>Paperwork</th></tr></thead>
+          <tbody id="board-rows"></tbody>
+        </table>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>Review queue</h3><span id="queue-summary">—</span></div>
+        <div class="tools">
+          <select class="inp" id="status-filter">
+            <option value="open">Open only</option>
+            <option value="all">All, including completed</option>
+          </select>
+        </div>
+        <table>
+          <thead><tr><th>Due</th><th>Employee</th><th>Division</th><th>Milestone</th><th>Review done</th><th>Form received</th></tr></thead>
+          <tbody id="queue-rows"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>Escalation</h3><span>More than 14 days overdue, by division</span></div>
+        <div id="escalation-body"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, showToast, formatDate } from './app.js';
+import { db } from './firebaseconfig.js';
+import {
+  collection, collectionGroup, doc, getDocs, updateDoc, addDoc, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('reviews', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+const todayStr = new Date().toISOString().slice(0, 10);
+const today = new Date();
+
+let employees = [];
+let reviews = []; // {id, empId, milestone, due_date, review_completed, form_received}
+
+function empById(id) { return employees.find((e) => e.id === id); }
+function daysBetween(a, b) { return Math.round((a - b) / (1000 * 60 * 60 * 24)); }
+
+async function loadEmployees() {
+  const snap = await getDocs(collection(db, 'employees'));
+  employees = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+async function loadReviews() {
+  const snap = await getDocs(collectionGroup(db, 'reviews'));
+  reviews = snap.docs.map((d) => ({
+    id: d.id,
+    empId: d.ref.parent.parent.id,
+    ...d.data(),
+  }));
+}
+
+function renderBoard() {
+  const onboarding = employees
+    .filter((e) => e.status === 'onboarding')
+    .map((e) => {
+      const hireDate = new Date(e.hire_date + 'T00:00:00');
+      const day = daysBetween(today, hireDate);
+      const empReviews = reviews.filter((r) => r.empId === e.id).sort((a, b) => a.milestone - b.milestone);
+      const next = empReviews.find((r) => !r.review_completed);
+      return { emp: e, day, next };
+    })
+    .filter((r) => r.day <= 90)
+    .sort((a, b) => a.day - b.day);
+
+  document.getElementById('board-summary').textContent = `${onboarding.length} inside 90 days`;
+  document.getElementById('board-rows').innerHTML = onboarding.length ? onboarding.map(({ emp, day, next }) => `
+    <tr>
+      <td><b>${emp.first_name} ${emp.last_name}</b> <span class="mono dim">${emp.id}</span></td>
+      <td class="mono">${emp.division || '—'}</td>
+      <td class="mono">${day}</td>
+      <td>${next ? `${next.milestone}-day, due ${formatDate(next.due_date)}` : '<span class="pill ok">All done</span>'}</td>
+      <td class="mono dim">—</td>
+    </tr>
+  `).join('') : '<tr><td colspan="5" class="dim">No one currently inside their first 90 days.</td></tr>';
+}
+
+function renderQueue() {
+  const statusFilter = document.getElementById('status-filter').value;
+  let visible = reviews.filter((r) => empById(r.empId));
+  if (statusFilter === 'open') visible = visible.filter((r) => !r.review_completed);
+  visible = visible.sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''));
+
+  document.getElementById('queue-summary').textContent = `${visible.length} of ${reviews.length}`;
+
+  document.getElementById('queue-rows').innerHTML = visible.length ? visible.map((r) => {
+    const emp = empById(r.empId);
+    const overdue = !r.review_completed && r.due_date && r.due_date < todayStr;
+    const soon = !r.review_completed && r.due_date &&
+      daysBetween(new Date(r.due_date + 'T00:00:00'), today) >= -7 && r.due_date >= todayStr;
+    const dueStyle = overdue ? 'color:var(--alertTx);font-weight:700' : (soon ? 'color:#9A7C1E;font-weight:600' : '');
+    return `
+      <tr>
+        <td class="mono" style="${dueStyle}">${formatDate(r.due_date)}${overdue ? ' · overdue' : ''}</td>
+        <td>${emp.first_name} ${emp.last_name}</td>
+        <td class="mono dim">${emp.division || '—'}</td>
+        <td class="mono">${r.milestone}-day</td>
+        <td><input type="checkbox" class="review-toggle" data-emp="${r.empId}" data-milestone="${r.milestone}" ${r.review_completed ? 'checked' : ''}></td>
+        <td><input type="checkbox" class="form-toggle" data-emp="${r.empId}" data-milestone="${r.milestone}" ${r.form_received ? 'checked' : ''}></td>
+      </tr>
+    `;
+  }).join('') : '<tr><td colspan="6" class="dim">No reviews match.</td></tr>';
+
+  document.querySelectorAll('.review-toggle').forEach((cb) => {
+    cb.addEventListener('change', () => toggleField(cb.dataset.emp, cb.dataset.milestone, 'review_completed', cb.checked));
+  });
+  document.querySelectorAll('.form-toggle').forEach((cb) => {
+    cb.addEventListener('change', () => toggleField(cb.dataset.emp, cb.dataset.milestone, 'form_received', cb.checked));
+  });
+}
+
+function renderEscalation() {
+  const overdue14 = reviews.filter((r) => {
+    if (r.review_completed || !r.due_date) return false;
+    const d = daysBetween(today, new Date(r.due_date + 'T00:00:00'));
+    return d > 14;
+  });
+
+  if (!overdue14.length) {
+    document.getElementById('escalation-body').innerHTML = '<div class="card-body dim">Nothing more than 14 days overdue.</div>';
+    return;
+  }
+
+  const byDivision = {};
+  overdue14.forEach((r) => {
+    const emp = empById(r.empId);
+    const division = emp?.division || 'Unassigned';
+    (byDivision[division] = byDivision[division] || []).push({ r, emp });
+  });
+
+  document.getElementById('escalation-body').innerHTML = Object.entries(byDivision).map(([division, rows]) => `
+    <div class="card-h" style="border-top:1px solid var(--line)"><h3>${division}</h3><span>${rows.length} overdue</span></div>
+    <table>
+      <tbody>
+        ${rows.map(({ r, emp }) => `
+          <tr>
+            <td>${emp.first_name} ${emp.last_name}</td>
+            <td class="mono">${r.milestone}-day</td>
+            <td class="mono" style="color:var(--alertTx)">due ${formatDate(r.due_date)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `).join('');
+}
+
+async function toggleField(empId, milestone, field, value) {
+  try {
+    await updateDoc(doc(db, 'employees', empId, 'reviews', milestone), {
+      [field]: value,
+      entered_by: profile.uid,
+    });
+    const r = reviews.find((x) => x.empId === empId && String(x.milestone) === String(milestone));
+    if (r) r[field] = value;
+
+    if (field === 'review_completed' && value) {
+      const emp = empById(empId);
+      await addDoc(collection(db, 'activity'), {
+        module: 'reviews',
+        item: `${milestone}-day review — ${emp?.first_name} ${emp?.last_name}`,
+        entered_by: profile.uid,
+        entered_at: serverTimestamp(),
+      });
+    }
+    showToast('Updated.');
+    renderQueue();
+    renderEscalation();
+    renderBoard();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not update — ' + err.message, 'error');
+  }
+}
+
+document.getElementById('status-filter').addEventListener('change', renderQueue);
+
+await loadEmployees();
+await loadReviews();
+renderBoard();
+renderQueue();
+renderEscalation();
+</script>
+</body>
+</html>
