@@ -222,3 +222,132 @@ export function yearsSince(dateStr) {
   if (beforeAnniversary) years--;
   return Math.max(years, 0);
 }
+
+// Field names the security rules reject on any write — matched here too,
+// client-side, before an import ever reaches Firestore. Catching it here
+// means one bad column shows up as a clear warning in the preview instead
+// of silently failing the whole batch when the rules refuse the write.
+const FORBIDDEN_COLUMN_PATTERNS = [
+  /pay.?rate/i, /pay.?type/i, /salary/i, /bonus/i, /comp.?history/i, /hourly.?rate/i,
+  /^employee.?type$/i, // "Hourly" / "Salary" — this *is* pay type, even though the header doesn't say "pay"
+  /^ssn$/i, /social.?security/i, /ssn.?last4/i,
+  /bank.?account/i, /bank.?routing/i, /direct.?deposit/i,
+  /^dob$/i, /date.?of.?birth/i, /birth.?year/i,
+  /^i9$/i, /work.?auth/i,
+  /diagnosis/i, /physician/i, /workers.?comp/i, /medical.?restriction/i,
+  /witness.?statement/i, /complainant.?identity/i,
+];
+
+/** Tokenizes CSV text into an array of arrays — quoted fields with
+ * embedded commas and doubled quotes ("" -> ") are handled. No header
+ * assumptions here; that's a separate step, because real exports
+ * routinely have title rows above the real header row. */
+export function csvTextToRows(text) {
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  const pushField = () => { row.push(field); field = ''; };
+  const pushRow = () => { pushField(); rows.push(row); row = []; };
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } else { inQuotes = false; }
+      } else {
+        field += c;
+      }
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ',') {
+      pushField();
+    } else if (c === '\n') {
+      if (field.length || row.length) pushRow();
+    } else if (c === '\r') {
+      // ignore — \r\n is handled by the \n branch
+    } else {
+      field += c;
+    }
+  }
+  if (field.length || row.length) pushRow();
+  return rows;
+}
+
+/**
+ * Reads a .csv or .xlsx file into { sheetName: rowsOfArrays } — every
+ * cell stringified, dates rendered as YYYY-MM-DD. A .csv file always
+ * comes back as a single sheet named "Sheet1". xlsx parsing is done by
+ * SheetJS, loaded from its own CDN since Firebase's doesn't carry it —
+ * everything still runs client-side, nothing leaves the browser.
+ */
+export async function readSpreadsheetSheets(file) {
+  const isXlsx = /\.xlsx$/i.test(file.name) ||
+    file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+  if (!isXlsx) {
+    return { Sheet1: csvTextToRows(await file.text()) };
+  }
+
+  const XLSX = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/xlsx.mjs');
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+  const sheets = {};
+  for (const name of wb.SheetNames) {
+    sheets[name] = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, dateNF: 'yyyy-mm-dd', defval: '' })
+      .map((row) => row.map((cell) => (cell instanceof Date ? cell.toISOString().slice(0, 10) : String(cell ?? '').trim())));
+  }
+  return sheets;
+}
+
+const normalizeHeader = (h) => String(h || '').trim().toLowerCase().replace(/[()]/g, '').replace(/[\s.\-/–—]+/g, '_').replace(/_+$/, '');
+
+/**
+ * Finds the real header row in a block of rows-of-arrays — real
+ * exports routinely have a title and a description row before the
+ * actual headers (see the roster/incident workbooks this was built
+ * against). Scores every row by how many cells match a normalized
+ * hint keyword and picks the best match, defaulting to row 0 if
+ * nothing scores above zero so a clean file still works.
+ */
+function findHeaderRow(rowsOfArrays, hintKeywords) {
+  const hints = new Set(hintKeywords.map(normalizeHeader));
+  let best = 0, bestScore = -1;
+  for (let i = 0; i < Math.min(rowsOfArrays.length, 15); i++) {
+    const score = rowsOfArrays[i].filter((cell) => hints.has(normalizeHeader(cell))).length;
+    if (score > bestScore) { bestScore = score; best = i; }
+  }
+  return bestScore > 0 ? best : 0;
+}
+
+/**
+ * Turns rows-of-arrays into { headers, rows, forbiddenColumns },
+ * auto-detecting the header row via hintKeywords (pass field names you
+ * expect to see, in any casing/spacing — "Employee ID", "hire date",
+ * etc.). Rows are plain objects keyed by normalized header. Any column
+ * matching a pay/SSN/DOB/etc. pattern is dropped from every row
+ * entirely, not just flagged, and listed in forbiddenColumns.
+ */
+export function objectsFromRows(rowsOfArrays, hintKeywords = []) {
+  const headerRowIndex = findHeaderRow(rowsOfArrays, hintKeywords);
+  const rawHeaders = (rowsOfArrays[headerRowIndex] || []).map((h) => String(h).trim());
+  const headers = rawHeaders.map(normalizeHeader);
+
+  const forbiddenColumns = [];
+  const keepIndex = headers.map((h, i) => {
+    const isForbidden = h !== '' && FORBIDDEN_COLUMN_PATTERNS.some((p) => p.test(h));
+    if (isForbidden) forbiddenColumns.push(rawHeaders[i]);
+    return !isForbidden;
+  });
+
+  const dataRows = rowsOfArrays.slice(headerRowIndex + 1);
+  const objects = dataRows
+    .filter((r) => r.some((v) => String(v).trim() !== ''))
+    .map((r) => {
+      const obj = {};
+      headers.forEach((h, i) => {
+        if (keepIndex[i] && h) obj[h] = String(r[i] || '').trim();
+      });
+      return obj;
+    });
+
+  return { headers: headers.filter((_, i) => keepIndex[i]), rows: objects, forbiddenColumns };
+}

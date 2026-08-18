@@ -65,6 +65,7 @@
         </div>
         <div class="tools">
           <button class="gh solid" id="add-btn" type="button">Log incident</button>
+          <button class="gh" id="import-btn" type="button">Import incidents</button>
           <select class="inp" id="type-filter">
             <option value="">All types</option>
             <option>Injury</option>
@@ -87,7 +88,7 @@
 <div class="modal-overlay" id="modal-overlay" hidden>
   <div class="modal" style="width:600px">
     <div class="modal-h">
-      <h3>Log incident</h3>
+      <h3 id="modal-title">Log incident</h3>
       <button class="modal-close" id="modal-close" type="button">&times;</button>
     </div>
     <form id="incident-form">
@@ -105,7 +106,7 @@
         <div class="frow">
           <div class="field">
             <label class="f-lab" for="emp-select">Employee</label>
-            <select class="f-in" id="emp-select" required></select>
+            <select class="f-in" id="emp-select"></select>
           </div>
           <div class="field">
             <label class="f-lab" for="supervisor">Supervisor</label>
@@ -210,12 +211,49 @@
   </div>
 </div>
 
+<!-- import incidents modal -->
+<div class="modal-overlay" id="import-overlay" hidden>
+  <div class="modal" style="width:800px">
+    <div class="modal-h">
+      <h3>Import incidents</h3>
+      <button class="modal-close" id="import-close" type="button">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="import-step-pick">
+        <p class="dim" style="margin-bottom:10px">
+          .xlsx or .csv. Reads an "Incidents" sheet if present (general incidents) and a "Vehicle
+          Accidents" sheet if present (auto-tagged as Vehicle accident). The employee named in each
+          row is matched against the current roster by name — unmatched rows still import, just
+          unassigned. Category values that don't map cleanly onto Injury / Near miss / Property
+          damage / Vehicle accident are defaulted to Property damage and flagged for you to correct
+          afterward — everything imported stays fully editable by clicking its row.
+        </p>
+        <input class="f-in" id="inc-csv-file" type="file" accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      </div>
+      <div id="import-step-preview" hidden>
+        <div id="import-warnings"></div>
+        <p id="import-summary" style="margin:10px 0"></p>
+        <div style="max-height:360px;overflow-y:auto;border:1px solid var(--edge)">
+          <table>
+            <thead><tr><th>Row</th><th>Date</th><th>Employee</th><th>Type</th><th>Cost</th><th>Status</th></tr></thead>
+            <tbody id="import-rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="gh" id="import-cancel">Cancel</button>
+      <button type="button" class="gh solid" id="import-confirm-btn" hidden>Import valid rows</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { requireAuth } from './auth.js';
-import { initShell, showToast, formatDate } from './app.js';
+import { initShell, showToast, formatDate, readSpreadsheetSheets, objectsFromRows } from './app.js';
 import { db } from './firebaseconfig.js';
 import {
-  collection, doc, getDocs, writeBatch, serverTimestamp,
+  collection, doc, getDocs, updateDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
@@ -234,7 +272,7 @@ function empById(id) { return employees.find((e) => e.id === id); }
 async function loadEmployees() {
   const snap = await getDocs(collection(db, 'employees'));
   employees = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => e.status !== 'terminated');
-  document.getElementById('emp-select').innerHTML = employees
+  document.getElementById('emp-select').innerHTML = '<option value="">Unassigned</option>' + employees
     .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''))
     .map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name}</option>`).join('');
 }
@@ -262,18 +300,22 @@ function render() {
 
   document.getElementById('rows').innerHTML = visible.length ? visible.map((i) => {
     const emp = empById(i.emp_id);
-    const name = i.privacy_case ? '<span class="dim">Privacy case</span>' : (emp ? `${emp.first_name} ${emp.last_name}` : '—');
+    const name = i.privacy_case ? '<span class="dim">Privacy case</span>' : (emp ? `${emp.first_name} ${emp.last_name}` : (i.emp_name_raw || '—'));
     return `
-      <tr>
+      <tr class="row-clickable" data-id="${i.id}" style="cursor:pointer">
         <td class="mono">${formatDate(i.date)}</td>
         <td>${name}</td>
-        <td>${i.incident_type}</td>
+        <td>${i.incident_type}${i.category_needs_review ? ' <span class="pill mid">Verify category</span>' : ''}</td>
         <td>${i.recordable ? '<span class="pill bad">Recordable</span>' : '<span class="pill">Not recordable</span>'}</td>
         <td class="mono dim">${i.division || '—'}</td>
         <td class="mono">${i.cost ? '$' + Number(i.cost).toLocaleString() : '—'}</td>
       </tr>
     `;
   }).join('') : '<tr><td colspan="6" class="dim">No incidents logged yet.</td></tr>';
+
+  document.querySelectorAll('#rows tr').forEach((tr) => {
+    tr.addEventListener('click', () => openEdit(tr.dataset.id));
+  });
 }
 
 function topN(counts, n = 6) {
@@ -352,11 +394,48 @@ function exportCsv() {
 }
 
 const overlay = document.getElementById('modal-overlay');
-document.getElementById('add-btn').addEventListener('click', () => {
+let editingIncidentId = null;
+
+function openAdd() {
+  editingIncidentId = null;
+  document.getElementById('modal-title').textContent = 'Log incident';
   document.getElementById('incident-form').reset();
   document.getElementById('inc-date').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('injury-fields').hidden = true;
   overlay.hidden = false;
-});
+}
+
+function openEdit(id) {
+  const inc = incidents.find((x) => x.id === id);
+  if (!inc) return;
+  editingIncidentId = id;
+  document.getElementById('modal-title').textContent = `Incident — ${formatDate(inc.date)}`;
+  document.getElementById('inc-date').value = inc.date || '';
+  document.getElementById('inc-time').value = inc.time || '';
+  document.getElementById('emp-select').value = inc.emp_id || '';
+  document.getElementById('supervisor').value = inc.supervisor || '';
+  document.getElementById('department').value = inc.department || '';
+  document.getElementById('location').value = inc.location || '';
+  document.getElementById('inc-type').value = inc.incident_type || 'Injury';
+  document.getElementById('what-happened').value = inc.what_happened || '';
+  document.getElementById('injury-type').value = inc.injury_type || '';
+  document.getElementById('body-part').value = inc.body_part || '';
+  document.getElementById('treatment-level').value = inc.treatment_level || 'none';
+  document.getElementById('days-away').value = inc.days_away || 0;
+  document.getElementById('restricted-days').value = inc.restricted_days || 0;
+  document.getElementById('recordable').checked = !!inc.recordable;
+  document.getElementById('privacy-case').checked = !!inc.privacy_case;
+  document.getElementById('cost').value = inc.cost || 0;
+  document.getElementById('root-cause').value = inc.root_cause || '';
+  document.getElementById('corrective-action').value = inc.corrective_action || '';
+  document.getElementById('corrective-owner').value = inc.corrective_owner || '';
+  document.getElementById('corrective-due').value = inc.corrective_due || '';
+  document.getElementById('injury-fields').hidden = inc.incident_type !== 'Injury';
+  document.getElementById('recordable-hint').hidden = true;
+  overlay.hidden = false;
+}
+
+document.getElementById('add-btn').addEventListener('click', openAdd);
 document.getElementById('modal-close').addEventListener('click', () => { overlay.hidden = true; });
 document.getElementById('cancel-btn').addEventListener('click', () => { overlay.hidden = true; });
 
@@ -402,17 +481,14 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
     const empId = document.getElementById('emp-select').value;
     const emp = empById(empId);
     const isInjury = document.getElementById('inc-type').value === 'Injury';
-
-    const batch = writeBatch(db);
-    const incidentRef = doc(collection(db, 'incidents'));
     const correctiveOwner = document.getElementById('corrective-owner').value;
     const correctiveDue = document.getElementById('corrective-due').value;
 
-    batch.set(incidentRef, {
+    const incidentData = {
       date: document.getElementById('inc-date').value,
       time: document.getElementById('inc-time').value,
       emp_id: empId,
-      division: emp.division || '', // denormalized at write time
+      division: emp ? emp.division || '' : '', // denormalized at write time
       department: document.getElementById('department').value.trim(),
       supervisor: document.getElementById('supervisor').value.trim(),
       location: document.getElementById('location').value.trim(),
@@ -430,26 +506,35 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
       corrective_action: document.getElementById('corrective-action').value.trim(),
       corrective_owner: correctiveOwner,
       corrective_due: correctiveDue,
+      category_needs_review: false, // clears the import-time flag once a human has saved the row
       entered_by: profile.uid,
-      entered_at: serverTimestamp(),
-    });
+    };
 
-    // A corrective action shouldn't exist without someone owning it.
-    if (correctiveOwner && correctiveDue) {
-      batch.set(doc(collection(db, 'tasks')), {
-        assigned_to: correctiveOwner,
-        due_date: correctiveDue,
-        instructions: `Corrective action — ${document.getElementById('corrective-action').value.trim()} (${document.getElementById('inc-type').value}, ${emp.first_name} ${emp.last_name})`,
-        recurring: 'none',
-        status: 'open',
-        entered_by: profile.uid,
-        entered_at: serverTimestamp(),
-      });
+    if (editingIncidentId) {
+      await updateDoc(doc(db, 'incidents', editingIncidentId), incidentData);
+      overlay.hidden = true;
+      showToast('Incident updated.');
+    } else {
+      const batch = writeBatch(db);
+      const incidentRef = doc(collection(db, 'incidents'));
+      batch.set(incidentRef, { ...incidentData, entered_at: serverTimestamp() });
+
+      // A corrective action shouldn't exist without someone owning it.
+      if (correctiveOwner && correctiveDue) {
+        batch.set(doc(collection(db, 'tasks')), {
+          assigned_to: correctiveOwner,
+          due_date: correctiveDue,
+          instructions: `Corrective action — ${document.getElementById('corrective-action').value.trim()} (${document.getElementById('inc-type').value}, ${emp ? emp.first_name + ' ' + emp.last_name : 'unassigned'})`,
+          recurring: 'none',
+          status: 'open',
+          entered_by: profile.uid,
+          entered_at: serverTimestamp(),
+        });
+      }
+      await batch.commit();
+      overlay.hidden = true;
+      showToast('Incident logged.' + (correctiveOwner ? ' Corrective action task created.' : ''));
     }
-
-    await batch.commit();
-    overlay.hidden = true;
-    showToast('Incident logged.' + (correctiveOwner ? ' Corrective action task created.' : ''));
     await loadIncidents();
   } catch (err) {
     console.error(err);
@@ -461,6 +546,210 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
 
 document.getElementById('type-filter').addEventListener('change', render);
 document.getElementById('export-btn').addEventListener('click', exportCsv);
+
+// ---- incident import ----
+
+const importOverlay = document.getElementById('import-overlay');
+let importParsed = null;
+
+document.getElementById('import-btn').addEventListener('click', () => {
+  document.getElementById('inc-csv-file').value = '';
+  document.getElementById('import-step-pick').hidden = false;
+  document.getElementById('import-step-preview').hidden = true;
+  document.getElementById('import-confirm-btn').hidden = true;
+  importOverlay.hidden = false;
+});
+document.getElementById('import-close').addEventListener('click', () => { importOverlay.hidden = true; });
+document.getElementById('import-cancel').addEventListener('click', () => { importOverlay.hidden = true; });
+
+function ipick(row, ...keys) {
+  for (const k of keys) if (row[k]) return row[k];
+  return '';
+}
+
+// Category values that came in already meaning exactly one of our four
+// types -- no review flag needed. Everything else gets a best-guess
+// default and a "verify" flag, since guessing wrong on a safety record
+// is worse than asking a human to glance at it once.
+const CATEGORY_MAP = {
+  injury: 'Injury',
+  near_miss: 'Near miss',
+  property_damage: 'Property damage',
+  vehicle_accident: 'Vehicle accident',
+};
+const UNAMBIGUOUS_CATEGORIES = new Set(['injury', 'near_miss', 'property_damage', 'vehicle_accident']);
+
+function resolveEmployee(nameText, employeesList) {
+  if (!nameText) return null;
+  const key = nameText.trim().toLowerCase();
+  if (!key) return null;
+
+  const named = employeesList.filter((e) => `${e.first_name} ${e.last_name}`.trim());
+  const exact = named.find((e) => `${e.first_name} ${e.last_name}`.trim().toLowerCase() === key);
+  if (exact) return exact.id;
+
+  // loose match: every word in the roster name appears in the source
+  // name, or vice versa -- catches "Amado DC Lopez" vs a roster entry
+  // like "Amado Lopez" without over-matching on a single shared word.
+  // Filtering out blank tokens matters: "".split(/\s+/) is [""], and
+  // "".includes('') and anything.includes('') are both always true, so
+  // a blank/malformed record would otherwise match every single row.
+  const keyWords = key.split(/\s+/).filter(Boolean);
+  const loose = named.find((e) => {
+    const fullWords = `${e.first_name} ${e.last_name}`.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!fullWords.length || !keyWords.length) return false;
+    return fullWords.every((w) => keyWords.some((kw) => kw.includes(w)))
+      || keyWords.every((w) => fullWords.some((fw) => fw.includes(w)));
+  });
+  return loose ? loose.id : null;
+}
+
+function mapIncidentRow(row, source) {
+  const rawCategory = source === 'vehicle'
+    ? 'vehicle_accident'
+    : normalizeCategoryKey(ipick(row, 'category'));
+  const incidentType = CATEGORY_MAP[rawCategory] || 'Property damage';
+  const needsReview = source !== 'vehicle' && !UNAMBIGUOUS_CATEGORIES.has(rawCategory);
+
+  const nameText = source === 'vehicle' ? ipick(row, 'driver') : ipick(row, 'employees_involved');
+  const empId = resolveEmployee(nameText, employees);
+  const emp = empId ? empById(empId) : null;
+
+  const dateText = ipick(row, 'date');
+  const costText = ipick(row, 'cost');
+  const isInjury = incidentType === 'Injury';
+
+  return {
+    date: dateText && !Number.isNaN(new Date(dateText).getTime()) ? new Date(dateText).toISOString().slice(0, 10) : '',
+    emp_id: empId,
+    emp_name_raw: empId ? '' : nameText,
+    division: emp ? emp.division || '' : '',
+    department: ipick(row, 'department_standardized', 'department_as_entered'),
+    supervisor: ipick(row, 'reported_by'),
+    location: ipick(row, 'location') || 'Not given',
+    incident_type: incidentType,
+    what_happened: ipick(row, 'description', 'what_happened'),
+    injury_type: isInjury ? ipick(row, 'type_as_entered') : '',
+    body_part: isInjury ? ipick(row, 'body_part') : '',
+    treatment_level: '', // not present in the source data — fill in per-row after import
+    days_away: 0,
+    restricted_days: 0,
+    recordable: false,
+    privacy_case: false,
+    cost: costText ? parseFloat(costText) || 0 : 0,
+    root_cause: ipick(row, 'unsafe_act'),
+    corrective_action: ipick(row, 'action_taken'),
+    corrective_owner: '',
+    corrective_due: '',
+    category_needs_review: needsReview,
+    errors: dateText && !Number.isNaN(new Date(dateText).getTime()) ? [] : ['missing/invalid date'],
+  };
+}
+function normalizeCategoryKey(raw) {
+  return String(raw || '').trim().toLowerCase().replace(/\s+/g, '_');
+}
+
+document.getElementById('inc-csv-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  let sheets;
+  try {
+    sheets = await readSpreadsheetSheets(file);
+  } catch (err) {
+    console.error(err);
+    showToast('Could not read that file — ' + err.message, 'error');
+    return;
+  }
+
+  const incidentSheetName = Object.keys(sheets).find((n) => /^incidents?$/i.test(n));
+  const vehicleSheetName = Object.keys(sheets).find((n) => /vehicle/i.test(n));
+  const otherSheets = Object.keys(sheets).filter((n) => n !== incidentSheetName && n !== vehicleSheetName);
+
+  let combined = [];
+  let forbiddenColumns = [];
+  if (incidentSheetName) {
+    const r = objectsFromRows(sheets[incidentSheetName], ['Incident ID', 'Date', 'Category', 'Employee(s) Involved', 'Cost']);
+    forbiddenColumns = forbiddenColumns.concat(r.forbiddenColumns);
+    combined = combined.concat(r.rows.map((row) => mapIncidentRow(row, 'general')));
+  }
+  if (vehicleSheetName) {
+    const r = objectsFromRows(sheets[vehicleSheetName], ['Incident ID', 'Date', 'Driver', 'Cost']);
+    forbiddenColumns = forbiddenColumns.concat(r.forbiddenColumns);
+    combined = combined.concat(r.rows.map((row) => mapIncidentRow(row, 'vehicle')));
+  }
+  if (!incidentSheetName && !vehicleSheetName) {
+    // Single flat sheet, no "Incidents"/"Vehicle Accidents" naming —
+    // treat the first sheet as general incidents.
+    const only = Object.keys(sheets)[0];
+    const r = objectsFromRows(sheets[only], ['Date', 'Category', 'Cost']);
+    forbiddenColumns = forbiddenColumns.concat(r.forbiddenColumns);
+    combined = combined.concat(r.rows.map((row) => mapIncidentRow(row, 'general')));
+  }
+
+  importParsed = combined;
+  const validCount = combined.filter((r) => !r.errors.length).length;
+  const reviewCount = combined.filter((r) => !r.errors.length && r.category_needs_review).length;
+  const unmatchedCount = combined.filter((r) => !r.errors.length && !r.emp_id).length;
+
+  const warnings = [];
+  if (forbiddenColumns.length) warnings.push(`Ignored, never imported: ${[...new Set(forbiddenColumns)].join(', ')}`);
+  if (otherSheets.length) warnings.push(`Not imported: ${otherSheets.map((n) => `"${n}"`).join(', ')}`);
+  document.getElementById('import-warnings').innerHTML = warnings.length
+    ? `<div class="login-error" style="background:var(--hover);color:var(--alertTx);border-color:var(--alertTx)">${warnings.join('<br>')}</div>`
+    : '';
+  document.getElementById('import-summary').textContent =
+    `${validCount} of ${combined.length} rows will be imported. ${reviewCount} have a guessed category to verify afterward. `
+    + `${unmatchedCount} have no matching employee on the roster and will import unassigned. `
+    + `${combined.length - validCount} have errors and will be skipped.`;
+
+  document.getElementById('import-rows').innerHTML = combined.map((r, i) => `
+    <tr>
+      <td class="mono dim">${i + 1}</td>
+      <td class="mono">${r.date || '—'}</td>
+      <td>${r.emp_id ? (empById(r.emp_id).first_name + ' ' + empById(r.emp_id).last_name) : (r.emp_name_raw ? r.emp_name_raw + ' (no match)' : '—')}</td>
+      <td>${r.incident_type}${r.category_needs_review ? ' <span class="pill mid">Verify</span>' : ''}</td>
+      <td class="mono">${r.cost ? '$' + r.cost.toLocaleString() : '—'}</td>
+      <td>${r.errors.length ? `<span class="pill bad">${r.errors.join(', ')}</span>` : '<span class="pill ok">Ready</span>'}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('import-step-pick').hidden = true;
+  document.getElementById('import-step-preview').hidden = false;
+  document.getElementById('import-confirm-btn').hidden = validCount === 0;
+});
+
+document.getElementById('import-confirm-btn').addEventListener('click', async () => {
+  const valid = importParsed.filter((r) => !r.errors.length);
+  const btn = document.getElementById('import-confirm-btn');
+  btn.disabled = true;
+  btn.textContent = 'Importing…';
+
+  try {
+    for (let start = 0; start < valid.length; start += 400) {
+      const chunk = valid.slice(start, start + 400);
+      const batch = writeBatch(db);
+      chunk.forEach((r) => {
+        const { errors, ...data } = r;
+        batch.set(doc(collection(db, 'incidents')), {
+          ...data,
+          entered_by: profile.uid,
+          entered_at: serverTimestamp(),
+        });
+      });
+      await batch.commit();
+    }
+    importOverlay.hidden = true;
+    showToast(`Imported ${valid.length} incidents.`);
+    await loadIncidents();
+  } catch (err) {
+    console.error(err);
+    showToast('Import failed partway — ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Import valid rows';
+  }
+});
 
 await loadEmployees();
 await loadStaff();
