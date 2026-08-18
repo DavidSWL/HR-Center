@@ -18,6 +18,12 @@
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;height:100%}
 body{font-family:var(--sans);font-size:14px;line-height:1.5;background:#000;color:#fff;-webkit-font-smoothing:antialiased}
+/* The login page's body is black on purpose — but every page's print
+   stylesheet only hides specific elements (sidebar, toolbars), it never
+   touches body itself. Without this, any printed document that doesn't
+   fill the entire page (everything except the full-bleed offer letters)
+   leaves the rest of the printed page showing through as solid black. */
+@media print{ body{background:#fff !important;color:#000 !important} }
 
 /* ============================================================
    LOGIN — black ombré with Oregon green accents
@@ -48,7 +54,7 @@ body{font-family:var(--sans);font-size:14px;line-height:1.5;background:#000;colo
   width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#fff;
   padding:13px 15px;font-family:var(--sans);font-size:15px;letter-spacing:.06em;
 }
-.f-in:focus{outline:0;border-color:var(--oregon-glow);background:rgba(79,176,124,.09)}
+.f-in:focus{outline:0;border-color:var(--oregon-glow);background-color:rgba(79,176,124,.09)}
 .f-in::placeholder{color:#5C6A60}
 .login-btn{
   width:100%;margin-top:20px;background:var(--oregon);color:#fff;border:0;padding:15px;cursor:pointer;
@@ -243,10 +249,10 @@ th.sortable .sort-arrow{display:inline-block;width:8px;color:var(--accent)}
 .modal-close{background:none;border:0;color:var(--faint);font-size:18px;cursor:pointer}
 .modal-body{padding:18px}
 .modal-body .f-lab{color:var(--faint)}
-.modal-body .f-in{background:var(--bg);border-color:var(--edge);color:var(--text)}
-.modal-body .f-in:focus{border-color:var(--accent);background:var(--hover)}
-.card-body .f-in{background:var(--bg);border-color:var(--edge);color:var(--text)}
-.card-body .f-in:focus{border-color:var(--accent);background:var(--hover)}
+.modal-body .f-in{background-color:var(--bg);border-color:var(--edge);color:var(--text)}
+.modal-body .f-in:focus{border-color:var(--accent);background-color:var(--hover)}
+.card-body .f-in{background-color:var(--bg);border-color:var(--edge);color:var(--text)}
+.card-body .f-in:focus{border-color:var(--accent);background-color:var(--hover)}
 .card-body .f-in::placeholder{color:var(--faint)}
 
 /* explicit sizing + a visible arrow so <select> can't render oddly on

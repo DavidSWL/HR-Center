@@ -10,8 +10,10 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 <style>
+.print-only { display:none; }
 @media print {
   .side, .bar, .no-print { display:none !important; }
+  .print-only { display:inline !important; }
   .app { display:block; }
   .view { padding:0; }
   .doc-sheet, .form-doc { border:none !important; box-shadow:none !important; }
@@ -123,7 +125,7 @@
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate, readSpreadsheetSheets, objectsFromRows } from './app.js';
 import { db } from './firebaseconfig.js';
-import { LOGO_DATA_URL, LOCATIONS, SCHEDULE_PRESETS, HR_SIGNER } from './letterhead-assets.js';
+import { LOGO_DATA_URL, LOCATIONS, SCHEDULE_PRESETS, HR_SIGNER, ONBOARDING_CHECKLIST } from './letterhead-assets.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -191,12 +193,18 @@ document.getElementById('lang-select').addEventListener('change', () => renderCu
 
 let employees = [];       // active only — for "who can this happen to" selects
 let allEmployeesEver = []; // includes terminated — for name lookups on old records
+let managerIds = new Set(); // set in Settings — who shows up in "Reports to" on letters
 let currentKey = null;
 
 async function loadEmployees() {
   const snap = await getDocs(collection(db, 'employees'));
   allEmployeesEver = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   employees = allEmployeesEver.filter((e) => e.status !== 'terminated');
+}
+
+async function loadManagerIds() {
+  const snap = await getDoc(doc(db, 'settings', 'managers'));
+  managerIds = new Set(snap.exists() ? (snap.data().employee_ids || []) : []);
 }
 
 function empSelectOptions(list = employees) {
@@ -1064,9 +1072,10 @@ function renderLetters() {
           <div class="field"><label class="f-lab">Schedule (editable)</label><input class="f-in" id="ltr-schedule"></div>
         </div>
         <div class="frow">
-          <div class="field"><label class="f-lab">Reports to</label><select class="f-in" id="ltr-reportsto">${empSelectOptions()}</select></div>
+          <div class="field"><label class="f-lab">Reports to</label><select class="f-in" id="ltr-reportsto">${empSelectOptions(employees.filter((e) => managerIds.has(e.id)))}</select></div>
           <div class="field"><label class="f-lab">Reports-to title</label><input class="f-in" id="ltr-reportsto-title"></div>
         </div>
+        ${managerIds.size === 0 ? '<p class="dim" style="margin:-4px 0 12px">No managers marked yet — add them in Settings → Managers.</p>' : ''}
         <div class="frow" id="ltr-rate-field">
           <div class="field"><label class="f-lab">Hourly rate ($, printed only — never saved)</label><input class="f-in" id="ltr-rate" type="number" step="0.01"></div>
           <div class="field" id="ltr-salary-field" hidden><label class="f-lab">Annual salary ($, printed only — never saved)</label><input class="f-in" id="ltr-salary" type="number" step="0.01"></div>
@@ -1408,6 +1417,13 @@ function generateLetterSheet() {
 
 // ---- Onboarding packet ----
 
+// Matches "Employee File Checklist" / "Lista de Verificación del
+// Expediente del Empleado" exactly. This tracks which of the real 24
+// onboarding documents are on file — it does not generate those
+// documents themselves. Several (I-9, W-4, DE-4, Direct Deposit,
+// Application with SSN) are exactly the data types this system never
+// stores, so they stay physical/separate by design; this is only the
+// checklist that says whether each one has been collected.
 async function renderOnboarding(lang) {
   document.getElementById('gen-body').innerHTML = `
     <div class="card no-print" style="margin-bottom:16px">
@@ -1416,33 +1432,86 @@ async function renderOnboarding(lang) {
         <button class="gh solid" id="onb-load-btn" type="button">Load checklist</button>
       </div>
     </div>
-    <div class="doc-sheet" id="onb-sheet" hidden></div>
+    <div class="form-doc" id="onb-sheet" hidden></div>
   `;
-  document.getElementById('onb-load-btn').addEventListener('click', async () => {
+
+  async function loadChecklist() {
     const empId = document.getElementById('onb-emp').value;
     const emp = employees.find((e) => e.id === empId);
+    const isEs = document.getElementById('lang-select').value === 'es';
     const snap = await getDocs(collection(db, 'employees', empId, 'onboarding_docs'));
-    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    const isEs = lang === 'es';
+    const existing = new Map(snap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
+
+    // If this employee predates the real 24-item list (or was seeded
+    // with the old 4-item placeholder), fill in whatever's missing so
+    // the checklist always shows the full real list.
+    const items = ONBOARDING_CHECKLIST.map((docItem, i) => {
+      const found = [...existing.values()].find((it) => it.title === docItem.en);
+      return found || { id: String(i), title: docItem.en, on_file: false, _unsaved: true };
+    });
+
     const sheet = document.getElementById('onb-sheet');
     sheet.hidden = false;
     sheet.innerHTML = `
-      <div class="doc-bar">${isEs ? 'Paquete de Incorporación' : 'Onboarding Packet'}</div>
-      <div class="doc-body">
-        <div class="doc-grid">
-          <div><b>${isEs ? 'Empleado' : 'Employee'}</b>${emp.first_name} ${emp.last_name}</div>
-          <div><b>${isEs ? 'Puesto' : 'Job title'}</b>${emp.position || ''}</div>
+      <div class="form-doc-inner">
+        <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+        <h1 class="form-title">${isEs ? 'Lista de Verificación del Expediente del Empleado' : 'Employee File Checklist'}</h1>
+        <div class="form-grid c2">
+          <div class="form-cell"><b>${isEs ? 'Nombre del Empleado' : 'EE Name'}</b>${emp.first_name} ${emp.last_name}</div>
+          <div class="form-cell"><b>${isEs ? 'ID del Empleado' : 'EE ID'}</b>${emp.id}</div>
+          <div class="form-cell"><b>${isEs ? 'Fecha de Inicio' : 'Start Date'}</b>${formatDate(emp.hire_date)}</div>
+          <div class="form-cell"><b>${isEs ? 'Puesto' : 'Title'}</b>${emp.position || ''}</div>
+          <div class="form-cell"><b>${isEs ? 'Salario' : 'Wage'}</b>&nbsp;</div>
+          <div class="form-cell"><b>${isEs ? 'Nombre (Licencia)' : 'DL Name'}</b>&nbsp;</div>
+          <div class="form-cell" style="grid-column:1/-1"><b>${isEs ? 'Dirección' : 'Address'}</b>&nbsp;</div>
         </div>
-        <h4>${isEs ? 'Documentos requeridos' : 'Required documents'}</h4>
-        <table><tbody>
-          ${items.map((it) => `<tr><td>${it.title}</td><td>${it.on_file ? (isEs ? 'En archivo' : 'On file') : (isEs ? 'Pendiente' : 'Outstanding')}</td></tr>`).join('') || '<tr><td class="dim">No checklist found.</td></tr>'}
-        </tbody></table>
+        <div class="form-section">${isEs ? 'Documentos de Incorporación' : 'Onboarding Documents'}</div>
+        <table class="form-notice-table">
+          <thead><tr><th>${isEs ? 'Formulario' : 'Form'}</th><th>${isEs ? 'Completado' : 'Completed'}</th></tr></thead>
+          <tbody>
+            ${items.map((it, i) => `
+              <tr>
+                <td>${isEs ? ONBOARDING_CHECKLIST[i].es : it.title}</td>
+                <td style="text-align:center">
+                  <input type="checkbox" class="no-print onb-check" data-id="${it.id}" data-index="${i}" ${it.on_file ? 'checked' : ''}>
+                  <span class="print-only">${it.on_file ? '☑' : '☐'}</span>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        <div class="form-section">${isEs ? 'Certificación' : 'Certification'}</div>
+        <div class="form-sig">
+          <div>${isEs ? 'Completado por' : 'Completed By'}: ${escapeHtml(profile.name || '')}</div>
+          <div>${isEs ? 'Fecha' : 'Date'}: ${formatDate(new Date().toISOString().slice(0, 10))}</div>
+        </div>
       </div>
     `;
-  });
+
+    document.querySelectorAll('.onb-check').forEach((cb) => {
+      cb.addEventListener('change', async () => {
+        try {
+          await setDoc(doc(db, 'employees', empId, 'onboarding_docs', cb.dataset.id), {
+            title: ONBOARDING_CHECKLIST[cb.dataset.index].en,
+            on_file: cb.checked,
+            entered_by: profile.uid,
+            updated_at: serverTimestamp(),
+          }, { merge: true });
+          cb.closest('td').querySelector('.print-only').textContent = cb.checked ? '☑' : '☐';
+        } catch (err) {
+          console.error(err);
+          showToast('Could not save — ' + err.message, 'error');
+          cb.checked = !cb.checked;
+        }
+      });
+    });
+  }
+
+  document.getElementById('onb-load-btn').addEventListener('click', loadChecklist);
 }
 
 await loadEmployees();
+await loadManagerIds();
 await loadTerminations();
 </script>
 </body>

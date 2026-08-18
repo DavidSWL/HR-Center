@@ -150,9 +150,15 @@
             <input class="f-in" id="phone" type="tel">
           </div>
         </div>
-        <div class="field">
-          <label class="f-lab" for="email">Work email</label>
-          <input class="f-in" id="email" type="email">
+        <div class="frow">
+          <div class="field">
+            <label class="f-lab" for="emergency-name">Emergency contact name</label>
+            <input class="f-in" id="emergency-name">
+          </div>
+          <div class="field">
+            <label class="f-lab" for="emergency-phone">Emergency contact phone</label>
+            <input class="f-in" id="emergency-phone" type="tel">
+          </div>
         </div>
         <div class="field">
           <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted)">
@@ -227,8 +233,9 @@
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate, yearsSince, readSpreadsheetSheets, objectsFromRows } from './app.js';
 import { db } from './firebaseconfig.js';
+import { ONBOARDING_CHECKLIST } from './letterhead-assets.js';
 import {
-  collection, doc, getDocs, updateDoc, writeBatch, serverTimestamp,
+  collection, doc, getDoc, getDocs, updateDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
@@ -239,6 +246,7 @@ document.getElementById('header-date').textContent =
   new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
 
 let allEmployees = [];
+let managerIds = new Set();
 let editingId = null;
 
 const rowsEl = document.getElementById('rows');
@@ -370,9 +378,20 @@ async function loadEmployees() {
   render();
 }
 
-function populateManagerSelects(excludeId) {
-  const options = '<option value="">None</option>' + allEmployees
-    .filter((e) => e.id !== excludeId && e.status !== 'terminated')
+async function loadManagerIds() {
+  const snap = await getDoc(doc(db, 'settings', 'managers'));
+  managerIds = new Set(snap.exists() ? (snap.data().employee_ids || []) : []);
+}
+
+// Restricted to whoever's flagged as a manager in Settings. If the
+// employee being edited already reports to someone who isn't (or isn't
+// anymore) flagged as a manager, that person is still added so editing
+// doesn't silently blank out — and look like it removed — a real
+// assignment just because the dropdown got more restrictive.
+function populateManagerSelects(excludeId, keepIds = []) {
+  const pool = allEmployees.filter((e) => e.id !== excludeId && e.status !== 'terminated');
+  const managers = pool.filter((e) => managerIds.has(e.id) || keepIds.includes(e.id));
+  const options = '<option value="">None</option>' + managers
     .map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name} — ${e.position || e.division || ''}</option>`)
     .join('');
   document.getElementById('manager').innerHTML = options;
@@ -415,7 +434,7 @@ function openEdit(id) {
   const emp = allEmployees.find((e) => e.id === id);
   if (!emp) return;
   editingId = id;
-  populateManagerSelects(id);
+  populateManagerSelects(id, [emp.manager_emp_id, emp.dotted_line_emp_id].filter(Boolean));
   document.getElementById('modal-title').textContent = `${emp.first_name} ${emp.last_name}`;
   document.getElementById('emp-id').value = id;
   document.getElementById('emp-id').disabled = true; // the ID is the document ID — it can't change after creation
@@ -429,7 +448,8 @@ function openEdit(id) {
   document.getElementById('dotted-line').value = emp.dotted_line_emp_id || '';
   document.getElementById('hire-date').value = emp.hire_date || '';
   document.getElementById('phone').value = emp.phone || '';
-  document.getElementById('email').value = emp.email || '';
+  document.getElementById('emergency-name').value = emp.emergency_contact_name || '';
+  document.getElementById('emergency-phone').value = emp.emergency_contact_phone || '';
   document.getElementById('is-test').checked = !!emp.is_test;
   document.getElementById('terminate-btn').hidden = emp.status === 'terminated';
   document.getElementById('terminate-section').hidden = true;
@@ -468,7 +488,8 @@ form.addEventListener('submit', async (e) => {
     dotted_line_emp_id: document.getElementById('dotted-line').value || null,
     hire_date: document.getElementById('hire-date').value,
     phone: document.getElementById('phone').value.trim(),
-    email: document.getElementById('email').value.trim(),
+    emergency_contact_name: document.getElementById('emergency-name').value.trim(),
+    emergency_contact_phone: document.getElementById('emergency-phone').value.trim(),
     is_test: document.getElementById('is-test').checked,
     entered_by: profile.uid,
     updated_at: serverTimestamp(),
@@ -528,10 +549,10 @@ form.addEventListener('submit', async (e) => {
         });
       });
 
-      ['I-9 Verification', 'Employee Handbook Acknowledgment', 'Direct Deposit Enrollment', 'Emergency Contact Form']
-        .forEach((docTitle, i) => {
+      ONBOARDING_CHECKLIST
+        .forEach((docItem, i) => {
           batch.set(doc(db, 'employees', newId, 'onboarding_docs', String(i)), {
-            title: docTitle,
+            title: docItem.en,
             on_file: false,
             entered_by: profile.uid,
           });
@@ -674,7 +695,8 @@ document.getElementById('csv-file').addEventListener('change', async (e) => {
       position: pick(row, 'position', 'job_title', 'title'),
       hire_date: hireDateStr,
       phone: pick(row, 'phone', 'phone_number'),
-      email: pick(row, 'email', 'work_email'),
+      emergency_contact_name: pick(row, 'emergency_contact', 'emergency_contact_name'),
+      emergency_contact_phone: pick(row, 'emergency_phone', 'emergency_contact_phone'),
       manager_emp_id: resolveManager(pick(row, 'direct_manager', 'manager', 'reports_to')),
       dotted_line_emp_id: resolveManager(pick(row, 'dotted_line_manager', 'dotted_line')),
       isNewHire: isRecentHire, // decides whether 30/60/90 + checklist get created
@@ -734,7 +756,8 @@ document.getElementById('import-confirm-btn').addEventListener('click', async ()
       chunk.forEach((r) => {
         const empData = {
           first_name: r.first_name, last_name: r.last_name, division: r.division,
-          location: r.location, position: r.position, hire_date: r.hire_date, phone: r.phone, email: r.email,
+          location: r.location, position: r.position, hire_date: r.hire_date, phone: r.phone,
+          emergency_contact_name: r.emergency_contact_name, emergency_contact_phone: r.emergency_contact_phone,
           manager_emp_id: r.manager_emp_id, dotted_line_emp_id: r.dotted_line_emp_id,
           status: r.isNewHire ? 'onboarding' : 'active',
           entered_by: profile.uid, entered_at: serverTimestamp(),
@@ -755,10 +778,10 @@ document.getElementById('import-confirm-btn').addEventListener('click', async ()
               review_completed: false, form_received: false, entered_by: profile.uid,
             });
           });
-          ['I-9 Verification', 'Employee Handbook Acknowledgment', 'Direct Deposit Enrollment', 'Emergency Contact Form']
-            .forEach((docTitle, i) => {
+          ONBOARDING_CHECKLIST
+            .forEach((docItem, i) => {
               batch.set(doc(db, 'employees', r.id, 'onboarding_docs', String(i)), {
-                title: docTitle, on_file: false, entered_by: profile.uid,
+                title: docItem.en, on_file: false, entered_by: profile.uid,
               });
             });
         }
@@ -778,6 +801,7 @@ document.getElementById('import-confirm-btn').addEventListener('click', async ()
 });
 
 await loadEmployees();
+await loadManagerIds();
 </script>
 </body>
 </html>
