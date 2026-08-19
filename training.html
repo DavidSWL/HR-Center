@@ -53,14 +53,13 @@
         <div class="card" style="margin-bottom:16px">
           <div class="card-h"><h3>SOPs &amp; reference documents</h3><span id="docs-summary">—</span></div>
           <div class="tools">
-            <input class="f-in" id="doc-title" placeholder="Title (e.g. New Hire Onboarding SOP)" style="max-width:280px">
-            <input class="f-in" id="doc-file" type="file" accept="application/pdf,image/*,.doc,.docx">
-            <button class="gh solid" id="doc-upload-btn" type="button">Upload</button>
+            <a class="gh solid" href="documents.html" style="text-decoration:none">Open document library &rarr;</a>
           </div>
           <table>
-            <thead><tr><th>Document</th><th>Uploaded</th><th></th></tr></thead>
+            <thead><tr><th>Document</th><th>Uploaded</th></tr></thead>
             <tbody id="doc-rows"></tbody>
           </table>
+          <div class="legend"><span>Uploading now lives in Documents (left nav) — it sorts by category and feeds Policy Compliance automatically. This list is just a quick look from here.</span></div>
         </div>
 
         <div class="card">
@@ -128,11 +127,10 @@
 <script type="module">
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
-import { db, storage } from './firebaseconfig.js';
+import { db } from './firebaseconfig.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, deleteDoc, serverTimestamp, addDoc,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
@@ -348,56 +346,9 @@ function renderDocs() {
     <tr>
       <td><a href="${d.file_url}" target="_blank" rel="noopener">${escapeHtmlAttr(d.title)}</a></td>
       <td class="dim" style="font-size:12px">${d.uploaded_at?.seconds ? formatDate(new Date(d.uploaded_at.seconds * 1000)) : ''}</td>
-      <td style="text-align:right"><button class="gh delete-doc-btn" data-id="${d.id}" type="button">Delete</button></td>
     </tr>
-  `).join('') : '<tr><td colspan="3" class="dim">No documents uploaded yet.</td></tr>';
-
-  document.querySelectorAll('.delete-doc-btn').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const docItem = trainingDocs.find((d) => d.id === btn.dataset.id);
-      if (!docItem) return;
-      if (!window.confirm(`Delete "${docItem.title}"? This can't be undone.`)) return;
-      try {
-        if (docItem.file_path) await deleteObject(ref(storage, docItem.file_path)).catch(() => {});
-        await deleteDoc(doc(db, 'training_documents', docItem.id));
-        showToast('Document deleted.');
-        await loadDocs();
-      } catch (err) {
-        console.error(err);
-        showToast('Could not delete — ' + err.message, 'error');
-      }
-    });
-  });
+  `).join('') : '<tr><td colspan="2" class="dim">No documents uploaded yet — add one in Documents.</td></tr>';
 }
-
-document.getElementById('doc-upload-btn').addEventListener('click', async () => {
-  const title = document.getElementById('doc-title').value.trim();
-  const file = document.getElementById('doc-file').files[0];
-  if (!title) { showToast('Enter a title.', 'error'); return; }
-  if (!file) { showToast('Choose a file.', 'error'); return; }
-  const btn = document.getElementById('doc-upload-btn');
-  btn.disabled = true;
-  try {
-    const docRef = doc(collection(db, 'training_documents'));
-    const filePath = `training/${docRef.id}/${file.name}`;
-    const storageRef = ref(storage, filePath);
-    await uploadBytes(storageRef, file);
-    const fileUrl = await getDownloadURL(storageRef);
-    await setDoc(docRef, {
-      title, file_url: fileUrl, file_path: filePath,
-      entered_by: profile.uid, uploaded_at: serverTimestamp(),
-    });
-    document.getElementById('doc-title').value = '';
-    document.getElementById('doc-file').value = '';
-    showToast('Document uploaded.');
-    await loadDocs();
-  } catch (err) {
-    console.error(err);
-    showToast('Could not upload — ' + err.message, 'error');
-  } finally {
-    btn.disabled = false;
-  }
-});
 
 async function openCourse(courseId) {
   currentCourse = courses.find((c) => c.id === courseId);
