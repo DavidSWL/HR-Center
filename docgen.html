@@ -1012,6 +1012,15 @@ async function openTermImport() {
       if (forbiddenColumns.length) warnings.push(`Ignored, never imported: ${forbiddenColumns.join(', ')}`);
       overlay.querySelector('#ti-warnings').innerHTML = warnings.length
         ? `<div class="login-error" style="background:var(--hover);color:var(--alertTx);border-color:var(--alertTx)">${warnings.join('<br>')}</div>` : '';
+      // Shows exactly what column names this file was parsed with, so a
+      // mismatch (wrong header row picked, an unexpected column name) is
+      // visible right here instead of showing up as blank cells with no
+      // explanation of why.
+      const detectedNote = document.createElement('p');
+      detectedNote.className = 'dim';
+      detectedNote.style.cssText = 'margin:6px 0;font-size:11.5px';
+      detectedNote.textContent = `Columns detected from sheet "${sheetName}": ${headers.filter(Boolean).join(', ')}`;
+      overlay.querySelector('#ti-warnings').appendChild(detectedNote);
       overlay.querySelector('#ti-summary').textContent = `${validCount} of ${parsed.length} rows will be imported. ${parsed.length - validCount} skipped (summary/note rows or missing data).`;
       overlay.querySelector('#ti-rows').innerHTML = parsed.map((r, i) => `
         <tr>
