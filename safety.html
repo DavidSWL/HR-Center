@@ -83,6 +83,8 @@
               <th class="sortable" data-key="employee">Employee<span class="sort-arrow"></span></th>
               <th class="sortable" data-key="type">Type<span class="sort-arrow"></span></th>
               <th class="sortable" data-key="recordable">Recordable<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="refused">Medical refused<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="daysaway">Days out<span class="sort-arrow"></span></th>
               <th class="sortable" data-key="division">Division<span class="sort-arrow"></span></th>
               <th class="sortable" data-key="cost">Cost<span class="sort-arrow"></span></th>
             </tr>
@@ -120,13 +122,15 @@
           </div>
           <div class="field">
             <label class="f-lab" for="supervisor">Supervisor</label>
-            <input class="f-in" id="supervisor" required>
+            <input class="f-in" id="supervisor" list="supervisor-options" autocomplete="off" required>
+            <datalist id="supervisor-options"></datalist>
           </div>
         </div>
         <div class="frow">
           <div class="field">
             <label class="f-lab" for="department">Department</label>
-            <input class="f-in" id="department" placeholder="Optional">
+            <input class="f-in" id="department" list="department-options" autocomplete="off" placeholder="Optional">
+            <datalist id="department-options"></datalist>
           </div>
           <div class="field">
             <label class="f-lab" for="location">Location / client site</label>
@@ -166,7 +170,13 @@
               <option value="clinic">Clinic</option>
               <option value="er">Emergency room</option>
               <option value="hospitalization">Hospitalization</option>
+              <option value="refused">Employee refused treatment</option>
             </select>
+          </div>
+          <div class="field" id="refusal-field" hidden>
+            <label class="f-lab" for="refusal-file">Medical Treatment Refusal form (signed copy)</label>
+            <input class="f-in" id="refusal-file" type="file" accept="application/pdf,image/*">
+            <p class="dim" style="font-size:11.5px;margin-top:4px" id="refusal-file-status"></p>
           </div>
           <div class="frow">
             <div class="field">
@@ -261,10 +271,11 @@
 <script type="module">
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate, readSpreadsheetSheets, objectsFromRows } from './app.js';
-import { db } from './firebaseconfig.js';
+import { db, storage } from './firebaseconfig.js';
 import {
-  collection, doc, getDocs, updateDoc, writeBatch, serverTimestamp,
+  collection, doc, getDoc, getDocs, updateDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
@@ -285,6 +296,19 @@ async function loadEmployees() {
   document.getElementById('emp-select').innerHTML = '<option value="">Unassigned</option>' + employees
     .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''))
     .map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name}</option>`).join('');
+}
+
+async function loadReferenceLists() {
+  const [deptSnap, mgrSnap] = await Promise.all([
+    getDoc(doc(db, 'settings', 'departments')),
+    getDoc(doc(db, 'settings', 'managers')),
+  ]);
+  const departments = deptSnap.exists() ? (deptSnap.data().values || []).filter((v) => v.active !== false).map((v) => v.label) : [];
+  document.getElementById('department-options').innerHTML = departments.map((d) => `<option value="${d}">`).join('');
+
+  const managerIds = new Set(mgrSnap.exists() ? (mgrSnap.data().employee_ids || []) : []);
+  const supervisorNames = employees.filter((e) => managerIds.has(e.id)).map((e) => `${e.first_name} ${e.last_name}`);
+  document.getElementById('supervisor-options').innerHTML = supervisorNames.map((n) => `<option value="${n}">`).join('');
 }
 
 async function loadStaff() {
@@ -314,6 +338,8 @@ const SORT_ACCESSORS = {
   employee: (i) => empNameFor(i).toLowerCase(),
   type: (i) => (i.incident_type || '').toLowerCase(),
   recordable: (i) => (i.recordable ? 1 : 0),
+  refused: (i) => (i.treatment_level === 'refused' ? 1 : 0),
+  daysaway: (i) => Number(i.days_away || 0),
   division: (i) => (i.division || '').toLowerCase(),
   cost: (i) => Number(i.cost || 0),
 };
@@ -369,11 +395,13 @@ function render() {
         <td>${name}</td>
         <td>${i.incident_type}${i.category_needs_review ? ' <span class="pill mid">Verify category</span>' : ''}</td>
         <td>${i.recordable ? '<span class="pill bad">Recordable</span>' : '<span class="pill">Not recordable</span>'}</td>
+        <td>${i.treatment_level === 'refused' ? '<span class="pill mid">Refused</span>' : '<span class="dim">—</span>'}</td>
+        <td class="mono">${i.days_away || 0}</td>
         <td class="mono dim">${i.division || '—'}</td>
-        <td class="mono">${i.cost ? '$' + Number(i.cost).toLocaleString() : '—'}</td>
+        <td class="mono">$${Number(i.cost || 0).toLocaleString()}</td>
       </tr>
     `;
-  }).join('') : '<tr><td colspan="6" class="dim">No incidents logged yet.</td></tr>';
+  }).join('') : '<tr><td colspan="8" class="dim">No incidents logged yet.</td></tr>';
 
   document.querySelectorAll('#rows tr').forEach((tr) => {
     tr.addEventListener('click', () => openEdit(tr.dataset.id));
@@ -464,6 +492,8 @@ function openAdd() {
   document.getElementById('incident-form').reset();
   document.getElementById('inc-date').value = new Date().toISOString().slice(0, 10);
   document.getElementById('injury-fields').hidden = true;
+  document.getElementById('refusal-field').hidden = true;
+  document.getElementById('refusal-file-status').textContent = '';
   overlay.hidden = false;
 }
 
@@ -494,6 +524,10 @@ function openEdit(id) {
   document.getElementById('corrective-due').value = inc.corrective_due || '';
   document.getElementById('injury-fields').hidden = inc.incident_type !== 'Injury';
   document.getElementById('recordable-hint').hidden = true;
+  document.getElementById('refusal-field').hidden = inc.treatment_level !== 'refused';
+  document.getElementById('refusal-file').value = '';
+  document.getElementById('refusal-file-status').textContent = inc.refusal_form_url
+    ? 'A signed refusal form is already on file — choosing a new file replaces it.' : '';
   overlay.hidden = false;
 }
 
@@ -503,6 +537,9 @@ document.getElementById('cancel-btn').addEventListener('click', () => { overlay.
 
 document.getElementById('inc-type').addEventListener('change', (e) => {
   document.getElementById('injury-fields').hidden = e.target.value !== 'Injury';
+});
+document.getElementById('treatment-level').addEventListener('change', (e) => {
+  document.getElementById('refusal-field').hidden = e.target.value !== 'refused';
 });
 
 // Guided recordability -- suggests, never silently decides for you.
@@ -545,6 +582,16 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
     const isInjury = document.getElementById('inc-type').value === 'Injury';
     const correctiveOwner = document.getElementById('corrective-owner').value;
     const correctiveDue = document.getElementById('corrective-due').value;
+    const incidentId = editingIncidentId || doc(collection(db, 'incidents')).id;
+
+    let refusalUrl = null, refusalPath = null;
+    const refusalFile = document.getElementById('refusal-file').files[0];
+    if (isInjury && document.getElementById('treatment-level').value === 'refused' && refusalFile) {
+      refusalPath = `incidents/${incidentId}/${refusalFile.name}`;
+      const storageRef = ref(storage, refusalPath);
+      await uploadBytes(storageRef, refusalFile);
+      refusalUrl = await getDownloadURL(storageRef);
+    }
 
     const incidentData = {
       date: document.getElementById('inc-date').value,
@@ -572,13 +619,25 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
       entered_by: profile.uid,
     };
 
+    const existingIncident = editingIncidentId ? incidents.find((x) => x.id === editingIncidentId) : null;
+    if (refusalUrl) {
+      incidentData.refusal_form_url = refusalUrl;
+      incidentData.refusal_form_path = refusalPath;
+    } else if (isInjury && incidentData.treatment_level === 'refused' && existingIncident?.refusal_form_url) {
+      incidentData.refusal_form_url = existingIncident.refusal_form_url;
+      incidentData.refusal_form_path = existingIncident.refusal_form_path;
+    } else {
+      incidentData.refusal_form_url = null;
+      incidentData.refusal_form_path = null;
+    }
+
     if (editingIncidentId) {
       await updateDoc(doc(db, 'incidents', editingIncidentId), incidentData);
       overlay.hidden = true;
       showToast('Incident updated.');
     } else {
       const batch = writeBatch(db);
-      const incidentRef = doc(collection(db, 'incidents'));
+      const incidentRef = doc(db, 'incidents', incidentId);
       batch.set(incidentRef, { ...incidentData, entered_at: serverTimestamp() });
 
       // A corrective action shouldn't exist without someone owning it.
@@ -816,6 +875,7 @@ document.getElementById('import-confirm-btn').addEventListener('click', async ()
 
 await loadEmployees();
 await loadStaff();
+await loadReferenceLists();
 await loadIncidents();
 </script>
 </body>

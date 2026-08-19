@@ -255,6 +255,16 @@ service cloud.firestore {
       }
     }
 
+    // Reference SOPs/documents uploaded to Team training — metadata only,
+    // the file itself lives in Storage. Also just content, so deletable.
+    match /training_documents/{docId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data)
+        && stamped(request.resource.data);
+      allow update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if isHrUser();
+    }
+
     // ---- activity log ---------------------------------------------------
     // Every module writes here on completion — append only, never edited
     // or removed, so it stays a trustworthy record of who did what.
