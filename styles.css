@@ -185,7 +185,7 @@ a.st:hover{background-color:var(--hover)}
 table{width:100%;border-collapse:collapse}
 th{font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);
   text-align:left;font-weight:500;padding:9px 11px;border-bottom:1px solid var(--line);background:var(--panel)}
-td{padding:9px 11px;border-bottom:1px solid var(--line);font-size:13px}
+td{padding:9px 11px;border-bottom:1px solid var(--line);font-size:13px;color:var(--text)}
 tbody tr:hover td{background:var(--hover)}
 th.sortable{cursor:pointer;user-select:none}
 th.sortable:hover{color:var(--text)}
