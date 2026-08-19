@@ -272,7 +272,7 @@ async function loadEmployees() {
   employees = snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
     .filter((e) => e.status !== 'terminated')
-    .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''));
+    .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
   const options = employees.map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name}</option>`).join('');
   document.getElementById('complainant-select').innerHTML = options;
   document.getElementById('accused-select').innerHTML = options;
