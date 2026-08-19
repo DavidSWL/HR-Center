@@ -128,6 +128,7 @@ body[data-theme="light"], .main[data-theme="light"]{
   --heroBg:var(--oregon); --heroTx:#FFFFFF; --heroNum:#FFFFFF;
   --accent:var(--oregon); --accentTx:var(--oregon); --alertTx:var(--alert);
   --hover:rgba(21,71,51,.05);
+  color:var(--text);
 }
 body[data-theme="dark"], .main[data-theme="dark"]{
   --bg:#0A0D09; --panel:#111611; --raise:#161C15; --line:#212A20; --edge:#2E392C;
@@ -135,6 +136,7 @@ body[data-theme="dark"], .main[data-theme="dark"]{
   --heroBg:#0F2C20; --heroTx:#F1F5EF; --heroNum:var(--oregon-glow);
   --accent:var(--oregon-lift); --accentTx:var(--oregon-glow); --alertTx:var(--alert-lift);
   --hover:rgba(79,176,124,.07);
+  color:var(--text);
 }
 
 .bar{
