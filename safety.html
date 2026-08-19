@@ -122,15 +122,13 @@
           </div>
           <div class="field">
             <label class="f-lab" for="supervisor">Supervisor</label>
-            <input class="f-in" id="supervisor" list="supervisor-options" autocomplete="off" required>
-            <datalist id="supervisor-options"></datalist>
+            <select class="f-in" id="supervisor" required><option value="">Select supervisor</option></select>
           </div>
         </div>
         <div class="frow">
           <div class="field">
             <label class="f-lab" for="department">Department</label>
-            <input class="f-in" id="department" list="department-options" autocomplete="off" placeholder="Optional">
-            <datalist id="department-options"></datalist>
+            <select class="f-in" id="department"><option value="">Optional</option></select>
           </div>
           <div class="field">
             <label class="f-lab" for="location">Location / client site</label>
@@ -200,7 +198,7 @@
         <div class="frow">
           <div class="field">
             <label class="f-lab" for="cost">Cost ($)</label>
-            <input class="f-in" id="cost" type="number" min="0" step="0.01" value="0">
+            <input class="f-in" id="cost" type="number" min="0" step="0.01" placeholder="Leave blank if not yet reviewed">
           </div>
           <div class="field">
             <label class="f-lab" for="root-cause">Root cause</label>
@@ -294,21 +292,53 @@ async function loadEmployees() {
   const snap = await getDocs(collection(db, 'employees'));
   employees = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => e.status !== 'terminated');
   document.getElementById('emp-select').innerHTML = '<option value="">Unassigned</option>' + employees
-    .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''))
+    .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''))
     .map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name}</option>`).join('');
 }
+
+let departmentList = [];
+let supervisorList = [];
 
 async function loadReferenceLists() {
   const [deptSnap, mgrSnap] = await Promise.all([
     getDoc(doc(db, 'settings', 'departments')),
     getDoc(doc(db, 'settings', 'managers')),
   ]);
-  const departments = deptSnap.exists() ? (deptSnap.data().values || []).filter((v) => v.active !== false).map((v) => v.label) : [];
-  document.getElementById('department-options').innerHTML = departments.map((d) => `<option value="${d}">`).join('');
+  departmentList = deptSnap.exists() ? (deptSnap.data().values || []).filter((v) => v.active !== false).map((v) => v.label) : [];
+  document.getElementById('department').innerHTML = '<option value="">Optional</option>' +
+    departmentList.map((d) => `<option value="${d}">${d}</option>`).join('');
 
   const managerIds = new Set(mgrSnap.exists() ? (mgrSnap.data().employee_ids || []) : []);
-  const supervisorNames = employees.filter((e) => managerIds.has(e.id)).map((e) => `${e.first_name} ${e.last_name}`);
-  document.getElementById('supervisor-options').innerHTML = supervisorNames.map((n) => `<option value="${n}">`).join('');
+  supervisorList = employees.filter((e) => managerIds.has(e.id)).map((e) => `${e.first_name} ${e.last_name}`);
+  document.getElementById('supervisor').innerHTML = '<option value="">Select supervisor</option>' +
+    supervisorList.map((n) => `<option value="${n}">${n}</option>`).join('');
+}
+
+/** Adds an option to a select if the value isn't already one of its options,
+ * so an existing record's value never silently gets blanked out. */
+function ensureOption(selectEl, value) {
+  if (!value) return;
+  const exists = Array.from(selectEl.options).some((o) => o.value === value);
+  if (!exists) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = value;
+    selectEl.appendChild(opt);
+  }
+}
+
+/** Supervisor already lives on the roster as "Reports to" — when an
+ * employee is picked, pull it from there instead of making HR retype
+ * something the roster already knows. */
+function autofillSupervisor(empId) {
+  const emp = empById(empId);
+  if (!emp || !emp.manager_emp_id) return;
+  const mgr = empById(emp.manager_emp_id);
+  if (!mgr) return;
+  const name = `${mgr.first_name} ${mgr.last_name}`;
+  const sel = document.getElementById('supervisor');
+  ensureOption(sel, name);
+  sel.value = name;
 }
 
 async function loadStaff() {
@@ -398,7 +428,7 @@ function render() {
         <td>${i.treatment_level === 'refused' ? '<span class="pill mid">Refused</span>' : '<span class="dim">—</span>'}</td>
         <td class="mono">${i.days_away || 0}</td>
         <td class="mono dim">${i.division || '—'}</td>
-        <td class="mono">$${Number(i.cost || 0).toLocaleString()}</td>
+        <td class="mono">${i.cost === null || i.cost === undefined ? '<span class="dim" title="Not yet reviewed">—</span>' : '$' + Number(i.cost).toLocaleString()}</td>
       </tr>
     `;
   }).join('') : '<tr><td colspan="8" class="dim">No incidents logged yet.</td></tr>';
@@ -505,7 +535,9 @@ function openEdit(id) {
   document.getElementById('inc-date').value = inc.date || '';
   document.getElementById('inc-time').value = inc.time || '';
   document.getElementById('emp-select').value = inc.emp_id || '';
+  ensureOption(document.getElementById('supervisor'), inc.supervisor || '');
   document.getElementById('supervisor').value = inc.supervisor || '';
+  ensureOption(document.getElementById('department'), inc.department || '');
   document.getElementById('department').value = inc.department || '';
   document.getElementById('location').value = inc.location || '';
   document.getElementById('inc-type').value = inc.incident_type || 'Injury';
@@ -517,7 +549,7 @@ function openEdit(id) {
   document.getElementById('restricted-days').value = inc.restricted_days || 0;
   document.getElementById('recordable').checked = !!inc.recordable;
   document.getElementById('privacy-case').checked = !!inc.privacy_case;
-  document.getElementById('cost').value = inc.cost || 0;
+  document.getElementById('cost').value = (inc.cost === null || inc.cost === undefined) ? '' : inc.cost;
   document.getElementById('root-cause').value = inc.root_cause || '';
   document.getElementById('corrective-action').value = inc.corrective_action || '';
   document.getElementById('corrective-owner').value = inc.corrective_owner || '';
@@ -532,6 +564,7 @@ function openEdit(id) {
 }
 
 document.getElementById('add-btn').addEventListener('click', openAdd);
+document.getElementById('emp-select').addEventListener('change', (e) => autofillSupervisor(e.target.value));
 document.getElementById('modal-close').addEventListener('click', () => { overlay.hidden = true; });
 document.getElementById('cancel-btn').addEventListener('click', () => { overlay.hidden = true; });
 
@@ -610,7 +643,7 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
       restricted_days: isInjury ? parseInt(document.getElementById('restricted-days').value || '0', 10) : 0,
       recordable: isInjury ? document.getElementById('recordable').checked : false,
       privacy_case: isInjury ? document.getElementById('privacy-case').checked : false,
-      cost: parseFloat(document.getElementById('cost').value || '0'),
+      cost: document.getElementById('cost').value === '' ? null : parseFloat(document.getElementById('cost').value),
       root_cause: document.getElementById('root-cause').value.trim(),
       corrective_action: document.getElementById('corrective-action').value.trim(),
       corrective_owner: correctiveOwner,
@@ -758,7 +791,7 @@ function mapIncidentRow(row, source) {
     restricted_days: 0,
     recordable: false,
     privacy_case: false,
-    cost: costText ? parseFloat(costText) || 0 : 0,
+    cost: costText ? (Number.isNaN(parseFloat(costText)) ? null : parseFloat(costText)) : null, // blank in the source sheet means "not yet reviewed", not "confirmed zero"
     root_cause: ipick(row, 'unsafe_act'),
     corrective_action: ipick(row, 'action_taken'),
     corrective_owner: '',
@@ -831,7 +864,7 @@ document.getElementById('inc-csv-file').addEventListener('change', async (e) => 
       <td class="mono">${r.date || '—'}</td>
       <td>${r.emp_id ? (empById(r.emp_id).first_name + ' ' + empById(r.emp_id).last_name) : (r.emp_name_raw ? r.emp_name_raw + ' (no match)' : '—')}</td>
       <td>${r.incident_type}${r.category_needs_review ? ' <span class="pill mid">Verify</span>' : ''}</td>
-      <td class="mono">${r.cost ? '$' + r.cost.toLocaleString() : '—'}</td>
+      <td class="mono">${(r.cost === null || r.cost === undefined) ? '—' : '$' + r.cost.toLocaleString()}</td>
       <td>${r.errors.length ? `<span class="pill bad">${r.errors.join(', ')}</span>` : '<span class="pill ok">Ready</span>'}</td>
     </tr>
   `).join('');
