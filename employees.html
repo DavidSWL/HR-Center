@@ -161,6 +161,11 @@
             <input class="f-in" id="emergency-phone" type="tel">
           </div>
         </div>
+        <div class="field" id="onboarding-field" hidden>
+          <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted)">
+            <input type="checkbox" id="is-onboarding">Currently in 30/60/90 onboarding — shows on the New Hire board
+          </label>
+        </div>
         <div class="field">
           <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted)">
             <input type="checkbox" id="is-test">Test employee — excluded from reports and dashboard counts
@@ -410,6 +415,7 @@ function openAdd() {
   document.getElementById('emp-id-field').hidden = false;
   document.getElementById('terminate-btn').hidden = true;
   document.getElementById('terminate-section').hidden = true;
+  document.getElementById('onboarding-field').hidden = true; // set automatically for a brand-new hire
   overlay.hidden = false;
 }
 
@@ -455,6 +461,8 @@ function openEdit(id) {
   document.getElementById('is-test').checked = !!emp.is_test;
   document.getElementById('terminate-btn').hidden = emp.status === 'terminated';
   document.getElementById('terminate-section').hidden = true;
+  document.getElementById('onboarding-field').hidden = emp.status === 'terminated';
+  document.getElementById('is-onboarding').checked = emp.status === 'onboarding';
   overlay.hidden = false;
 }
 
@@ -511,6 +519,15 @@ form.addEventListener('submit', async (e) => {
     data.separation_type = sepType;
   }
 
+  const onboardingFieldVisible = !document.getElementById('onboarding-field').hidden;
+  let justEnteredOnboarding = false;
+  if (!separationSectionOpen && onboardingFieldVisible) {
+    const wantsOnboarding = document.getElementById('is-onboarding').checked;
+    const currentEmp = allEmployees.find((x) => x.id === editingId);
+    justEnteredOnboarding = wantsOnboarding && currentEmp?.status !== 'onboarding';
+    data.status = wantsOnboarding ? 'onboarding' : 'active';
+  }
+
   const newId = document.getElementById('emp-id').value.trim();
   if (!editingId) {
     if (!newId) {
@@ -528,6 +545,35 @@ form.addEventListener('submit', async (e) => {
   try {
     if (editingId) {
       await updateDoc(doc(db, 'employees', editingId), data);
+
+      // Someone hired before the roster was tracking onboarding status
+      // properly (an import, usually) can get flipped into onboarding
+      // after the fact — but they still need the 30/60/90 review rows
+      // to actually show up correctly on the New Hire board. Only fills
+      // in whichever milestones don't already exist, so it never resets
+      // a review someone already completed.
+      if (justEnteredOnboarding) {
+        const existingReviews = await getDocs(collection(db, 'employees', editingId, 'reviews'));
+        const existingMilestones = new Set(existingReviews.docs.map((d) => d.id));
+        const hireDate = new Date((data.hire_date || '') + 'T00:00:00');
+        if (!Number.isNaN(hireDate.getTime())) {
+          const batch = writeBatch(db);
+          [30, 60, 90].forEach((days) => {
+            if (existingMilestones.has(String(days))) return;
+            const due = new Date(hireDate);
+            due.setDate(due.getDate() + days);
+            batch.set(doc(db, 'employees', editingId, 'reviews', String(days)), {
+              milestone: days,
+              due_date: due.toISOString().slice(0, 10),
+              review_completed: false,
+              form_received: false,
+              entered_by: profile.uid,
+            });
+          });
+          await batch.commit();
+        }
+      }
+
       showToast('Employee updated.');
     } else {
       data.status = 'onboarding';
