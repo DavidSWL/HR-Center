@@ -110,7 +110,12 @@ async function ensureLoaded(names) {
   for (const name of names) {
     if (!data[name]) {
       const snap = await getDocs(collection(db, name));
-      data[name] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      let rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      // Test employees (flagged in the roster for QA/demo use) never count
+      // toward any report — same reasoning as excluding them from the
+      // dashboard's headcount.
+      if (name === 'employees') rows = rows.filter((e) => !e.is_test);
+      data[name] = rows;
     }
   }
 }
@@ -126,6 +131,18 @@ function inRange(dateStr, { start, end }) {
   if (start && dateStr < start) return false;
   if (end && dateStr > end) return false;
   return true;
+}
+
+// The period immediately before the selected range, same length — lets a
+// quarter (or any custom range) compare against the one before it without
+// a separate "quarter" picker.
+function previousRange({ start, end }) {
+  if (!start || !end) return null;
+  const s = new Date(start + 'T00:00:00'), e = new Date(end + 'T00:00:00');
+  const days = Math.round((e - s) / 86400000) + 1;
+  const prevEnd = new Date(s.getTime() - 86400000);
+  const prevStart = new Date(prevEnd.getTime() - (days - 1) * 86400000);
+  return { start: prevStart.toISOString().slice(0, 10), end: prevEnd.toISOString().slice(0, 10) };
 }
 function tsToDateStr(ts) {
   return ts?.seconds ? new Date(ts.seconds * 1000).toISOString().slice(0, 10) : null;
@@ -283,16 +300,74 @@ async function renderReport(key) {
     const cost = incs.reduce((s, i) => s + Number(i.cost || 0), 0);
     const byType = {};
     incs.forEach((i) => { byType[i.incident_type] = (byType[i.incident_type] || 0) + 1; });
+
+    // Period-over-period by division/location — same range length,
+    // immediately prior. Set a start and end date above (e.g. a
+    // quarter's worth) to see whether each branch improved or worsened.
+    const prev = previousRange(range);
+    let compareHtml = '<p class="dim">Set both a start and end date above to compare against the prior period of the same length.</p>';
+    let worstHtml = '';
+    if (prev) {
+      const prevIncs = data.incidents.filter((i) => inRange(i.date, prev));
+      const groupBy = (rows, field) => rows.reduce((acc, i) => {
+        const key2 = i[field] || 'Unspecified';
+        acc[key2] = (acc[key2] || 0) + 1;
+        return acc;
+      }, {});
+      const buildCompareTable = (field, label) => {
+        const cur = groupBy(incs, field);
+        const prv = groupBy(prevIncs, field);
+        const keys = [...new Set([...Object.keys(cur), ...Object.keys(prv)])].sort();
+        const rows = keys.map((k) => {
+          const c = cur[k] || 0, p = prv[k] || 0;
+          const delta = c - p;
+          const pct = p ? Math.round((delta / p) * 100) : (c ? 100 : 0);
+          return { k, c, p, delta, pct };
+        }).sort((a, b) => b.c - a.c);
+        return { rows, table: `
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-h"><h3>${label} — this period vs. prior</h3><span>Prior: ${formatDate(prev.start)}–${formatDate(prev.end)}</span></div>
+            <table><tbody>
+              ${rows.map((r) => `
+                <tr>
+                  <td>${r.k}</td>
+                  <td class="mono" style="text-align:right">${r.c} now</td>
+                  <td class="mono dim" style="text-align:right">${r.p} prior</td>
+                  <td class="mono" style="text-align:right">
+                    ${r.delta === 0 ? '<span class="pill">No change</span>'
+                      : r.delta > 0 ? `<span class="pill bad">+${r.delta} (worse)</span>`
+                      : `<span class="pill ok">${r.delta} (improved)</span>`}
+                  </td>
+                </tr>
+              `).join('') || '<tr><td class="dim">No incidents in either period.</td></tr>'}
+            </tbody></table>
+          </div>
+        ` };
+      };
+      const byDivision = buildCompareTable('division', 'By division');
+      const byLocation = buildCompareTable('location', 'By location');
+      compareHtml = byDivision.table + byLocation.table;
+
+      const worstDivision = byDivision.rows.filter((r) => r.c > 0).sort((a, b) => b.delta - a.delta)[0];
+      worstHtml = worstDivision && worstDivision.delta > 0
+        ? `<div class="banner" style="background:var(--hover);border:1px solid var(--alertTx);color:var(--alertTx);padding:12px 16px;margin-bottom:16px;font-size:13px">
+             Worst trend: <b>${worstDivision.k}</b> went from ${worstDivision.p} to ${worstDivision.c} incidents (+${worstDivision.delta}) vs. the prior period.
+           </div>`
+        : '';
+    }
+
     body.innerHTML = statLine(range, `denominator: ${incs.length} incidents in range`) + `
       <div class="big">
         <div><div class="v n">${incs.length}</div><div class="k">Total incidents</div></div>
         <div><div class="v hot">$${cost.toLocaleString()}</div><div class="k">Total cost</div></div>
         <div><div class="v n">${incs.filter((i) => i.recordable).length}</div><div class="k">Recordable</div></div>
       </div>
-      <div class="card">
+      <div class="card" style="margin-bottom:16px">
         <div class="card-h"><h3>By type</h3><span></span></div>
         <table><tbody>${Object.entries(byType).map(([t, c]) => `<tr><td>${t}</td><td class="mono" style="text-align:right">${c}</td></tr>`).join('') || '<tr><td class="dim">None in range.</td></tr>'}</tbody></table>
       </div>
+      ${worstHtml}
+      ${compareHtml}
     `;
     lastCsv = [['Type', 'Count'], ...Object.entries(byType)];
   }

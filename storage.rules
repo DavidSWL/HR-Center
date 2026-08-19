@@ -24,6 +24,14 @@ service firebase.storage {
         && request.resource.contentType.matches('application/pdf|image/.*');
     }
 
+    // Same size cap, but also allows Word docs — for SOPs and other
+    // reference material uploaded to Team training, which aren't
+    // scanned/signed personnel records.
+    function isReasonableDocUpload() {
+      return request.resource.size < 25 * 1024 * 1024
+        && request.resource.contentType.matches('application/pdf|image/.*|application/msword|application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    }
+
     match /disciplinary/{actionId}/{fileName} {
       allow read: if isHrUser();
       allow write: if isHrUser() && isReasonableUpload();
@@ -34,6 +42,20 @@ service firebase.storage {
       allow read: if isHrUser();
       allow write: if isHrUser() && isReasonableUpload();
       allow delete: if false;
+    }
+
+    match /incidents/{incidentId}/{fileName} {
+      allow read: if isHrUser();
+      allow write: if isHrUser() && isReasonableUpload();
+      allow delete: if false; // superseded, not removed — keep the record
+    }
+
+    // Reference SOPs/documents in Team training — content, not a
+    // personnel record, so unlike the above this can actually be deleted.
+    match /training/{docId}/{fileName} {
+      allow read: if isHrUser();
+      allow write: if isHrUser() && isReasonableDocUpload();
+      allow delete: if isHrUser();
     }
 
     match /{allPaths=**} {

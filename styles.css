@@ -23,7 +23,14 @@ body{font-family:var(--sans);font-size:14px;line-height:1.5;background:#000;colo
    touches body itself. Without this, any printed document that doesn't
    fill the entire page (everything except the full-bleed offer letters)
    leaves the rest of the printed page showing through as solid black. */
-@media print{ body{background:#fff !important;color:#000 !important} }
+@media print{
+  body{background:#fff !important;color:#000 !important}
+  /* Keep each grid/box/table together rather than splitting mid-row
+     across a page boundary, and let a specific section force a clean
+     start on the next page via .form-page-break. */
+  .form-grid, .form-box, .form-checks, .form-notice-table, .form-sig { break-inside:avoid; }
+  .form-page-break { break-before:page; }
+}
 
 /* ============================================================
    LOGIN — black ombré with Oregon green accents

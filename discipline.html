@@ -18,9 +18,7 @@
   .side, .bar, .no-print { display:none !important; }
   .app { display:block; }
   .view { padding:0; }
-  #print-overlay { position:static; background:none; display:block; }
-  #print-overlay .modal { border:none; box-shadow:none; width:auto; max-width:none; max-height:none; overflow:visible; }
-  #print-overlay .modal-h, #print-overlay .modal-actions { display:none; }
+  #writeup-form-card { display:none !important; }
   .form-doc { border:none !important; }
   @page { size:letter; margin:0.4in; }
 }
@@ -45,9 +43,9 @@
 
     <section class="view">
 
-      <div class="big" id="report-cards"></div>
+      <div class="big no-print" id="report-cards"></div>
 
-      <div class="card">
+      <div class="card no-print">
         <div class="card-h">
           <h3>Log</h3>
           <span id="log-summary">—</span>
@@ -74,103 +72,87 @@
           <tbody id="rows"></tbody>
         </table>
       </div>
+
+      <!-- write-up form — full page, not a popup -->
+      <div class="card" id="writeup-form-card" hidden style="margin-top:16px">
+        <div class="card-h"><h3>Write up</h3><span></span></div>
+        <form id="action-form">
+          <div class="card-body">
+            <div class="field">
+              <label class="f-lab" for="emp-select">Employee</label>
+              <select class="f-in" id="emp-select" required></select>
+            </div>
+            <div id="sequence-hint" class="login-error" style="background:var(--hover);color:var(--muted);border-color:var(--line)" hidden></div>
+            <div class="frow">
+              <div class="field">
+                <label class="f-lab" for="infraction-date">Date of infraction</label>
+                <input class="f-in" id="infraction-date" type="date" required>
+              </div>
+              <div class="field">
+                <label class="f-lab" for="level">Type of warning</label>
+                <select class="f-in" id="level" required>
+                  <option value="1">Verbal</option>
+                  <option value="2">First Warning</option>
+                  <option value="3">Second Warning</option>
+                  <option value="4">Final Warning</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label class="f-lab">Type of offenses</label>
+              <label style="display:block;font-size:12.5px;margin-bottom:4px"><input type="checkbox" class="offense-check" value="Tardiness/Leaving Early"> Tardiness/Leaving Early</label>
+              <label style="display:block;font-size:12.5px;margin-bottom:4px"><input type="checkbox" class="offense-check" value="Absenteeism"> Absenteeism</label>
+              <label style="display:block;font-size:12.5px;margin-bottom:4px"><input type="checkbox" class="offense-check" value="Violation of Company Policies"> Violation of Company Policies</label>
+              <label style="display:block;font-size:12.5px;margin-bottom:4px"><input type="checkbox" class="offense-check" value="Substandard Work"> Substandard Work</label>
+              <label style="display:block;font-size:12.5px;margin-bottom:4px"><input type="checkbox" class="offense-check" value="Violation of Safety Rules"> Violation of Safety Rules</label>
+              <label style="display:block;font-size:12.5px;margin-bottom:6px"><input type="checkbox" class="offense-check" value="Rudeness to Customers/Coworkers"> Rudeness to Customers/Coworkers</label>
+              <input class="f-in" id="offense-other" placeholder="Other (describe)">
+            </div>
+            <div class="field">
+              <label class="f-lab" for="description">Description of infraction</label>
+              <textarea class="f-in" id="description" rows="4" style="resize:vertical" required></textarea>
+            </div>
+            <div class="frow">
+              <div class="field">
+                <label class="f-lab" for="plan-improvement">Plan for improvement</label>
+                <textarea class="f-in" id="plan-improvement" rows="3" style="resize:vertical"></textarea>
+              </div>
+              <div class="field">
+                <label class="f-lab" for="follow-up-date">Follow-up review date (creates a task)</label>
+                <input class="f-in" id="follow-up-date" type="date">
+              </div>
+            </div>
+            <div class="field">
+              <label class="f-lab" for="consequences">Consequences of further infractions</label>
+              <textarea class="f-in" id="consequences" rows="2" style="resize:vertical"></textarea>
+            </div>
+            <div class="field">
+              <label class="f-lab" for="employee-comments">Employee comments/response (optional)</label>
+              <textarea class="f-in" id="employee-comments" rows="2" style="resize:vertical"></textarea>
+            </div>
+            <div class="frow">
+              <div class="field">
+                <label class="f-lab" for="issued-by">Issued by (manager)</label>
+                <input class="f-in" id="issued-by" required>
+              </div>
+              <div class="field">
+                <label class="f-lab" for="doc-file">Signed document (optional — a scanned/uploaded copy)</label>
+                <input class="f-in" id="doc-file" type="file" accept="application/pdf,image/*">
+              </div>
+            </div>
+            <button type="button" class="gh" id="cancel-btn">Cancel</button>
+            <button type="submit" class="gh solid" id="save-btn">Save &amp; generate</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- generated write-up sheet — full page, not a popup -->
+      <div class="acts no-print" id="print-acts" hidden style="margin-top:16px">
+        <button class="gh" id="print-close-btn" type="button">&larr; Back to log</button>
+        <button class="gh solid" id="print-now-btn" type="button">Print</button>
+      </div>
+      <div class="form-doc" id="writeup-sheet" hidden style="margin-top:16px"></div>
     </section>
-  </div>
-</div>
-
-<!-- add action modal -->
-<div class="modal-overlay" id="modal-overlay" hidden>
-  <div class="modal">
-    <div class="modal-h">
-      <h3>Write up</h3>
-      <button class="modal-close" id="modal-close" type="button">&times;</button>
-    </div>
-    <form id="action-form">
-      <div class="modal-body">
-        <div class="field">
-          <label class="f-lab" for="emp-select">Employee</label>
-          <select class="f-in" id="emp-select" required></select>
-        </div>
-        <div id="sequence-hint" class="login-error" style="background:var(--hover);color:var(--muted);border-color:var(--line)" hidden></div>
-        <div class="frow">
-          <div class="field">
-            <label class="f-lab" for="infraction-date">Date of infraction</label>
-            <input class="f-in" id="infraction-date" type="date" required>
-          </div>
-          <div class="field">
-            <label class="f-lab" for="level">Type of warning</label>
-            <select class="f-in" id="level" required>
-              <option value="1">Verbal</option>
-              <option value="2">First Warning</option>
-              <option value="3">Second Warning</option>
-              <option value="4">Final Warning</option>
-            </select>
-          </div>
-        </div>
-        <div class="field">
-          <label class="f-lab">Type of offenses</label>
-          <label style="display:block;font-size:12.5px;margin-bottom:4px"><input type="checkbox" class="offense-check" value="Tardiness/Leaving Early"> Tardiness/Leaving Early</label>
-          <label style="display:block;font-size:12.5px;margin-bottom:4px"><input type="checkbox" class="offense-check" value="Absenteeism"> Absenteeism</label>
-          <label style="display:block;font-size:12.5px;margin-bottom:4px"><input type="checkbox" class="offense-check" value="Violation of Company Policies"> Violation of Company Policies</label>
-          <label style="display:block;font-size:12.5px;margin-bottom:4px"><input type="checkbox" class="offense-check" value="Substandard Work"> Substandard Work</label>
-          <label style="display:block;font-size:12.5px;margin-bottom:4px"><input type="checkbox" class="offense-check" value="Violation of Safety Rules"> Violation of Safety Rules</label>
-          <label style="display:block;font-size:12.5px;margin-bottom:6px"><input type="checkbox" class="offense-check" value="Rudeness to Customers/Coworkers"> Rudeness to Customers/Coworkers</label>
-          <input class="f-in" id="offense-other" placeholder="Other (describe)">
-        </div>
-        <div class="field">
-          <label class="f-lab" for="description">Description of infraction</label>
-          <textarea class="f-in" id="description" rows="4" style="resize:vertical" required></textarea>
-        </div>
-        <div class="frow">
-          <div class="field">
-            <label class="f-lab" for="plan-improvement">Plan for improvement</label>
-            <textarea class="f-in" id="plan-improvement" rows="3" style="resize:vertical"></textarea>
-          </div>
-          <div class="field">
-            <label class="f-lab" for="follow-up-date">Follow-up review date (creates a task)</label>
-            <input class="f-in" id="follow-up-date" type="date">
-          </div>
-        </div>
-        <div class="field">
-          <label class="f-lab" for="consequences">Consequences of further infractions</label>
-          <textarea class="f-in" id="consequences" rows="2" style="resize:vertical"></textarea>
-        </div>
-        <div class="field">
-          <label class="f-lab" for="employee-comments">Employee comments/response (optional)</label>
-          <textarea class="f-in" id="employee-comments" rows="2" style="resize:vertical"></textarea>
-        </div>
-        <div class="frow">
-          <div class="field">
-            <label class="f-lab" for="issued-by">Issued by (manager)</label>
-            <input class="f-in" id="issued-by" required>
-          </div>
-          <div class="field">
-            <label class="f-lab" for="doc-file">Signed document (optional — a scanned/uploaded copy)</label>
-            <input class="f-in" id="doc-file" type="file" accept="application/pdf,image/*">
-          </div>
-        </div>
-      </div>
-      <div class="modal-actions">
-        <button type="button" class="gh" id="cancel-btn">Cancel</button>
-        <button type="submit" class="gh solid" id="save-btn">Save &amp; generate</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<div class="modal-overlay" id="print-overlay" hidden>
-  <div class="modal" style="width:900px">
-    <div class="modal-h">
-      <h3>Write-up</h3>
-      <button class="modal-close" id="print-close" type="button">&times;</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-doc" id="writeup-sheet"></div>
-    </div>
-    <div class="modal-actions">
-      <button type="button" class="gh" id="print-close-btn">Close</button>
-      <button type="button" class="gh solid" id="print-now-btn">Print</button>
-    </div>
   </div>
 </div>
 
@@ -321,17 +303,19 @@ function renderReport() {
   `;
 }
 
-const overlay = document.getElementById('modal-overlay');
+const formCard = document.getElementById('writeup-form-card');
 
 function openModal() {
   document.getElementById('action-form').reset();
   document.getElementById('sequence-hint').hidden = true;
-  overlay.hidden = false;
+  document.getElementById('print-acts').hidden = true;
+  document.getElementById('writeup-sheet').hidden = true;
+  formCard.hidden = false;
+  formCard.scrollIntoView({ behavior: 'smooth' });
   updateSequenceHint();
 }
 document.getElementById('add-btn').addEventListener('click', openModal);
-document.getElementById('modal-close').addEventListener('click', () => { overlay.hidden = true; });
-document.getElementById('cancel-btn').addEventListener('click', () => { overlay.hidden = true; });
+document.getElementById('cancel-btn').addEventListener('click', () => { formCard.hidden = true; });
 
 function updateSequenceHint() {
   const empId = document.getElementById('emp-select').value;
@@ -408,7 +392,7 @@ document.getElementById('action-form').addEventListener('submit', async (e) => {
     }
 
     await batch.commit();
-    overlay.hidden = true;
+    formCard.hidden = true;
     showToast('Write-up filed.' + (followUp ? ' Follow-up task created.' : ''));
     await loadActions();
     openPrintSheet(emp, { id: actionRef.id, ...record, entered_at: { seconds: Date.now() / 1000 } });
@@ -422,14 +406,18 @@ document.getElementById('action-form').addEventListener('submit', async (e) => {
 
 // ---- print sheet — matches the real SWL "Employee Write Up" form exactly ----
 
-const printOverlay = document.getElementById('print-overlay');
-document.getElementById('print-close').addEventListener('click', () => { printOverlay.hidden = true; });
-document.getElementById('print-close-btn').addEventListener('click', () => { printOverlay.hidden = true; });
+const printActs = document.getElementById('print-acts');
+const writeupSheet = document.getElementById('writeup-sheet');
+document.getElementById('print-close-btn').addEventListener('click', () => {
+  printActs.hidden = true;
+  writeupSheet.hidden = true;
+});
 document.getElementById('print-now-btn').addEventListener('click', () => window.print());
 
 function openPrintSheet(emp, a) {
+  formCard.hidden = true;
   const offenseList = a.offenses || (a.category ? a.category.split(', ') : []);
-  document.getElementById('writeup-sheet').innerHTML = `
+  writeupSheet.innerHTML = `
     <div class="form-doc-inner">
       <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
       <h1 class="form-title">Employee Write Up</h1>
@@ -468,7 +456,9 @@ function openPrintSheet(emp, a) {
       </div>
     </div>
   `;
-  printOverlay.hidden = false;
+  printActs.hidden = false;
+  writeupSheet.hidden = false;
+  writeupSheet.scrollIntoView({ behavior: 'smooth' });
 }
 
 document.getElementById('search').addEventListener('input', render);

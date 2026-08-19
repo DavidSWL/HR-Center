@@ -166,6 +166,7 @@ const GENERATORS = [
   { key: 'termination', title: 'Termination', desc: 'Matches the SWL termination form — log, generate, and import' },
   { key: 'offer', title: 'Offer / increase / promotion', desc: '7 letter types, matches the branded SWL letterhead exactly' },
   { key: 'onboarding', title: 'Onboarding packet', desc: 'Assembles the required document checklist' },
+  { key: 'refusal', title: 'Medical Treatment Refusal', desc: 'Matches the SWL acknowledgment form — English or Spanish' },
 ];
 
 document.getElementById('tiles').innerHTML = GENERATORS.map((g) => `
@@ -223,7 +224,7 @@ function openGenerator(key) {
   // exactly as supplied — those forms are English-only, so the language
   // toggle only applies to PIP, Onboarding, and the letters (which manage
   // English/Spanish through their own letter-type list instead).
-  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding') ? '' : 'none';
+  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal') ? '' : 'none';
   renderCurrent();
 }
 
@@ -234,6 +235,7 @@ function renderCurrent() {
   if (currentKey === 'termination') renderTermination();
   if (currentKey === 'offer') renderLetters();
   if (currentKey === 'onboarding') renderOnboarding(lang);
+  if (currentKey === 'refusal') renderRefusal(lang);
 }
 
 // ---- PIP ----
@@ -549,14 +551,18 @@ function renderReviewSheet(emp, milestone, data) {
       <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">Employee Comments (optional)</b>${escapeHtml(data.employee_comments) || '—'}</div>
       ` : ''}
 
+      <div class="form-page-break">
       <div class="form-fine" style="margin-top:14px;border:1px solid #999">This review is a coaching and communication tool. It does not create a contract of employment, and nothing in this document alters the at-will nature of employment. Either the employee or the Company may end employment at any time, with or without cause or notice.</div>
       <div class="form-sig" style="grid-template-columns:1fr;margin-top:0">
         <div style="border-right:none">Employee Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
         <div style="border-right:none;border-top:none">Manager Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
         <div style="border-right:none;border-top:none">HR Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
       </div>
+      </div>
     </div>
+    <button class="gh no-print" id="rev-back-btn" type="button" style="margin-top:14px">&larr; Back to document generator</button>
   `;
+  document.getElementById('rev-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
 }
 
 // ---- Termination — matches the SWL termination form exactly. Final-pay
@@ -662,17 +668,29 @@ function renderTermination() {
         <div class="field"><label class="f-lab">Delivery method (notice)</label>
           <select class="f-in" id="term-notice-delivery"><option>In Person</option><option>Certified Mail</option><option>Email w/Pay Stub Notice</option></select>
         </div>
-        <button class="gh solid" id="term-generate-btn" type="button">Generate &amp; file</button>
+        <button class="gh solid" id="term-print-btn" type="button">Print</button>
+        <button class="gh" id="term-generate-btn" type="button">Register with employee record</button>
         <button class="gh" id="term-cancel-btn" type="button">Cancel</button>
+        <p class="dim" style="margin-top:8px;font-size:12px">Print works from whatever's filled in above, any time — nothing is saved until you click "Register." Registering updates the employee's status and separation date so it shows up in reports, but does not save the final-pay figures.</p>
       </div>
     </div>
 
+    <div class="acts no-print" id="term-print-acts" hidden style="margin-top:16px">
+      <button class="gh" id="term-back-btn" type="button">&larr; Back to document generator</button>
+      <button class="gh solid" id="term-print-now-btn" type="button">Print</button>
+    </div>
     <div class="form-doc" id="term-sheet" hidden></div>
   `;
 
   document.getElementById('term-new-btn').addEventListener('click', () => {
     document.getElementById('term-form-card').hidden = false;
     document.getElementById('term-sheet').hidden = true;
+    document.getElementById('term-print-acts').hidden = true;
+    const today = new Date().toISOString().slice(0, 10);
+    ['term-lastday', 'term-date', 'term-final-check-date', 'term-date-delivered'].forEach((id) => {
+      document.getElementById(id).value = today;
+    });
+    NOTICE_ITEMS.forEach((n) => { document.getElementById(`term-notice-${n.key}-date`).value = today; });
   });
   document.getElementById('term-cancel-btn').addEventListener('click', () => {
     document.getElementById('term-form-card').hidden = true;
@@ -689,7 +707,10 @@ function renderTermination() {
       renderTermRows();
     });
   });
-  document.getElementById('term-generate-btn').addEventListener('click', generateTermination);
+  document.getElementById('term-generate-btn').addEventListener('click', registerTermination);
+  document.getElementById('term-print-btn').addEventListener('click', printTermination);
+  document.getElementById('term-print-now-btn').addEventListener('click', () => window.print());
+  document.getElementById('term-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
 
   renderTermRows();
 }
@@ -731,18 +752,23 @@ function renderTermRows() {
   document.querySelectorAll('#term-rows tr').forEach((tr) => {
     tr.addEventListener('click', () => {
       const rec = terminations.find((r) => r.id === tr.dataset.id);
-      if (rec) renderTerminationSheet(rec);
+      if (rec) {
+        document.getElementById('term-print-acts').hidden = false;
+        renderTerminationSheet(rec);
+      }
     });
   });
 }
 
-async function generateTermination() {
+// Reads the form into {record, finalPay} without touching Firestore —
+// shared by both Print (never saves) and Register (saves record, not
+// finalPay). Only needs an employee selected; nothing else is required
+// to print, since printing shouldn't depend on the record being
+// complete or on Firestore being reachable at all.
+function buildTerminationRecord() {
   const empId = document.getElementById('term-emp').value;
   const emp = employees.find((e) => e.id === empId);
-  if (!emp) { showToast('Select an employee.', 'error'); return; }
-  const lastDay = document.getElementById('term-lastday').value;
-  const termDate = document.getElementById('term-date').value;
-  if (!lastDay || !termDate) { showToast('Last day worked and termination date are required.', 'error'); return; }
+  if (!emp) { showToast('Select an employee.', 'error'); return null; }
   let reason = document.getElementById('term-reason').value;
   if (reason === 'Other') reason = document.getElementById('term-reason-other').value.trim() || 'Other';
 
@@ -757,7 +783,8 @@ async function generateTermination() {
     emp_id: empId, emp_name: `${emp.first_name} ${emp.last_name}`,
     job_title: emp.position || '', division: emp.division || '', location: emp.location || '',
     hire_date: emp.hire_date || '',
-    last_day_worked: lastDay, termination_date: termDate,
+    last_day_worked: document.getElementById('term-lastday').value,
+    termination_date: document.getElementById('term-date').value,
     reason, circumstances: document.getElementById('term-circumstances').value.trim(),
     separation_type: involuntaryReasons.has(reason) ? 'involuntary' : 'voluntary',
     delivery_method: document.getElementById('term-delivery-method').value,
@@ -766,7 +793,6 @@ async function generateTermination() {
     delivered_by: document.getElementById('term-delivered-by').value.trim(),
     date_delivered: document.getElementById('term-date-delivered').value,
     notice_delivery_method: document.getElementById('term-notice-delivery').value,
-    entered_by: profile.uid, entered_at: serverTimestamp(),
   };
 
   // Final-pay figures never join `record` above — they're read straight
@@ -781,29 +807,46 @@ async function generateTermination() {
     amount: document.getElementById('term-final-wages').value,
     checkDate: document.getElementById('term-final-check-date').value,
   };
+  return { record, finalPay };
+}
+
+function printTermination() {
+  const built = buildTerminationRecord();
+  if (!built) return;
+  document.getElementById('term-print-acts').hidden = false;
+  renderTerminationSheet(built.record, built.finalPay);
+}
+
+async function registerTermination() {
+  const built = buildTerminationRecord();
+  if (!built) return;
+  const { record } = built;
+  if (!record.last_day_worked || !record.termination_date) {
+    showToast('Last day worked and termination date are required to register.', 'error');
+    return;
+  }
 
   try {
     const batch = writeBatch(db);
     const termRef = doc(collection(db, 'terminations'));
-    batch.set(termRef, record);
-    batch.update(doc(db, 'employees', empId), {
-      status: 'terminated', separation_date: termDate, separation_type: record.separation_type,
+    batch.set(termRef, { ...record, entered_by: profile.uid, entered_at: serverTimestamp() });
+    batch.update(doc(db, 'employees', record.emp_id), {
+      status: 'terminated', separation_date: record.termination_date, separation_type: record.separation_type,
       entered_by: profile.uid, updated_at: serverTimestamp(),
     });
     await batch.commit();
     await addDoc(collection(db, 'activity'), {
-      module: 'documents', item: `Termination filed — ${record.emp_name}`,
+      module: 'documents', item: `Termination registered — ${record.emp_name}`,
       entered_by: profile.uid, entered_at: serverTimestamp(),
     });
-    showToast('Termination filed. No final-pay figures were saved.');
+    showToast('Registered — reflects in reports now. No final-pay figures were saved.');
     await loadEmployees();
     terminations.push({ id: termRef.id, ...record });
     document.getElementById('term-form-card').hidden = true;
     renderTermRows();
-    renderTerminationSheet({ id: termRef.id, ...record }, finalPay);
   } catch (err) {
     console.error(err);
-    showToast('Could not save — ' + err.message, 'error');
+    showToast('Could not register — ' + err.message, 'error');
   }
 }
 
@@ -1428,7 +1471,8 @@ async function renderOnboarding(lang) {
   document.getElementById('gen-body').innerHTML = `
     <div class="card no-print" style="margin-bottom:16px">
       <div class="card-body">
-        <div class="field"><label class="f-lab">Employee</label><select class="f-in" id="onb-emp">${empSelectOptions()}</select></div>
+        <div class="field"><label class="f-lab">New hire</label><select class="f-in" id="onb-emp">${empSelectOptions(employees.filter((e) => e.status === 'onboarding'))}</select></div>
+        ${employees.some((e) => e.status === 'onboarding') ? '' : '<p class="dim">No one is currently in onboarding status.</p>'}
         <button class="gh solid" id="onb-load-btn" type="button">Load checklist</button>
       </div>
     </div>
@@ -1508,6 +1552,129 @@ async function renderOnboarding(lang) {
   }
 
   document.getElementById('onb-load-btn').addEventListener('click', loadChecklist);
+}
+
+// ---- Medical Treatment Refusal — matches the real bilingual SWL form
+// exactly. Print-and-sign, like Write-up/Termination; only logs to
+// activity so there's a record it was generated, no structured fields
+// worth a dedicated collection. ----
+
+function renderRefusal(lang) {
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <div class="field"><label class="f-lab">Employee</label><select class="f-in" id="ref-emp">${empSelectOptions()}</select></div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Date</label><input class="f-in" id="ref-date" type="date"></div>
+          <div class="field"><label class="f-lab">Date/time of incident</label><input class="f-in" id="ref-incident-datetime" placeholder="e.g. 8/19/2026, 10:30am"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Supervisor/Foreman</label><input class="f-in" id="ref-supervisor"></div>
+          <div class="field"><label class="f-lab">Location/Job site</label><input class="f-in" id="ref-location"></div>
+        </div>
+        <div class="field"><label class="f-lab">Description of injury or symptoms</label><textarea class="f-in" id="ref-description" rows="3" style="resize:vertical"></textarea></div>
+        <button class="gh solid" id="ref-generate-btn" type="button">Generate</button>
+        <button class="gh" id="ref-log-btn" type="button">Log to activity</button>
+      </div>
+    </div>
+    <div class="form-doc" id="ref-sheet" hidden></div>
+  `;
+
+  document.getElementById('ref-generate-btn').addEventListener('click', () => renderRefusalSheet(lang));
+  document.getElementById('ref-log-btn').addEventListener('click', async () => {
+    const emp = employees.find((e) => e.id === document.getElementById('ref-emp').value);
+    if (!emp) { showToast('Select an employee.', 'error'); return; }
+    try {
+      await addDoc(collection(db, 'activity'), {
+        module: 'documents', item: `Medical Treatment Refusal generated — ${emp.first_name} ${emp.last_name}`,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast('Logged to activity.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not log — ' + err.message, 'error');
+    }
+  });
+}
+
+function renderRefusalSheet(lang) {
+  const isEs = lang === 'es';
+  const emp = employees.find((e) => e.id === document.getElementById('ref-emp').value);
+  if (!emp) { showToast('Select an employee.', 'error'); return; }
+  const date = document.getElementById('ref-date').value;
+  const incidentDateTime = document.getElementById('ref-incident-datetime').value.trim();
+  const supervisor = document.getElementById('ref-supervisor').value.trim();
+  const location = document.getElementById('ref-location').value.trim();
+  const description = document.getElementById('ref-description').value.trim();
+
+  const statementsEn = [
+    'I reported this injury/illness to my supervisor, and SouthWest Landscape offered to send me for medical treatment at the company’s designated clinic (or after-hours care) at no cost to me.',
+    'I am choosing to decline medical treatment at this time. This is my own voluntary decision.',
+    'I understand that I may change my mind and request medical treatment at any time, and that I should notify my supervisor or HR immediately if my symptoms continue, return, or get worse.',
+    'I understand that declining treatment today does NOT waive, limit, or affect my rights under California workers’ compensation law in any way.',
+    'I understand that HR or my supervisor will follow up with me within 24-48 hours to check on my condition.',
+  ];
+  const statementsEs = [
+    'Reporté esta lesión/enfermedad a mi supervisor, y SouthWest Landscape me ofreció enviarme a recibir tratamiento médico en la clínica designada por la compañía (o atención fuera de horario) sin costo para mí.',
+    'Estoy decidiendo rechazar el tratamiento médico en este momento. Esta es mi propia decisión voluntaria.',
+    'Entiendo que puedo cambiar de opinión y pedir tratamiento médico en cualquier momento, y que debo avisar a mi supervisor o a Recursos Humanos inmediatamente si mis síntomas continúan, regresan, o empeoran.',
+    'Entiendo que rechazar el tratamiento hoy NO renuncia, limita, ni afecta mis derechos bajo la ley de compensación de trabajadores de California de ninguna manera.',
+    'Entiendo que Recursos Humanos o mi supervisor me contactará dentro de 24-48 horas para preguntar sobre mi condición.',
+  ];
+  const statements = isEs ? statementsEs : statementsEn;
+
+  const sheet = document.getElementById('ref-sheet');
+  sheet.hidden = false;
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  sheet.innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">${isEs ? 'Reconocimiento de Rechazo de Tratamiento Médico' : 'Medical Treatment Refusal Acknowledgment'}</h1>
+      <p class="dim" style="font-size:12px;margin:0 0 10px">${isEs
+        ? 'Complete cuando un empleado rechace la oferta de tratamiento médico después de reportar una lesión o enfermedad de trabajo. Adjuntar al reporte del incidente.'
+        : 'Complete when an employee declines an offer of medical treatment after a reported work injury or illness. Attach to the incident report.'}</p>
+      <div class="form-section">${isEs ? 'Información del Empleado' : 'Employee Information'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Nombre del Empleado' : 'Employee Name'}</b>${emp.first_name} ${emp.last_name}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha' : 'Date'}</b>${formatDate(date)}</div>
+        <div class="form-cell"><b>${isEs ? 'Puesto' : 'Job Title'}</b>${emp.position || ''}</div>
+        <div class="form-cell"><b>${isEs ? 'División' : 'Division'}</b>${emp.division || ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Supervisor / Mayordomo' : 'Supervisor / Foreman'}</b>${escapeHtml(supervisor)}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha/Hora del Incidente' : 'Date/Time of Incident'}</b>${escapeHtml(incidentDateTime)}</div>
+        <div class="form-cell" style="grid-column:1/-1"><b>${isEs ? 'Lugar / Sitio de Trabajo' : 'Location / Job Site'}</b>${escapeHtml(location)}</div>
+      </div>
+      <div class="form-section">${isEs ? 'Descripción de la Lesión o los Síntomas' : 'Description of Injury or Symptoms'}</div>
+      <div class="form-box">${escapeHtml(description) || '—'}</div>
+      <div class="form-section">${isEs ? 'Reconocimiento del Empleado — lea cada declaración y ponga sus iniciales' : 'Employee Acknowledgment — read each statement and initial'}</div>
+      <div class="form-box">
+        ${statements.map((s) => `<p style="margin:0 0 10px">☐ ${s} ${isEs ? 'Iniciales' : 'Initials'}: ____</p>`).join('')}
+      </div>
+      <div class="form-section">${isEs ? 'Firmas' : 'Signatures'}</div>
+      <div class="form-sig" style="grid-template-columns:1fr">
+        <div style="border-right:none">${isEs ? 'Firma del Empleado / Fecha' : 'Employee Signature / Date'}: _______________________________________</div>
+        <div style="border-right:none;border-top:none">${isEs ? 'Firma del Supervisor o Representante de RH / Fecha' : 'Supervisor or HR Representative Signature / Date'}: _______________________________________</div>
+        <div style="border-right:none;border-top:none">☐ ${isEs ? 'El empleado se negó a firmar. Las declaraciones anteriores fueron leídas al empleado en un idioma que entiende, en presencia del testigo indicado abajo.' : 'Employee declined to sign. The statements above were read to the employee in a language they understand, in the presence of the witness below.'}</div>
+        <div style="border-right:none;border-top:none">${isEs ? 'Firma del Testigo / Fecha' : 'Witness Signature / Date'}: _______________________________________</div>
+        <div style="border-right:none;border-top:none">${isEs ? 'Nombre del Testigo / Puesto' : 'Witness Printed Name / Title'}: _______________________________________</div>
+      </div>
+      <div class="form-page-break">
+      <div class="form-section">${isEs ? 'Registro de Seguimiento de RH' : 'HR Follow-Up Log'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Seguimiento 1 (24-48 hrs) — fecha/hora, por, estado' : 'Follow-Up 1 (24-48 hrs) — date/time, by, status'}</b>&nbsp;</div>
+        <div class="form-cell"><b>${isEs ? 'Seguimiento 2 (si continúa) — fecha/hora, resultado' : 'Follow-Up 2 (if ongoing) — date/time, outcome'}</b>&nbsp;</div>
+      </div>
+      <div class="form-checks">
+        <label>☐ ${isEs ? 'El empleado después pidió tratamiento — fecha enviado a la clínica: ______________' : 'Employee later requested treatment — date sent to clinic: ______________'}</label>
+        <label>☐ ${isEs ? 'El empleado reporta recuperación completa - no necesita tratamiento. Fecha: ______________' : 'Employee reports fully recovered — no treatment needed. Date: ______________'}</label>
+      </div>
+      <div class="form-fine">${isEs
+        ? 'Este formulario documenta únicamente la decisión voluntaria del empleado. No es una renuncia ni liberación de ningún tipo. Conservar con el reporte del incidente.'
+        : 'This form documents the employee’s voluntary decision only. It is not a release or waiver of any kind. Retain with the incident report.'}</div>
+      </div>
+    </div>
+    <button class="gh no-print" id="ref-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
+  `;
+  document.getElementById('ref-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
 }
 
 await loadEmployees();

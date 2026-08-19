@@ -50,6 +50,19 @@
           <table><tbody id="course-rows"></tbody></table>
         </div>
 
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-h"><h3>SOPs &amp; reference documents</h3><span id="docs-summary">—</span></div>
+          <div class="tools">
+            <input class="f-in" id="doc-title" placeholder="Title (e.g. New Hire Onboarding SOP)" style="max-width:280px">
+            <input class="f-in" id="doc-file" type="file" accept="application/pdf,image/*,.doc,.docx">
+            <button class="gh solid" id="doc-upload-btn" type="button">Upload</button>
+          </div>
+          <table>
+            <thead><tr><th>Document</th><th>Uploaded</th><th></th></tr></thead>
+            <tbody id="doc-rows"></tbody>
+          </table>
+        </div>
+
         <div class="card">
           <div class="card-h"><h3>SHRM-CP exam prep — progress by domain</h3><span>Self-tracked</span></div>
           <div class="card-body" id="shrm-body"></div>
@@ -115,10 +128,11 @@
 <script type="module">
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
-import { db } from './firebaseconfig.js';
+import { db, storage } from './firebaseconfig.js';
 import {
-  collection, doc, getDoc, getDocs, setDoc, serverTimestamp,
+  collection, doc, getDoc, getDocs, setDoc, deleteDoc, serverTimestamp, addDoc,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
@@ -206,6 +220,57 @@ const STARTER_COURSES = [
       { question: 'What Labor Code section does the termination form reference for late final pay?', choices: ['§201-203', '§2810.5', '§512', '§226'], correct_index: 0 },
     ],
   },
+  {
+    title: 'SOP: New Hire Onboarding Process (HR-002)',
+    description: 'Company SOP — the 6-step onboarding procedure, role-specific requirements, and the I-9 deadline.',
+    sections: [
+      { title: 'Purpose & responsibilities', type: 'reading', content:
+        'This SOP covers onboarding from offer acceptance through completed documentation, training, and orientation, across Maintenance, Irrigation, and Landscape. HR prepares the onboarding packet, schedules orientation, verifies Form I-9 within 3 business days of start, submits the DMV pull for driving positions, coordinates pesticide handler training where applicable, tracks completion via the EE File Checklist, and files all signed documents. The hiring manager confirms start date and role details, and flags any role-specific requirements (driving duties, pesticide handling) before Day One. The new hire completes and signs all required documentation accurately.' },
+      { title: 'The 6-step procedure', type: 'reading', content:
+        '1. Pre-Start Preparation — HR preps the file and packet; orientation is scheduled for Wednesday or Friday, Mondays avoided when possible for payroll priority. 2. Core Onboarding Documents — Application, Emergency Contact, Form I-9, W-4, DE-4, Direct Deposit Authorization; I-9 must be completed and verified within 3 business days of start (federal requirement). 3. Role-Specific Requirements — DMV Pull Notice for driving positions (24-48 hour turnaround); pesticide handler training and a completed Pesticide Safety Training Record before that employee performs any handler task. 4. Company Policy Acknowledgments — Notice to Employee, MPN Acknowledgment, Confidentiality and Trade Secrets Agreement, Arbitration Agreement, Handbook acknowledgment (original + file copy), Discrimination/Harassment/Retaliation Prevention Policy. 5. Additional Acknowledgments — GPS Tracking, Attendance & Punctuality, Photo Release Waiver, Company Vehicle Use & Care (if assigned a vehicle). 6. Verification & Filing — HR confirms every line on the EE File Checklist is complete and signed; documents filed in the personnel file, with medical/I-9 records kept separate as required.' },
+      { title: 'Critical deadlines and role-specific gaps', type: 'reading', content:
+        'Form I-9 must be completed no later than the 3rd business day after the start date — this federal deadline is not extended for any reason. If supporting documents aren\'t available yet, contact HR immediately rather than delaying the form itself. If a new hire\'s actual duties turn out to include driving or pesticide handling and this wasn\'t flagged before Day One, do not allow the employee to perform that task until the corresponding requirement is complete and documented.' },
+    ],
+    test_questions: [
+      { question: 'How many business days does federal law allow for completing Form I-9, and can this deadline be extended?', choices: ['5 business days, extendable with HR approval', '3 business days, not extendable for any reason', '10 business days, extendable once', 'There is no federal deadline'], correct_index: 1 },
+      { question: 'A new hire\'s actual duties include driving, but this wasn\'t flagged before Day One. What do you do?', choices: ['Let them drive and complete the DMV pull afterward', 'Do not allow the task until the requirement is complete and documented', 'Only a problem if an accident happens', 'Ask the employee to sign a waiver instead'], correct_index: 1 },
+      { question: 'What are the standard orientation days, and which day is avoided when possible?', choices: ['Monday or Tuesday; Friday avoided', 'Wednesday or Friday; Monday avoided (payroll priority)', 'Any weekday works equally', 'Only the first of the month'], correct_index: 1 },
+    ],
+  },
+  {
+    title: 'SOP: Employee Termination Process (HR-003)',
+    description: 'Company SOP — final pay timing, the four required separation notices, and property return.',
+    sections: [
+      { title: 'Purpose, responsibilities & notification', type: 'reading', content:
+        'This SOP covers voluntary and involuntary separations across Maintenance, Irrigation, and Landscape, including final pay timing, required notices, and property return. HR prepares the Termination Form, coordinates final pay timing with Payroll, provides all legally required separation notices, confirms return of company property, and files final documentation. The manager/supervisor notifies HR of a termination decision or resignation, including effective date and reason, and conducts or participates in the termination meeting. Payroll calculates and issues final wages, including accrued vacation payout, within the legally required timeframe.' },
+      { title: 'Final pay timing & the termination meeting', type: 'reading', content:
+        'Involuntary termination: final wages are due immediately, same day — there is no grace period; wages must be ready and available at the termination meeting itself. Voluntary resignation with less than 72 hours\' notice: final wages due within 72 hours. Missing the final pay deadline triggers waiting-time penalties under Labor Code §201-203, up to 30 days of the employee\'s daily wage. The Termination Form is completed during the meeting: reason, description of circumstances, final hours, and method of delivery.' },
+      { title: 'Required notices, property return & filing', type: 'reading', content:
+        'Four separation notices apply based on criteria, and none are optional regardless of how routine the separation seems: the EDD "For Your Benefit" Pamphlet (DE 2320) is required for every separation, including voluntary resignations; Notice to Employee as to Change in Relationship for involuntary separations; COBRA Election Notice to the plan administrator; HIPP Notice (DHCS 9061) for eligible employees losing group health coverage. Company property (keys, uniform, laptop, phone, CC/gas card, vehicle) is collected, and email/system and building/key fob access is revoked. The completed Termination Form, with all Required Notices Provided checkboxes filled in and signed (or witnessed if the employee refuses/is unavailable), is filed in the personnel file.' },
+    ],
+    test_questions: [
+      { question: 'For an involuntary termination, when are final wages due?', choices: ['Within 3 business days', 'Immediately, same day — no grace period', 'On the next scheduled payday', 'Within 30 days'], correct_index: 1 },
+      { question: 'Which required separation notice applies to every termination, including voluntary resignations?', choices: ['COBRA Election Notice only', 'HIPP Notice only', 'The EDD "For Your Benefit" Pamphlet (DE 2320)', 'None — notices are only for involuntary terminations'], correct_index: 2 },
+      { question: 'What is the maximum waiting-time penalty exposure for missing the final pay deadline?', choices: ['A flat $500 fine', 'Up to 30 days of the employee\'s daily wage, under Labor Code §201-203', 'No penalty if the delay is under a week', 'Penalties only apply to involuntary terminations'], correct_index: 1 },
+    ],
+  },
+  {
+    title: 'SOP: Employee Write-Up / Disciplinary Process (HR-004)',
+    description: 'Company SOP — warning levels, retention requirements, and how write-ups factor into other decisions.',
+    sections: [
+      { title: 'Identifying the issue & warning level', type: 'reading', content:
+        'The manager/supervisor documents the specific infraction — tardiness/leaving early, absenteeism, violation of company policies, substandard work, violation of safety rules, or rudeness to customers/coworkers — then determines the warning level (Verbal, First, Second, or Final) based on severity and prior history. The Company reserves the right to skip steps or proceed directly to termination for serious misconduct. HR reviews completed write-ups for consistency and monitors for patterns across employees or divisions.' },
+      { title: 'Completing the form, discussing it, and signatures', type: 'reading', content:
+        'The write-up form covers Description of Infraction, Plan for Improvement with a Follow-Up Review Date, and Consequences of Further Infractions. The manager reviews it with the employee in person; the employee may add optional comments/response. Employee and manager both sign; a witness signs if the employee understands the warning but refuses to sign. The original is filed in the personnel file, and HR is notified for pattern tracking. The manager checks in with the employee at the Follow-Up Review Date to assess improvement.' },
+      { title: 'Retention, copies, and how write-ups factor into other decisions', type: 'reading', content:
+        'An employee\'s signature confirms they received and discussed the warning — it does not indicate agreement, and this document does not create a contract of employment or alter at-will status. A copy is not provided automatically at signing; if an employee requests to inspect or receive a copy of their personnel record, it must be provided within 30 days per Labor Code §1198.5 and §432. Write-ups are retained for the duration of employment plus a minimum of 4 years after separation, matching California\'s FEHA claims statute of limitations — never purge write-ups on a shorter internal timer. A recent active write-up may be considered in promotion or transfer decisions, applied consistently (same rule, same lookback period, for every employee), using judgment on severity rather than a rigid rule.' },
+    ],
+    test_questions: [
+      { question: 'Does an employee\'s signature on a write-up mean they agree with it?', choices: ['Yes, signing is legal agreement with the content', 'No — it only confirms they received and discussed it', 'Only if they don\'t add comments', 'It depends on the warning level'], correct_index: 1 },
+      { question: 'What is the minimum retention period for a write-up?', choices: ['1 year after the write-up date', '2 years after separation', 'Duration of employment plus at least 4 years after separation', 'Write-ups can be purged once the employee is promoted'], correct_index: 2 },
+      { question: 'If an employee requests to inspect or receive a copy of their personnel record, how quickly must it be provided?', choices: ['Within 5 business days', 'Within 30 days', 'Within 90 days', 'There is no deadline'], correct_index: 1 },
+    ],
+  },
 ];
 
 let courses = [];
@@ -227,18 +292,112 @@ async function renderLibrary() {
     const comp = compSnap.exists() ? compSnap.data() : null;
     const status = comp?.passed ? '<span class="pill ok">Completed</span>' : (comp ? '<span class="pill mid">In progress</span>' : '<span class="pill">Not started</span>');
     return `
-      <tr class="row-clickable" data-id="${c.id}" style="cursor:pointer">
-        <td><b>${c.title}</b><div class="dim" style="font-size:12px">${c.description || ''}</div></td>
+      <tr>
+        <td class="row-clickable" data-id="${c.id}" style="cursor:pointer"><b>${c.title}</b><div class="dim" style="font-size:12px">${c.description || ''}</div></td>
         <td class="mono dim">${(c.sections || []).length} sections</td>
         <td>${status}</td>
+        <td style="text-align:right"><button class="gh delete-course-btn" data-id="${c.id}" data-title="${escapeHtmlAttr(c.title)}" type="button">Delete</button></td>
       </tr>
     `;
   }));
-  document.getElementById('course-rows').innerHTML = rows.join('') || '<tr><td class="dim">No courses yet — add one to get started.</td></tr>';
-  document.querySelectorAll('#course-rows tr').forEach((tr) => {
-    tr.addEventListener('click', () => openCourse(tr.dataset.id));
+  document.getElementById('course-rows').innerHTML = rows.join('') || '<tr><td colspan="4" class="dim">No courses yet — add one to get started.</td></tr>';
+  document.querySelectorAll('#course-rows td.row-clickable').forEach((td) => {
+    td.addEventListener('click', () => openCourse(td.dataset.id));
+  });
+  document.querySelectorAll('.delete-course-btn').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const compSnap = await getDocs(collection(db, 'training_modules', btn.dataset.id, 'completions'));
+      const warn = compSnap.size
+        ? ` ${compSnap.size} staff completion${compSnap.size === 1 ? '' : 's'} exist for this course and will be orphaned.`
+        : '';
+      if (!window.confirm(`Delete "${btn.dataset.title}"? This can't be undone.${warn}`)) return;
+      try {
+        await deleteDoc(doc(db, 'training_modules', btn.dataset.id));
+        showToast('Course deleted.');
+        await loadCourses();
+      } catch (err) {
+        console.error(err);
+        showToast('Could not delete — ' + err.message, 'error');
+      }
+    });
   });
 }
+
+function escapeHtmlAttr(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML.replace(/"/g, '&quot;');
+}
+
+// ---- SOPs & reference documents ----
+
+let trainingDocs = [];
+
+async function loadDocs() {
+  const snap = await getDocs(collection(db, 'training_documents'));
+  trainingDocs = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+  renderDocs();
+}
+
+function renderDocs() {
+  document.getElementById('docs-summary').textContent = `${trainingDocs.length} on file`;
+  document.getElementById('doc-rows').innerHTML = trainingDocs.length ? trainingDocs.map((d) => `
+    <tr>
+      <td><a href="${d.file_url}" target="_blank" rel="noopener">${escapeHtmlAttr(d.title)}</a></td>
+      <td class="dim" style="font-size:12px">${d.uploaded_at?.seconds ? formatDate(new Date(d.uploaded_at.seconds * 1000)) : ''}</td>
+      <td style="text-align:right"><button class="gh delete-doc-btn" data-id="${d.id}" type="button">Delete</button></td>
+    </tr>
+  `).join('') : '<tr><td colspan="3" class="dim">No documents uploaded yet.</td></tr>';
+
+  document.querySelectorAll('.delete-doc-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const docItem = trainingDocs.find((d) => d.id === btn.dataset.id);
+      if (!docItem) return;
+      if (!window.confirm(`Delete "${docItem.title}"? This can't be undone.`)) return;
+      try {
+        if (docItem.file_path) await deleteObject(ref(storage, docItem.file_path)).catch(() => {});
+        await deleteDoc(doc(db, 'training_documents', docItem.id));
+        showToast('Document deleted.');
+        await loadDocs();
+      } catch (err) {
+        console.error(err);
+        showToast('Could not delete — ' + err.message, 'error');
+      }
+    });
+  });
+}
+
+document.getElementById('doc-upload-btn').addEventListener('click', async () => {
+  const title = document.getElementById('doc-title').value.trim();
+  const file = document.getElementById('doc-file').files[0];
+  if (!title) { showToast('Enter a title.', 'error'); return; }
+  if (!file) { showToast('Choose a file.', 'error'); return; }
+  const btn = document.getElementById('doc-upload-btn');
+  btn.disabled = true;
+  try {
+    const docRef = doc(collection(db, 'training_documents'));
+    const filePath = `training/${docRef.id}/${file.name}`;
+    const storageRef = ref(storage, filePath);
+    await uploadBytes(storageRef, file);
+    const fileUrl = await getDownloadURL(storageRef);
+    await setDoc(docRef, {
+      title, file_url: fileUrl, file_path: filePath,
+      entered_by: profile.uid, uploaded_at: serverTimestamp(),
+    });
+    document.getElementById('doc-title').value = '';
+    document.getElementById('doc-file').value = '';
+    showToast('Document uploaded.');
+    await loadDocs();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not upload — ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 async function openCourse(courseId) {
   currentCourse = courses.find((c) => c.id === courseId);
@@ -336,6 +495,9 @@ async function submitTest() {
   });
 
   const passed = correct === questions.length;
+  // A failed attempt resets progress — every section has to be re-read
+  // before the test can be retaken, not just retaken immediately.
+  if (!passed) readSections = new Set();
   const attempts = (currentCompletion.attempts || 0) + 1;
   currentCompletion = {
     ...currentCompletion,
@@ -366,7 +528,7 @@ async function submitTest() {
       showToast(`You got ${correct} of ${questions.length} correct — passed.`);
       showCertificate();
     } else {
-      showToast(`You got ${correct} of ${questions.length} correct — not a pass. Review the material and try again.`, 'error');
+      showToast(`You got ${correct} of ${questions.length} correct — not a pass. All sections are locked again — review the material from the start.`, 'error');
       renderSections();
     }
   } catch (err) {
@@ -387,10 +549,12 @@ function showCertificate() {
 document.getElementById('print-cert-btn').addEventListener('click', () => window.print());
 
 document.getElementById('load-starter-btn').addEventListener('click', async () => {
-  const existingTitles = new Set(courses.map((c) => c.title));
-  const toAdd = STARTER_COURSES.filter((c) => !existingTitles.has(c.title));
-  if (!toAdd.length) { showToast('Starter courses are already loaded.'); return; }
+  const btn = document.getElementById('load-starter-btn');
+  btn.disabled = true;
   try {
+    const existingTitles = new Set(courses.map((c) => c.title));
+    const toAdd = STARTER_COURSES.filter((c) => !existingTitles.has(c.title));
+    if (!toAdd.length) { showToast('Starter courses are already loaded.'); return; }
     for (const course of toAdd) {
       await setDoc(doc(collection(db, 'training_modules')), {
         ...course, entered_by: profile.uid, created_at: serverTimestamp(),
@@ -401,6 +565,8 @@ document.getElementById('load-starter-btn').addEventListener('click', async () =
   } catch (err) {
     console.error(err);
     showToast('Could not load starter courses — ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
   }
 });
 
@@ -523,6 +689,7 @@ async function saveShrm() {
 }
 
 await loadCourses();
+await loadDocs();
 await loadShrm();
 </script>
 </body>

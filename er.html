@@ -96,7 +96,10 @@
         <div class="tab-pane" id="tab-interviews" hidden>
           <div class="card">
             <div class="card-h"><h3>Interviews</h3><span id="interview-summary">—</span></div>
-            <table><tbody id="interview-rows"></tbody></table>
+            <table>
+              <thead><tr><th>Person</th><th>Role</th><th>Status</th><th>Interviewed by / when</th><th></th></tr></thead>
+              <tbody id="interview-rows"></tbody>
+            </table>
           </div>
           <div class="card" id="interview-form-card" style="margin-top:16px" hidden>
             <div class="card-h"><h3 id="interview-form-title">Interview</h3><span></span></div>
@@ -243,6 +246,7 @@ const WITNESS_TYPE_EXTRA = {
 const WITNESS_CLOSE = 'Has anyone spoken to you about what to say in this interview, or asked you to say or not say anything specific?';
 
 let employees = [];
+let staff = [];
 let cases = [];
 let currentCase = null;
 let currentInterviews = [];
@@ -272,6 +276,15 @@ async function loadEmployees() {
   const options = employees.map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name}</option>`).join('');
   document.getElementById('complainant-select').innerHTML = options;
   document.getElementById('accused-select').innerHTML = options;
+}
+
+async function loadStaff() {
+  const snap = await getDocs(collection(db, 'users'));
+  staff = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+function staffName(uid) {
+  const s = staff.find((x) => x.id === uid);
+  return s ? s.name : (uid || '—');
 }
 
 async function loadCases() {
@@ -492,6 +505,7 @@ function renderInterviews() {
       <td><b>${iv.person_name}</b></td>
       <td class="dim" style="text-transform:capitalize">${iv.role}</td>
       <td>${iv.status === 'complete' ? '<span class="pill ok">Complete</span>' : '<span class="pill mid">Pending</span>'}</td>
+      <td class="dim" style="font-size:12px">${iv.status === 'complete' ? `${staffName(iv.interviewed_by)}<br>${iv.interviewed_at?.seconds ? formatDate(new Date(iv.interviewed_at.seconds * 1000)) + ' ' + new Date(iv.interviewed_at.seconds * 1000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''}` : ''}</td>
       <td style="text-align:right">
         <button class="gh conduct-btn" data-id="${iv.id}" type="button">${iv.status === 'complete' ? 'View / add follow-up' : 'Conduct interview'}</button>
       </td>
@@ -725,6 +739,7 @@ document.getElementById('close-case-btn').addEventListener('click', async () => 
 });
 
 await loadEmployees();
+await loadStaff();
 await loadCases();
 </script>
 </body>
