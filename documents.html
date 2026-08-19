@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Documents — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1>Documents</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>Upload a document</h3><span></span></div>
+        <div class="card-body">
+          <div class="frow">
+            <div class="field">
+              <label class="f-lab" for="doc-title">Title</label>
+              <input class="f-in" id="doc-title" placeholder="e.g. Gardener 2 — Job Description">
+            </div>
+            <div class="field">
+              <label class="f-lab" for="doc-category">Category</label>
+              <select class="f-in" id="doc-category">
+                <option value="job_description">Job description</option>
+                <option value="sop">SOP</option>
+                <option value="form_template">Form / template</option>
+                <option value="other">Other reference</option>
+                <option value="policy">Policy</option>
+                <option value="handbook">Handbook</option>
+                <option value="notice">Notice</option>
+              </select>
+            </div>
+          </div>
+          <div class="frow" id="policy-fields" hidden>
+            <div class="field">
+              <label class="f-lab" for="doc-version">Version label</label>
+              <input class="f-in" id="doc-version" placeholder="e.g. Rev. A">
+            </div>
+            <div class="field">
+              <label class="f-lab" for="doc-effective">Effective date</label>
+              <input class="f-in" id="doc-effective" type="date">
+            </div>
+          </div>
+          <p class="dim" id="policy-note" hidden style="margin:-4px 0 12px;font-size:12px">
+            Policy, Handbook, and Notice documents are also added to Policy Compliance so you can track
+            employee acknowledgment — everything else here is reference-only.
+          </p>
+          <div class="field">
+            <label class="f-lab" for="doc-file">File</label>
+            <input class="f-in" id="doc-file" type="file" accept="application/pdf,image/*,.doc,.docx,.xls,.xlsx">
+          </div>
+          <button class="gh solid" id="doc-upload-btn" type="button">Upload</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>Document library</h3><span id="docs-summary">—</span></div>
+        <div class="tools">
+          <input class="inp" id="search" placeholder="Search title" style="min-width:190px">
+          <select class="inp" id="category-filter">
+            <option value="">All categories</option>
+            <option value="job_description">Job descriptions</option>
+            <option value="sop">SOPs</option>
+            <option value="form_template">Forms / templates</option>
+            <option value="policy">Policies</option>
+            <option value="handbook">Handbooks</option>
+            <option value="notice">Notices</option>
+            <option value="other">Other reference</option>
+          </select>
+        </div>
+        <table>
+          <thead><tr><th>Document</th><th>Category</th><th>Uploaded</th><th></th></tr></thead>
+          <tbody id="doc-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, showToast, formatDate } from './app.js';
+import { db, storage } from './firebaseconfig.js';
+import {
+  collection, doc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('documents', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+const CATEGORY_LABELS = {
+  job_description: 'Job description', sop: 'SOP', form_template: 'Form / template',
+  other: 'Other reference', policy: 'Policy', handbook: 'Handbook', notice: 'Notice',
+};
+const POLICY_CATEGORIES = new Set(['policy', 'handbook', 'notice']);
+
+function escapeHtmlAttr(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+let docs = [];
+
+async function loadDocs() {
+  const snap = await getDocs(collection(db, 'training_documents'));
+  docs = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+  render();
+}
+
+function render() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const categoryFilter = document.getElementById('category-filter').value;
+  const visible = docs.filter((d) => {
+    if (categoryFilter && d.category !== categoryFilter) return false;
+    if (q && !(d.title || '').toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  document.getElementById('docs-summary').textContent = `${visible.length} of ${docs.length}`;
+  document.getElementById('doc-rows').innerHTML = visible.length ? visible.map((d) => `
+    <tr>
+      <td><a href="${d.file_url}" target="_blank" rel="noopener">${escapeHtmlAttr(d.title)}</a>${d.policy_doc_id ? ' <span class="pill ok">In Policy Compliance</span>' : ''}</td>
+      <td class="mono dim">${CATEGORY_LABELS[d.category] || 'Other reference'}</td>
+      <td class="dim" style="font-size:12px">${d.uploaded_at?.seconds ? formatDate(new Date(d.uploaded_at.seconds * 1000)) : ''}</td>
+      <td style="text-align:right"><button class="gh delete-doc-btn" data-id="${d.id}" type="button">Delete</button></td>
+    </tr>
+  `).join('') : '<tr><td colspan="4" class="dim">No documents uploaded yet.</td></tr>';
+
+  document.querySelectorAll('.delete-doc-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const docItem = docs.find((d) => d.id === btn.dataset.id);
+      if (!docItem) return;
+      const warn = docItem.policy_doc_id
+        ? `Delete "${docItem.title}"? Policy documents aren't deleted from Policy Compliance (that keeps acknowledgment history intact) — this will retire it there instead, same as clicking "New version" without republishing. This can't be undone.`
+        : `Delete "${docItem.title}"? This can't be undone.`;
+      if (!window.confirm(warn)) return;
+      try {
+        if (docItem.file_path) await deleteObject(ref(storage, docItem.file_path)).catch(() => {});
+        await deleteDoc(doc(db, 'training_documents', docItem.id));
+        if (docItem.policy_doc_id) {
+          await updateDoc(doc(db, 'policy_documents', docItem.policy_doc_id), { active: false, entered_by: profile.uid }).catch(() => {});
+        }
+        showToast('Document deleted.');
+        await loadDocs();
+      } catch (err) {
+        console.error(err);
+        showToast('Could not delete — ' + err.message, 'error');
+      }
+    });
+  });
+}
+
+document.getElementById('doc-category').addEventListener('change', (e) => {
+  const isPolicy = POLICY_CATEGORIES.has(e.target.value);
+  document.getElementById('policy-fields').hidden = !isPolicy;
+  document.getElementById('policy-note').hidden = !isPolicy;
+});
+
+document.getElementById('doc-upload-btn').addEventListener('click', async () => {
+  const title = document.getElementById('doc-title').value.trim();
+  const category = document.getElementById('doc-category').value;
+  const file = document.getElementById('doc-file').files[0];
+  if (!title) { showToast('Enter a title.', 'error'); return; }
+  if (!file) { showToast('Choose a file.', 'error'); return; }
+  const isPolicy = POLICY_CATEGORIES.has(category);
+  const versionLabel = document.getElementById('doc-version').value.trim();
+  const effectiveDate = document.getElementById('doc-effective').value;
+  if (isPolicy && (!versionLabel || !effectiveDate)) {
+    showToast('Version label and effective date are required for Policy/Handbook/Notice documents.', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('doc-upload-btn');
+  btn.disabled = true;
+  try {
+    const docRef = doc(collection(db, 'training_documents'));
+    const filePath = `training/${docRef.id}/${file.name}`;
+    const storageRef = ref(storage, filePath);
+    await uploadBytes(storageRef, file);
+    const fileUrl = await getDownloadURL(storageRef);
+
+    let policyDocId = null;
+    if (isPolicy) {
+      const policyRef = doc(collection(db, 'policy_documents'));
+      await setDoc(policyRef, {
+        title, type: category, version_label: versionLabel, effective_date: effectiveDate,
+        active: true, file_url: fileUrl, file_path: filePath,
+        entered_by: profile.uid, created_at: serverTimestamp(),
+      });
+      policyDocId = policyRef.id;
+    }
+
+    await setDoc(docRef, {
+      title, category, file_url: fileUrl, file_path: filePath,
+      policy_doc_id: policyDocId,
+      entered_by: profile.uid, uploaded_at: serverTimestamp(),
+    });
+
+    document.getElementById('doc-title').value = '';
+    document.getElementById('doc-file').value = '';
+    document.getElementById('doc-version').value = '';
+    document.getElementById('doc-effective').value = '';
+    showToast(isPolicy ? 'Uploaded — also added to Policy Compliance for acknowledgment tracking.' : 'Document uploaded.');
+    await loadDocs();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not upload — ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('search').addEventListener('input', render);
+document.getElementById('category-filter').addEventListener('change', render);
+
+await loadDocs();
+</script>
+</body>
+</html>
