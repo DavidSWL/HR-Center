@@ -123,6 +123,22 @@ function escapeHtmlAttr(str) {
   return div.innerHTML;
 }
 
+// Browsers don't reliably report the correct MIME type for Office
+// documents (depends on OS file-type associations) — Storage rules
+// check contentType, so a wrong or blank guess gets the upload silently
+// rejected with no obvious cause. Deciding it from the extension instead
+// of trusting file.type makes this consistent regardless of the browser.
+const EXT_CONTENT_TYPES = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
+};
+function contentTypeFor(file) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  return EXT_CONTENT_TYPES[ext] || file.type || 'application/octet-stream';
+}
+
 let docs = [];
 
 async function loadDocs() {
@@ -202,7 +218,7 @@ document.getElementById('doc-upload-btn').addEventListener('click', async () => 
     const docRef = doc(collection(db, 'training_documents'));
     const filePath = `training/${docRef.id}/${file.name}`;
     const storageRef = ref(storage, filePath);
-    await uploadBytes(storageRef, file);
+    await uploadBytes(storageRef, file, { contentType: contentTypeFor(file) });
     const fileUrl = await getDownloadURL(storageRef);
 
     let policyDocId = null;
