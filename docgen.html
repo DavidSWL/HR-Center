@@ -606,6 +606,7 @@ function renderTermination() {
             <th class="sortable" data-key="location">Location<span class="sort-arrow"></span></th>
             <th class="sortable" data-key="reason">Reason<span class="sort-arrow"></span></th>
             <th class="sortable" data-key="type">Type<span class="sort-arrow"></span></th>
+            <th>Notes / exit interview</th>
           </tr>
         </thead>
         <tbody id="term-rows"></tbody>
@@ -747,14 +748,38 @@ function renderTermRows() {
       <td class="mono dim">${escapeHtml(r.location || '—')}</td>
       <td>${escapeHtml(r.reason || '—')}</td>
       <td>${r.separation_type === 'involuntary' ? '<span class="pill bad">Involuntary</span>' : '<span class="pill ok">Voluntary</span>'}</td>
+      <td class="dim term-notes-cell" data-id="${r.id}" style="cursor:pointer" title="Click to add or edit">${escapeHtml(r.circumstances || '— click to add')}</td>
     </tr>
-  `).join('') : '<tr><td colspan="6" class="dim">No terminations logged yet.</td></tr>';
+  `).join('') : '<tr><td colspan="7" class="dim">No terminations logged yet.</td></tr>';
   document.querySelectorAll('#term-rows tr').forEach((tr) => {
-    tr.addEventListener('click', () => {
+    tr.addEventListener('click', (e) => {
+      if (e.target.closest('.term-notes-cell')) return; // handled separately below
       const rec = terminations.find((r) => r.id === tr.dataset.id);
       if (rec) {
         document.getElementById('term-print-acts').hidden = false;
         renderTerminationSheet(rec);
+      }
+    });
+  });
+  // Exit-interview detail usually comes in after the termination is
+  // already registered — this is the only field on a termination record
+  // meant to be added or revised later, so it's editable straight from
+  // the list instead of requiring the whole record to be reopened.
+  document.querySelectorAll('.term-notes-cell').forEach((cell) => {
+    cell.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const rec = terminations.find((r) => r.id === cell.dataset.id);
+      if (!rec) return;
+      const updated = prompt(`Notes / exit interview — ${rec.emp_name}`, rec.circumstances || '');
+      if (updated === null) return;
+      try {
+        await updateDoc(doc(db, 'terminations', rec.id), { circumstances: updated.trim(), entered_by: profile.uid });
+        rec.circumstances = updated.trim();
+        renderTermRows();
+        showToast('Note saved.');
+      } catch (err) {
+        console.error(err);
+        showToast('Could not save — ' + err.message, 'error');
       }
     });
   });
