@@ -225,11 +225,17 @@ async function toggleField(empId, milestone, field, value) {
 
 document.getElementById('status-filter').addEventListener('change', renderQueue);
 
-await loadEmployees();
-await loadReviews();
-renderBoard();
-renderQueue();
-renderEscalation();
+try {
+  await loadEmployees();
+  await loadReviews();
+  renderBoard();
+  renderQueue();
+  renderEscalation();
+} catch (err) {
+  console.error(err);
+  document.getElementById('board-rows').innerHTML = `<tr><td colspan="5" class="dim">Could not load — ${err.message}</td></tr>`;
+  showToast('Could not load this page — ' + err.message, 'error');
+}
 </script>
 </body>
 </html>
