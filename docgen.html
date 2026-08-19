@@ -962,59 +962,76 @@ async function openTermImport() {
   overlay.querySelector('#ti-file').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const sheets = await readSpreadsheetSheets(file);
-    const sheetName = Object.keys(sheets).find((n) => /terminat/i.test(n)) || Object.keys(sheets)[0];
-    const { headers, rows, forbiddenColumns } = objectsFromRows(sheets[sheetName], [
-      'Employee ID', 'Name', 'Job Title', 'Division', 'Branch', 'Manager', 'Term Date', 'Last Day', 'Reason',
-    ]);
-    const pick = (row, ...keys) => { for (const k of keys) if (row[k]) return row[k]; return ''; };
-    const dateVal = (v) => {
-      if (!v) return '';
-      const d = v instanceof Date ? v : new Date(v);
-      return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
-    };
-    const nameToId = new Map(allEmployeesEver.map((e) => [`${e.first_name} ${e.last_name}`.trim().toLowerCase(), e.id]));
-
-    parsed = rows.map((row) => {
-      const id = pick(row, 'employee_id', 'id').toString().trim();
-      const name = pick(row, 'name', 'employee_name').toString().trim();
-      const termDate = dateVal(pick(row, 'term_date', 'termination_date'));
-      const errors = [];
-      if (!id || !/^[a-z0-9-]+$/i.test(id)) errors.push('missing/invalid Employee ID — likely a summary or note row, not a record');
-      if (!name) errors.push('missing name');
-      if (!termDate) errors.push('missing/invalid term date');
-      const reason = pick(row, 'reason').toString().trim();
-      return {
-        id, name, job_title: pick(row, 'job_title', 'title'),
-        division: pick(row, 'division'), location: normalizeLocation(pick(row, 'branch', 'location')),
-        hire_date: dateVal(pick(row, 'hire_date')),
-        last_day: dateVal(pick(row, 'last_day')),
-        term_date: termDate,
-        reason, notes: pick(row, 'notes'),
-        exists: allEmployeesEver.some((e) => e.id === id),
-        errors,
+    const fileInput = overlay.querySelector('#ti-file');
+    fileInput.disabled = true;
+    overlay.querySelector('#ti-warnings').innerHTML = '<p class="dim">Reading file…</p>';
+    try {
+      const sheets = await readSpreadsheetSheets(file);
+      const sheetName = Object.keys(sheets).find((n) => /terminat/i.test(n)) || Object.keys(sheets)[0];
+      const { headers, rows, forbiddenColumns } = objectsFromRows(sheets[sheetName], [
+        'Employee ID', 'Name', 'Job Title', 'Division', 'Branch', 'Manager', 'Term Date', 'Last Day', 'Reason',
+      ]);
+      const pick = (row, ...keys) => { for (const k of keys) if (row[k]) return row[k]; return ''; };
+      const dateVal = (v) => {
+        if (!v) return '';
+        const d = v instanceof Date ? v : new Date(v);
+        return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
       };
-    });
+      const nameToId = new Map(allEmployeesEver.map((e) => [`${e.first_name} ${e.last_name}`.trim().toLowerCase(), e.id]));
 
-    const validCount = parsed.filter((r) => !r.errors.length).length;
-    const warnings = [];
-    if (forbiddenColumns.length) warnings.push(`Ignored, never imported: ${forbiddenColumns.join(', ')}`);
-    overlay.querySelector('#ti-warnings').innerHTML = warnings.length
-      ? `<div class="login-error" style="background:var(--hover);color:var(--alertTx);border-color:var(--alertTx)">${warnings.join('<br>')}</div>` : '';
-    overlay.querySelector('#ti-summary').textContent = `${validCount} of ${parsed.length} rows will be imported. ${parsed.length - validCount} skipped (summary/note rows or missing data).`;
-    overlay.querySelector('#ti-rows').innerHTML = parsed.map((r, i) => `
-      <tr>
-        <td class="mono dim">${i + 1}</td>
-        <td class="mono">${escapeHtml(r.id)}</td>
-        <td>${escapeHtml(r.name)}</td>
-        <td class="mono">${r.term_date || '—'}</td>
-        <td class="dim">${escapeHtml(r.reason)}</td>
-        <td>${r.errors.length ? `<span class="pill bad">${r.errors.join(', ')}</span>` : `<span class="pill ok">${r.exists ? 'Updates existing employee' : 'Creates historical record'}</span>`}</td>
-      </tr>
-    `).join('');
-    overlay.querySelector('#ti-pick').hidden = true;
-    overlay.querySelector('#ti-preview').hidden = false;
-    overlay.querySelector('#ti-confirm').hidden = validCount === 0;
+      parsed = rows.map((row) => {
+        const id = pick(row, 'employee_id', 'id').toString().trim();
+        const name = pick(row, 'name', 'employee_name').toString().trim();
+        const termDate = dateVal(pick(row, 'term_date', 'termination_date'));
+        const errors = [];
+        if (!id || !/^[a-z0-9-]+$/i.test(id)) errors.push('missing/invalid Employee ID — likely a summary or note row, not a record');
+        if (!name) errors.push('missing name');
+        if (!termDate) errors.push('missing/invalid term date');
+        // Real export has "Reason (as entered)" plus a separately-computed
+        // "Separation Type" column — only the raw reason is read here,
+        // since involuntary/voluntary is re-derived below from the text.
+        const reason = pick(row, 'reason_as_entered', 'reason').toString().trim();
+        const separationTypeRaw = pick(row, 'separation_type').toString().trim().toLowerCase();
+        return {
+          id, name, job_title: pick(row, 'job_title', 'title'),
+          division: pick(row, 'division'), location: normalizeLocation(pick(row, 'branch', 'location')),
+          hire_date: dateVal(pick(row, 'hire_date')),
+          last_day: dateVal(pick(row, 'last_day')),
+          term_date: termDate,
+          reason, notes: pick(row, 'notes'),
+          // Some source sheets already have this computed — trust it over
+          // guessing from reason-text keywords when it's present.
+          separation_type: separationTypeRaw === 'involuntary' || separationTypeRaw === 'voluntary' ? separationTypeRaw : null,
+          exists: allEmployeesEver.some((e) => e.id === id),
+          errors,
+        };
+      });
+
+      const validCount = parsed.filter((r) => !r.errors.length).length;
+      const warnings = [];
+      if (forbiddenColumns.length) warnings.push(`Ignored, never imported: ${forbiddenColumns.join(', ')}`);
+      overlay.querySelector('#ti-warnings').innerHTML = warnings.length
+        ? `<div class="login-error" style="background:var(--hover);color:var(--alertTx);border-color:var(--alertTx)">${warnings.join('<br>')}</div>` : '';
+      overlay.querySelector('#ti-summary').textContent = `${validCount} of ${parsed.length} rows will be imported. ${parsed.length - validCount} skipped (summary/note rows or missing data).`;
+      overlay.querySelector('#ti-rows').innerHTML = parsed.map((r, i) => `
+        <tr>
+          <td class="mono dim">${i + 1}</td>
+          <td class="mono">${escapeHtml(r.id)}</td>
+          <td>${escapeHtml(r.name)}</td>
+          <td class="mono">${r.term_date || '—'}</td>
+          <td class="dim">${escapeHtml(r.reason)}</td>
+          <td>${r.errors.length ? `<span class="pill bad">${r.errors.join(', ')}</span>` : `<span class="pill ok">${r.exists ? 'Updates existing employee' : 'Creates historical record'}</span>`}</td>
+        </tr>
+      `).join('');
+      overlay.querySelector('#ti-pick').hidden = true;
+      overlay.querySelector('#ti-preview').hidden = false;
+      overlay.querySelector('#ti-confirm').hidden = validCount === 0;
+    } catch (err) {
+      console.error(err);
+      overlay.querySelector('#ti-warnings').innerHTML =
+        `<div class="login-error" style="background:var(--hover);color:var(--alertTx);border-color:var(--alertTx)">Could not read that file — ${escapeHtml(err.message)}</div>`;
+      fileInput.disabled = false;
+    }
   });
 
   overlay.querySelector('#ti-confirm').addEventListener('click', async () => {
@@ -1024,7 +1041,8 @@ async function openTermImport() {
         const chunk = valid.slice(start, start + 50);
         const batch = writeBatch(db);
         chunk.forEach((r) => {
-          const separationType = /involuntary|policy|performance|attendance|layoff|elimination/i.test(r.reason) ? 'involuntary' : 'voluntary';
+          const separationType = r.separation_type
+            || (/involuntary|policy|performance|attendance|layoff|elimination|not a fit|terminat/i.test(r.reason) ? 'involuntary' : 'voluntary');
           const termRef = doc(collection(db, 'terminations'));
           batch.set(termRef, {
             emp_id: r.id, emp_name: r.name, job_title: r.job_title, division: r.division, location: r.location,
