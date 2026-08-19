@@ -33,7 +33,8 @@ export const NAV_SECTIONS = [
     label: 'Safety',
     items: [
       { key: 'incidents', label: 'Incidents', href: 'safety.html', built: true },
-      { key: 'safetymeetings', label: 'Safety meetings', href: 'safetymeetings.html', built: true },
+      // Safety meetings tab pulled from nav for now, per request — the page
+      // itself and its data are untouched, just unlinked.
     ],
   },
   {

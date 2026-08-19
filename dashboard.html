@@ -82,6 +82,7 @@ if (profile) {
 
     snap.forEach((docSnap) => {
       const e = docSnap.data();
+      if (e.is_test) return;
       if (e.status !== 'terminated') {
         active++;
         if (e.division) divisions.add(e.division);
@@ -95,10 +96,10 @@ if (profile) {
     document.getElementById('hero-number').textContent = active;
 
     document.getElementById('hero-stats').innerHTML = `
-      <div class="st"><div class="v g">${newHires}</div><div class="k">New hires<small>Last 30 days</small></div><div class="go">&rsaquo;</div></div>
-      <div class="st"><div class="v">${onboarding}</div><div class="k">Onboarding<small>30/60/90 review in progress</small></div><div class="go">&rsaquo;</div></div>
-      <div class="st"><div class="v ${terms ? 'hot' : ''}">${terms}</div><div class="k">Terminated<small>Last 30 days</small></div><div class="go">&rsaquo;</div></div>
-      <div class="st"><div class="v">${divisions.size}</div><div class="k">Divisions<small>Represented on the active roster</small></div><div class="go">&rsaquo;</div></div>
+      <a class="st" href="reviews.html"><div class="v g">${newHires}</div><div class="k">New hires<small>Last 30 days</small></div><div class="go">&rsaquo;</div></a>
+      <a class="st" href="reviews.html"><div class="v">${onboarding}</div><div class="k">Onboarding<small>30/60/90 review in progress</small></div><div class="go">&rsaquo;</div></a>
+      <a class="st" href="employees.html?status=terminated"><div class="v ${terms ? 'hot' : ''}">${terms}</div><div class="k">Terminated<small>Last 30 days</small></div><div class="go">&rsaquo;</div></a>
+      <a class="st" href="employees.html"><div class="v">${divisions.size}</div><div class="k">Divisions<small>Represented on the active roster</small></div><div class="go">&rsaquo;</div></a>
     `;
   } catch (err) {
     console.error(err);
