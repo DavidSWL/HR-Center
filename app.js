@@ -26,6 +26,7 @@ export const NAV_SECTIONS = [
       { key: 'attendance', label: 'Attendance', href: 'attendance.html', built: true },
       { key: 'reviews', label: 'New hires & reviews', href: 'reviews.html', built: true },
       { key: 'discipline', label: 'Disciplinary actions', href: 'discipline.html', built: true },
+      { key: 'terminations', label: 'Terminations', href: 'docgen.html?open=termination', built: true },
       { key: 'notes', label: 'Notes & files', href: 'notes.html', built: true },
     ],
   },

@@ -132,7 +132,7 @@ import {
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
-initShell('docgen', profile);
+initShell(new URLSearchParams(window.location.search).get('open') === 'termination' ? 'terminations' : 'docgen', profile);
 
 document.getElementById('header-date').textContent =
   new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
@@ -211,7 +211,7 @@ async function loadManagerIds() {
 function empSelectOptions(list = employees) {
   return list
     .slice()
-    .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''))
+    .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''))
     .map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name} (${e.id})</option>`).join('');
 }
 
@@ -1680,6 +1680,13 @@ function renderRefusalSheet(lang) {
 await loadEmployees();
 await loadManagerIds();
 await loadTerminations();
+
+// A nav item can jump straight into a specific generator (used for the
+// Terminations tab) instead of always landing on the tile menu.
+const requestedOpen = new URLSearchParams(window.location.search).get('open');
+if (requestedOpen && GENERATORS.some((g) => g.key === requestedOpen)) {
+  openGenerator(requestedOpen);
+}
 </script>
 </body>
 </html>
