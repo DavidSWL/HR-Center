@@ -53,6 +53,7 @@
           </select>
           <select class="inp" id="status-filter">
             <option value="active">Active + onboarding</option>
+            <option value="terminated">Terminated only</option>
             <option value="all">All, including terminated</option>
           </select>
         </div>
@@ -314,6 +315,7 @@ function render() {
 
   const visible = allEmployees.filter((e) => {
     if (statusFilter === 'active' && e.status === 'terminated') return false;
+    if (statusFilter === 'terminated' && e.status !== 'terminated') return false;
     if (divisionFilter && e.division !== divisionFilter) return false;
     if (locationFilter && e.location !== locationFilter) return false;
     if (q && !`${e.first_name} ${e.last_name} ${e.id}`.toLowerCase().includes(q)) return false;
@@ -799,6 +801,9 @@ document.getElementById('import-confirm-btn').addEventListener('click', async ()
     btn.textContent = 'Import valid rows';
   }
 });
+
+const urlStatus = new URLSearchParams(window.location.search).get('status');
+if (urlStatus) document.getElementById('status-filter').value = urlStatus;
 
 await loadEmployees();
 await loadManagerIds();

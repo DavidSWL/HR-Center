@@ -30,7 +30,7 @@
     <section class="view">
 
       <div class="card" style="margin-bottom:16px">
-        <div class="card-h"><h3>New hire board</h3><span id="board-summary">— inside 90 days</span></div>
+        <div class="card-h"><h3>New hire board</h3><span id="board-summary">—</span></div>
         <table>
           <thead><tr><th>Employee</th><th>Division</th><th>Day</th><th>Next milestone</th><th>Paperwork</th></tr></thead>
           <tbody id="board-rows"></tbody>
@@ -107,19 +107,23 @@ function renderBoard() {
       const next = empReviews.find((r) => !r.review_completed);
       return { emp: e, day, next };
     })
-    .filter((r) => r.day <= 90)
     .sort((a, b) => a.day - b.day);
 
-  document.getElementById('board-summary').textContent = `${onboarding.length} inside 90 days`;
+  // Anyone still marked "onboarding" belongs on this board even if their
+  // 90th day has already passed — that's HR still owing them a review,
+  // not something to hide. Flag it red instead of dropping the row.
+  const overdueCount = onboarding.filter((r) => r.day > 90).length;
+  document.getElementById('board-summary').textContent =
+    `${onboarding.length} in onboarding` + (overdueCount ? ` · ${overdueCount} past 90 days` : '');
   document.getElementById('board-rows').innerHTML = onboarding.length ? onboarding.map(({ emp, day, next }) => `
     <tr>
       <td><b>${emp.first_name} ${emp.last_name}</b> <span class="mono dim">${emp.id}</span></td>
       <td class="mono">${emp.division || '—'}</td>
-      <td class="mono">${day}</td>
+      <td class="mono">${day}${day > 90 ? ' <span class="pill bad">Past 90</span>' : ''}</td>
       <td>${next ? `${next.milestone}-day, due ${formatDate(next.due_date)}` : '<span class="pill ok">All done</span>'}</td>
       <td class="mono dim">—</td>
     </tr>
-  `).join('') : '<tr><td colspan="5" class="dim">No one currently inside their first 90 days.</td></tr>';
+  `).join('') : '<tr><td colspan="5" class="dim">No one currently in onboarding.</td></tr>';
 }
 
 function renderQueue() {
