@@ -31,32 +31,7 @@
 
       <div class="big" id="cost-cards"></div>
 
-      <div class="two" style="margin-bottom:20px">
-        <div class="card">
-          <div class="card-h"><h3>Most common injuries</h3></div>
-          <div id="rank-injuries"></div>
-        </div>
-        <div class="card">
-          <div class="card-h"><h3>Most frequent employees</h3></div>
-          <div id="rank-employees"></div>
-        </div>
-        <div class="card">
-          <div class="card-h"><h3>Department — total incidents</h3></div>
-          <div id="rank-dept-total"></div>
-        </div>
-        <div class="card">
-          <div class="card-h"><h3>Department — near misses</h3></div>
-          <div id="rank-dept-nearmiss"></div>
-        </div>
-        <div class="card">
-          <div class="card-h"><h3>Department — property damage</h3></div>
-          <div id="rank-dept-property"></div>
-        </div>
-        <div class="card">
-          <div class="card-h"><h3>Division — vehicle accidents</h3></div>
-          <div id="rank-div-vehicle"></div>
-        </div>
-      </div>
+      <p class="dim" style="margin:-8px 0 16px;font-size:12px">Injury/employee/department breakdowns moved to Reports → Safety and cost.</p>
 
       <div class="card">
         <div class="card-h">
@@ -438,21 +413,6 @@ function render() {
   });
 }
 
-function topN(counts, n = 6) {
-  return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, n);
-}
-function rankHtml(pairs, emptyMsg) {
-  if (!pairs.length) return `<div class="card-body dim">${emptyMsg}</div>`;
-  const max = pairs[0][1] || 1;
-  return pairs.map(([label, count]) => `
-    <div class="rowbar">
-      <div class="l">${label}</div>
-      <div class="trk"><i style="width:${(count / max) * 100}%"></i></div>
-      <div class="mono" style="text-align:right">${count}</div>
-    </div>
-  `).join('');
-}
-
 function renderReport() {
   const costByType = {};
   incidents.forEach((i) => { costByType[i.incident_type] = (costByType[i.incident_type] || 0) + Number(i.cost || 0); });
@@ -466,33 +426,6 @@ function renderReport() {
     <div><div class="v n">$${(costByType['Vehicle accident'] || 0).toLocaleString()}</div><div class="k">Vehicle accidents</div></div>
     <div><div class="v n">$${(costByType['Near miss'] || 0).toLocaleString()}</div><div class="k">Near misses</div></div>
   `;
-
-  const injuryTypes = {};
-  incidents.filter((i) => i.incident_type === 'Injury' && i.injury_type).forEach((i) => {
-    injuryTypes[i.injury_type] = (injuryTypes[i.injury_type] || 0) + 1;
-  });
-  document.getElementById('rank-injuries').innerHTML = rankHtml(topN(injuryTypes), 'No injuries logged yet.');
-
-  const empCounts = {};
-  incidents.forEach((i) => { if (i.emp_id && !i.privacy_case) empCounts[i.emp_id] = (empCounts[i.emp_id] || 0) + 1; });
-  const empPairs = topN(empCounts).map(([id, c]) => [empById(id) ? `${empById(id).first_name} ${empById(id).last_name}` : id, c]);
-  document.getElementById('rank-employees').innerHTML = rankHtml(empPairs, 'No incidents logged yet.');
-
-  const byDeptTotal = {}, byDeptNearMiss = {}, byDeptProperty = {}, byDivVehicle = {};
-  incidents.forEach((i) => {
-    const dept = i.department || 'Unspecified';
-    byDeptTotal[dept] = (byDeptTotal[dept] || 0) + 1;
-    if (i.incident_type === 'Near miss') byDeptNearMiss[dept] = (byDeptNearMiss[dept] || 0) + 1;
-    if (i.incident_type === 'Property damage') byDeptProperty[dept] = (byDeptProperty[dept] || 0) + 1;
-    if (i.incident_type === 'Vehicle accident') {
-      const div = i.division || 'Unspecified';
-      byDivVehicle[div] = (byDivVehicle[div] || 0) + 1;
-    }
-  });
-  document.getElementById('rank-dept-total').innerHTML = rankHtml(topN(byDeptTotal), 'No incidents logged yet.');
-  document.getElementById('rank-dept-nearmiss').innerHTML = rankHtml(topN(byDeptNearMiss), 'No near misses logged yet.');
-  document.getElementById('rank-dept-property').innerHTML = rankHtml(topN(byDeptProperty), 'No property damage logged yet.');
-  document.getElementById('rank-div-vehicle').innerHTML = rankHtml(topN(byDivVehicle), 'No vehicle accidents logged yet.');
 }
 
 function exportCsv() {

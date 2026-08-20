@@ -50,18 +50,6 @@
           <table><tbody id="course-rows"></tbody></table>
         </div>
 
-        <div class="card" style="margin-bottom:16px">
-          <div class="card-h"><h3>SOPs &amp; reference documents</h3><span id="docs-summary">—</span></div>
-          <div class="tools">
-            <a class="gh solid" href="documents.html" style="text-decoration:none">Open document library &rarr;</a>
-          </div>
-          <table>
-            <thead><tr><th>Document</th><th>Uploaded</th></tr></thead>
-            <tbody id="doc-rows"></tbody>
-          </table>
-          <div class="legend"><span>Uploading now lives in Documents (left nav) — it sorts by category and feeds Policy Compliance automatically. This list is just a quick look from here.</span></div>
-        </div>
-
         <div class="card">
           <div class="card-h"><h3>SHRM-CP exam prep — progress by domain</h3><span>Self-tracked</span></div>
           <div class="card-body" id="shrm-body"></div>
@@ -326,28 +314,6 @@ function escapeHtmlAttr(str) {
   const div = document.createElement('div');
   div.textContent = str ?? '';
   return div.innerHTML.replace(/"/g, '&quot;');
-}
-
-// ---- SOPs & reference documents ----
-
-let trainingDocs = [];
-
-async function loadDocs() {
-  const snap = await getDocs(collection(db, 'training_documents'));
-  trainingDocs = snap.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-  renderDocs();
-}
-
-function renderDocs() {
-  document.getElementById('docs-summary').textContent = `${trainingDocs.length} on file`;
-  document.getElementById('doc-rows').innerHTML = trainingDocs.length ? trainingDocs.map((d) => `
-    <tr>
-      <td><a href="${d.file_url}" target="_blank" rel="noopener">${escapeHtmlAttr(d.title)}</a></td>
-      <td class="dim" style="font-size:12px">${d.uploaded_at?.seconds ? formatDate(new Date(d.uploaded_at.seconds * 1000)) : ''}</td>
-    </tr>
-  `).join('') : '<tr><td colspan="2" class="dim">No documents uploaded yet — add one in Documents.</td></tr>';
 }
 
 async function openCourse(courseId) {
@@ -640,7 +606,6 @@ async function saveShrm() {
 }
 
 await loadCourses();
-await loadDocs();
 await loadShrm();
 </script>
 </body>
