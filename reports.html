@@ -148,6 +148,21 @@ function tsToDateStr(ts) {
   return ts?.seconds ? new Date(ts.seconds * 1000).toISOString().slice(0, 10) : null;
 }
 
+function topN(counts, n = 6) {
+  return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, n);
+}
+function rankHtml(pairs, emptyMsg) {
+  if (!pairs.length) return `<div class="card-body dim">${emptyMsg}</div>`;
+  const max = pairs[0][1] || 1;
+  return pairs.map(([label, count]) => `
+    <div class="rowbar">
+      <div class="l">${label}</div>
+      <div class="trk"><i style="width:${(count / max) * 100}%"></i></div>
+      <div class="mono" style="text-align:right">${count}</div>
+    </div>
+  `).join('');
+}
+
 let currentKey = null;
 let lastCsv = [['No data']];
 
@@ -295,15 +310,63 @@ async function renderReport(key) {
   }
 
   else if (key === 'safety') {
-    await ensureLoaded(['incidents']);
+    await ensureLoaded(['incidents', 'employees']);
     const incs = data.incidents.filter((i) => inRange(i.date, range));
     const cost = incs.reduce((s, i) => s + Number(i.cost || 0), 0);
     const byType = {};
     incs.forEach((i) => { byType[i.incident_type] = (byType[i.incident_type] || 0) + 1; });
 
-    // Period-over-period by division/location — same range length,
-    // immediately prior. Set a start and end date above (e.g. a
-    // quarter's worth) to see whether each branch improved or worsened.
+    const empById = (id) => data.employees.find((e) => e.id === id);
+    const injuryTypes = {};
+    incs.filter((i) => i.incident_type === 'Injury' && i.injury_type).forEach((i) => {
+      injuryTypes[i.injury_type] = (injuryTypes[i.injury_type] || 0) + 1;
+    });
+    const empCounts = {};
+    incs.forEach((i) => { if (i.emp_id && !i.privacy_case) empCounts[i.emp_id] = (empCounts[i.emp_id] || 0) + 1; });
+    const empPairs = topN(empCounts).map(([id, c]) => [empById(id) ? `${empById(id).first_name} ${empById(id).last_name}` : id, c]);
+    const byDeptTotal = {}, byDeptNearMiss = {}, byDeptProperty = {}, byDivVehicle = {};
+    incs.forEach((i) => {
+      const dept = i.department || 'Unspecified';
+      byDeptTotal[dept] = (byDeptTotal[dept] || 0) + 1;
+      if (i.incident_type === 'Near miss') byDeptNearMiss[dept] = (byDeptNearMiss[dept] || 0) + 1;
+      if (i.incident_type === 'Property damage') byDeptProperty[dept] = (byDeptProperty[dept] || 0) + 1;
+      if (i.incident_type === 'Vehicle accident') {
+        const div = i.division || 'Unspecified';
+        byDivVehicle[div] = (byDivVehicle[div] || 0) + 1;
+      }
+    });
+    const rankingsHtml = `
+      <div class="two" style="margin-bottom:16px">
+        <div class="card">
+          <div class="card-h"><h3>Most common injuries</h3></div>
+          ${rankHtml(topN(injuryTypes), 'No injuries in range.')}
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Most frequent employees</h3></div>
+          ${rankHtml(empPairs, 'No incidents in range.')}
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Department — total incidents</h3></div>
+          ${rankHtml(topN(byDeptTotal), 'No incidents in range.')}
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Department — near misses</h3></div>
+          ${rankHtml(topN(byDeptNearMiss), 'No near misses in range.')}
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Department — property damage</h3></div>
+          ${rankHtml(topN(byDeptProperty), 'No property damage in range.')}
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Division — vehicle accidents</h3></div>
+          ${rankHtml(topN(byDivVehicle), 'No vehicle accidents in range.')}
+        </div>
+      </div>
+    `;
+
+    // Period-over-period by division — same range length, immediately
+    // prior. Set a start and end date above (e.g. a quarter's worth) to
+    // see whether each branch improved or worsened.
     const prev = previousRange(range);
     let compareHtml = '<p class="dim">Set both a start and end date above to compare against the prior period of the same length.</p>';
     let worstHtml = '';
@@ -345,8 +408,7 @@ async function renderReport(key) {
         ` };
       };
       const byDivision = buildCompareTable('division', 'By division');
-      const byLocation = buildCompareTable('location', 'By location');
-      compareHtml = byDivision.table + byLocation.table;
+      compareHtml = byDivision.table;
 
       const worstDivision = byDivision.rows.filter((r) => r.c > 0).sort((a, b) => b.delta - a.delta)[0];
       worstHtml = worstDivision && worstDivision.delta > 0
@@ -366,6 +428,7 @@ async function renderReport(key) {
         <div class="card-h"><h3>By type</h3><span></span></div>
         <table><tbody>${Object.entries(byType).map(([t, c]) => `<tr><td>${t}</td><td class="mono" style="text-align:right">${c}</td></tr>`).join('') || '<tr><td class="dim">None in range.</td></tr>'}</tbody></table>
       </div>
+      ${rankingsHtml}
       ${worstHtml}
       ${compareHtml}
     `;
