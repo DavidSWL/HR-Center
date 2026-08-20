@@ -120,6 +120,7 @@
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
 import { db } from './firebaseconfig.js';
+import { LOGO_DATA_URL } from './letterhead-assets.js';
 import {
   collection, doc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -168,13 +169,67 @@ function renderBodyHtml(body) {
   return html;
 }
 
-function openView(d) {
-  document.getElementById('view-sheet').innerHTML = `
+// Matches the real controlled-document SOP format: letterhead, a
+// metadata grid (SOP number, dates, revision), PURPOSE/SCOPE section
+// bars, a Responsibilities table, a numbered Procedure table, and
+// standalone notice boxes at the bottom — not just a wall of text.
+function renderSopHtml(d) {
+  const metaCell = (label, value) => `<div class="form-cell"><b>${escapeHtmlAttr(label)}</b>${escapeHtmlAttr(value || '—')}</div>`;
+  const respRows = (d.responsibilities || []).map((r) => `
+    <tr><td>${escapeHtmlAttr(r.role)}</td><td>${escapeHtmlAttr(r.responsible_for)}</td></tr>
+  `).join('');
+  const procRows = (d.procedure || []).map((p, i) => `
+    <tr>
+      <td style="text-align:center">${i + 1}</td>
+      <td>${escapeHtmlAttr(p.title)}</td>
+      <td>${(p.instructions || []).map((line) => `• ${escapeHtmlAttr(line)}`).join('<br>')}</td>
+    </tr>
+  `).join('');
+  const notices = (d.notices || []).map((n) => `<div class="form-callout">${escapeHtmlAttr(n)}</div>`).join('');
+
+  return `
     <div class="form-doc-inner">
+      <div class="form-head">
+        <img src="${LOGO_DATA_URL}" alt="SouthWest Landscape">
+        <div class="wordmark">SouthWest<br>Landscape</div>
+      </div>
+      <div class="dim" style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:2px">Standard Operating Procedure</div>
       <div class="form-title">${escapeHtmlAttr(d.title)}</div>
-      ${renderBodyHtml(d.body)}
+      <div class="form-grid c3">
+        ${metaCell('Date created', formatDate(d.date_created))}
+        ${metaCell('SOP number', d.sop_number)}
+        ${metaCell('Prepared by', d.prepared_by)}
+        ${metaCell('Implementation date', formatDate(d.implementation_date))}
+        ${metaCell('Revision number', d.revision_number)}
+        ${metaCell('Last updated', formatDate(d.last_updated))}
+      </div>
+      <div class="form-section">Purpose</div>
+      <div class="form-box">${escapeHtmlAttr(d.purpose)}</div>
+      <div class="form-section">Scope</div>
+      <div class="form-box">${escapeHtmlAttr(d.scope)}</div>
+      ${respRows ? `
+        <div class="form-section">Responsibilities</div>
+        <table class="form-notice-table">
+          <thead><tr><th style="width:26%">Role</th><th>Responsible for</th></tr></thead>
+          <tbody>${respRows}</tbody>
+        </table>
+      ` : ''}
+      ${procRows ? `
+        <div class="form-section">Procedure</div>
+        <table class="form-notice-table">
+          <thead><tr><th style="width:6%">Step</th><th style="width:22%">Procedure title</th><th>Instructions</th></tr></thead>
+          <tbody>${procRows}</tbody>
+        </table>
+      ` : ''}
+      ${notices ? `<div style="margin-top:14px">${notices}</div>` : ''}
     </div>
   `;
+}
+
+function openView(d) {
+  document.getElementById('view-sheet').innerHTML = d.content_type === 'sop'
+    ? renderSopHtml(d)
+    : `<div class="form-doc-inner"><div class="form-title">${escapeHtmlAttr(d.title)}</div>${renderBodyHtml(d.body)}</div>`;
   document.getElementById('view-overlay').hidden = false;
 }
 document.getElementById('view-close').addEventListener('click', () => { document.getElementById('view-overlay').hidden = true; });
@@ -182,47 +237,77 @@ document.getElementById('view-print-btn').addEventListener('click', () => window
 
 const SOPS = [
   {
-    title: 'SOP: New Hire Onboarding Process (HR-002)',
-    body: `## Purpose & responsibilities
-This SOP covers onboarding from offer acceptance through completed documentation, training, and orientation, across Maintenance, Irrigation, and Landscape. HR prepares the onboarding packet, schedules orientation, verifies Form I-9 within 3 business days of start, submits the DMV pull for driving positions, coordinates pesticide handler training where applicable, tracks completion via the EE File Checklist, and files all signed documents. The hiring manager confirms start date and role details, and flags any role-specific requirements (driving duties, pesticide handling) before Day One. The new hire completes and signs all required documentation accurately.
-
-## The 6-step procedure
-1. Pre-Start Preparation — HR preps the file and packet; orientation is scheduled for Wednesday or Friday, Mondays avoided when possible for payroll priority.
-
-2. Core Onboarding Documents — Application, Emergency Contact, Form I-9, W-4, DE-4, Direct Deposit Authorization; I-9 must be completed and verified within 3 business days of start (federal requirement).
-
-3. Role-Specific Requirements — DMV Pull Notice for driving positions (24-48 hour turnaround); pesticide handler training and a completed Pesticide Safety Training Record before that employee performs any handler task.
-
-4. Company Policy Acknowledgments — Notice to Employee, MPN Acknowledgment, Confidentiality and Trade Secrets Agreement, Arbitration Agreement, Handbook acknowledgment (original + file copy), Discrimination/Harassment/Retaliation Prevention Policy.
-
-5. Additional Acknowledgments — GPS Tracking, Attendance & Punctuality, Photo Release Waiver, Company Vehicle Use & Care (if assigned a vehicle).
-
-6. Verification & Filing — HR confirms every line on the EE File Checklist is complete and signed; documents filed in the personnel file, with medical/I-9 records kept separate as required.
-
-## Critical deadlines and role-specific gaps
-Form I-9 must be completed no later than the 3rd business day after the start date — this federal deadline is not extended for any reason. If supporting documents aren't available yet, contact HR immediately rather than delaying the form itself. If a new hire's actual duties turn out to include driving or pesticide handling and this wasn't flagged before Day One, do not allow the employee to perform that task until the corresponding requirement is complete and documented.`,
+    title: 'New Hire Onboarding Process', sop_number: 'HR-002',
+    date_created: '2026-08-17', implementation_date: '2026-08-17', revision_number: '1', last_updated: '2026-08-17', prepared_by: 'Human Resources',
+    purpose: "This SOP establishes a consistent process for onboarding new hires at SouthWest Landscape, Inc., from acceptance of offer through completion of all required documentation, role-specific training, and orientation.",
+    scope: "This procedure applies to Human Resources and hiring managers across the Maintenance, Irrigation, and Landscape Divisions for all new hires, including role-specific requirements for driving positions and pesticide handler positions.",
+    responsibilities: [
+      { role: 'Human Resources', responsible_for: "Preparing the onboarding packet, scheduling orientation, verifying Form I-9 within 3 business days of start, submitting DMV pull for driving positions, coordinating pesticide handler training where applicable, tracking completion via the EE File Checklist, and filing all signed documents." },
+      { role: 'Hiring Manager', responsible_for: "Confirming start date and role details with HR, flagging any role-specific requirements (driving duties, pesticide handling), and participating in Day One orientation as needed." },
+      { role: 'New Hire', responsible_for: "Completing and signing all required onboarding documentation accurately and providing required identification for Form I-9 verification." },
+    ],
+    procedure: [
+      { title: 'Pre-Start Preparation', instructions: ["HR prepares the new hire's onboarding file and packet", 'Orientation is scheduled — standard days are Wednesday or Friday; Mondays avoided when possible (payroll priority)'] },
+      { title: 'Core Onboarding Documents', instructions: ['New hire completes: Application, Emergency Contact form, Form I-9, W-4, DE-4, Direct Deposit Authorization', 'Form I-9 must be completed and supporting documents verified within 3 business days of the start date (federal requirement)'] },
+      { title: 'Role-Specific Requirements', instructions: ["Driving positions: DMV Pull Notice authorization completed and submitted to the Company's insurance carrier (24-48 hour turnaround)", 'Pesticide handler positions: training scheduled per the Positions Requiring Pesticide Handler Training reference, and Pesticide Safety Training Record completed before the employee performs any handler task'] },
+      { title: 'Company Policy Acknowledgments', instructions: ['Notice to Employee, MPN Acknowledgment, Confidentiality and Trade Secrets Agreement, Arbitration Agreement', 'Employee Handbook acknowledgment (original and copy for file), Discrimination/Harassment/Retaliation Prevention Policy acknowledgment'] },
+      { title: 'Additional Acknowledgments', instructions: ['GPS Tracking Policy Acknowledgment, Attendance & Punctuality Policy Acknowledgment, Photo Release Waiver', 'Company Vehicle Use & Care Policy Acknowledgment, for any employee assigned a Company vehicle'] },
+      { title: 'Verification & Filing', instructions: ["HR confirms every line on the EE File Checklist is complete and signed", "All documents filed in the employee's personnel file; medical/I-9 records kept separate as required"] },
+    ],
+    notices: [
+      "Form I-9 Timing. Federal law requires Form I-9 to be completed no later than the 3rd business day after the employee's start date. This deadline is not extended for any reason — if supporting documents are not yet available, contact HR immediately rather than delaying completion of the form itself.",
+      "Role-Specific Gaps. If a new hire's actual duties turn out to include driving or pesticide handling and this was not flagged before Day One, do not allow the employee to perform that task until the corresponding requirement is complete and documented.",
+    ],
   },
   {
-    title: 'SOP: Employee Termination Process (HR-003)',
-    body: `## Purpose, responsibilities & notification
-This SOP covers voluntary and involuntary separations across Maintenance, Irrigation, and Landscape, including final pay timing, required notices, and property return. HR prepares the Termination Form, coordinates final pay timing with Payroll, provides all legally required separation notices, confirms return of company property, and files final documentation. The manager/supervisor notifies HR of a termination decision or resignation, including effective date and reason, and conducts or participates in the termination meeting. Payroll calculates and issues final wages, including accrued vacation payout, within the legally required timeframe.
-
-## Final pay timing & the termination meeting
-Involuntary termination: final wages are due immediately, same day — there is no grace period; wages must be ready and available at the termination meeting itself. Voluntary resignation with less than 72 hours' notice: final wages due within 72 hours. Missing the final pay deadline triggers waiting-time penalties under Labor Code §201-203, up to 30 days of the employee's daily wage. The Termination Form is completed during the meeting: reason, description of circumstances, final hours, and method of delivery.
-
-## Required notices, property return & filing
-Four separation notices apply based on criteria, and none are optional regardless of how routine the separation seems: the EDD "For Your Benefit" Pamphlet (DE 2320) is required for every separation, including voluntary resignations; Notice to Employee as to Change in Relationship for involuntary separations; COBRA Election Notice to the plan administrator; HIPP Notice (DHCS 9061) for eligible employees losing group health coverage. Company property (keys, uniform, laptop, phone, CC/gas card, vehicle) is collected, and email/system and building/key fob access is revoked. The completed Termination Form, with all Required Notices Provided checkboxes filled in and signed (or witnessed if the employee refuses/is unavailable), is filed in the personnel file.`,
+    title: 'Employee Termination Process', sop_number: 'HR-003',
+    date_created: '2026-08-17', implementation_date: '2026-08-17', revision_number: '1', last_updated: '2026-08-17', prepared_by: 'Human Resources',
+    purpose: "This SOP establishes a consistent, legally compliant process for processing both voluntary and involuntary employee terminations at SouthWest Landscape, Inc., including final pay timing, required notices, and property return.",
+    scope: "This procedure applies to Human Resources, Payroll, and all managers/supervisors across the Maintenance, Irrigation, and Landscape Divisions for any employee separation, whether voluntary or involuntary.",
+    responsibilities: [
+      { role: 'Human Resources', responsible_for: 'Preparing the Termination Form, coordinating final pay timing with Payroll, providing all legally required separation notices, collecting or confirming return of Company property, and filing final documentation.' },
+      { role: 'Manager/Supervisor', responsible_for: 'Notifying HR of a termination decision or employee resignation, including effective date and reason; conducting or participating in the termination meeting; coordinating collection of Company property.' },
+      { role: 'Payroll', responsible_for: 'Calculating and issuing final wages, including accrued vacation payout, within the legally required timeframe.' },
+    ],
+    procedure: [
+      { title: 'Notification', instructions: ['Manager notifies HR of a termination decision (involuntary) or employee resignation (voluntary), including effective date and reason'] },
+      { title: 'Final Pay Preparation', instructions: ['Payroll calculates final wages, including regular hours, overtime, and accrued vacation payout', 'Involuntary termination: final wages due immediately, same day', "Voluntary resignation with less than 72 hours' notice: final wages due within 72 hours"] },
+      { title: 'Termination Meeting', instructions: ['Conducted by the manager and/or HR', 'Termination Form completed: reason, description of circumstances, final hours, method of delivery'] },
+      { title: 'Required Separation Notices', instructions: ['EDD "For Your Benefit" Pamphlet (DE 2320) — provided for every separation, regardless of reason', 'Notice to Employee as to Change in Relationship — provided for involuntary separations', 'COBRA Election Notice — plan administrator notified of the separation', 'HIPP Notice (DHCS 9061) — provided for eligible employees losing group health coverage'] },
+      { title: 'Company Property Return', instructions: ['Keys, uniform, laptop, phone, CC/gas card, vehicle', 'Email/system access revoked, building/key fob access revoked'] },
+      { title: 'Documentation & Filing', instructions: ['Completed Termination Form, with all Required Notices Provided checkboxes completed, signed by employee (or witnessed if employee refuses/is unavailable)', "Filed in the employee's personnel file"] },
+    ],
+    notices: [
+      "Final Pay Timing. Missing the final pay deadline triggers waiting-time penalties under Labor Code section 201-203 — up to 30 days of the employee's daily wage. There is no grace period for involuntary terminations: final wages must be ready and available at the termination meeting.",
+      'Required Notices Are Not Optional. All four separation notices apply based on the criteria above, regardless of how routine the separation seems. The DE 2320 pamphlet in particular is required for every separation type, including voluntary resignations.',
+    ],
   },
   {
-    title: 'SOP: Employee Write-Up / Disciplinary Process (HR-004)',
-    body: `## Identifying the issue & warning level
-The manager/supervisor documents the specific infraction — tardiness/leaving early, absenteeism, violation of company policies, substandard work, violation of safety rules, or rudeness to customers/coworkers — then determines the warning level (Verbal, First, Second, or Final) based on severity and prior history. The Company reserves the right to skip steps or proceed directly to termination for serious misconduct. HR reviews completed write-ups for consistency and monitors for patterns across employees or divisions.
-
-## Completing the form, discussing it, and signatures
-The write-up form covers Description of Infraction, Plan for Improvement with a Follow-Up Review Date, and Consequences of Further Infractions. The manager reviews it with the employee in person; the employee may add optional comments/response. Employee and manager both sign; a witness signs if the employee understands the warning but refuses to sign. The original is filed in the personnel file, and HR is notified for pattern tracking. The manager checks in with the employee at the Follow-Up Review Date to assess improvement.
-
-## Retention, copies, and how write-ups factor into other decisions
-An employee's signature confirms they received and discussed the warning — it does not indicate agreement, and this document does not create a contract of employment or alter at-will status. A copy is not provided automatically at signing; if an employee requests to inspect or receive a copy of their personnel record, it must be provided within 30 days per Labor Code §1198.5 and §432. Write-ups are retained for the duration of employment plus a minimum of 4 years after separation, matching California's FEHA claims statute of limitations — never purge write-ups on a shorter internal timer. A recent active write-up may be considered in promotion or transfer decisions, applied consistently (same rule, same lookback period, for every employee), using judgment on severity rather than a rigid rule.`,
+    title: 'Employee Write-Up / Disciplinary Process', sop_number: 'HR-004',
+    date_created: '2026-08-17', implementation_date: '2026-08-17', revision_number: '1', last_updated: '2026-08-17', prepared_by: 'Human Resources',
+    purpose: "This SOP establishes a consistent process for documenting and addressing employee performance and conduct issues at SouthWest Landscape, Inc., using the standard Employee Write-Up form.",
+    scope: "This procedure applies to all managers/supervisors and Human Resources across the Maintenance, Irrigation, and Landscape Divisions for any employee performance or conduct issue requiring documentation.",
+    responsibilities: [
+      { role: 'Manager/Supervisor', responsible_for: 'Identifying and documenting the infraction, determining the appropriate warning level, completing the Employee Write-Up form, discussing it with the employee, and setting a Follow-Up Review Date.' },
+      { role: 'Human Resources', responsible_for: 'Reviewing completed write-ups for consistency, maintaining personnel file records, and monitoring for patterns across employees or divisions.' },
+      { role: 'Employee', responsible_for: 'Acknowledging receipt by signature (signing does not indicate agreement) and may provide optional written comments/response.' },
+    ],
+    procedure: [
+      { title: 'Identify the Issue', instructions: ['Manager documents the specific infraction: tardiness/leaving early, absenteeism, violation of Company policies, substandard work, violation of safety rules, or rudeness to customers/coworkers'] },
+      { title: 'Determine Warning Level', instructions: ['Verbal, First Warning, Second Warning, or Final Warning, based on severity and prior history', 'The Company reserves the right to skip steps or proceed directly to termination for serious misconduct'] },
+      { title: 'Complete the Write-Up Form', instructions: ['Description of Infraction, Plan for Improvement with a Follow-Up Review Date, Consequences of Further Infractions'] },
+      { title: 'Discuss With the Employee', instructions: ['Manager reviews the write-up with the employee in person', 'Employee may provide comments/response (optional field on the form)'] },
+      { title: 'Signatures', instructions: ['Employee and manager both sign', 'Witness signs if the employee understands the warning but refuses to sign'] },
+      { title: 'Filing', instructions: ['Original filed in the personnel file', "HR notified for pattern tracking across the employee's history"] },
+      { title: 'Follow-Up', instructions: ['Manager checks in with the employee at the Follow-Up Review Date noted on the form to assess improvement'] },
+    ],
+    notices: [
+      'At-Will Employment. This document is for internal disciplinary tracking purposes only. It does not create a contract of employment, and nothing in it alters the at-will nature of employment. Progressive discipline steps are a typical practice, not a guaranteed sequence.',
+      "Signing Is Not Agreement. An employee's signature confirms they received and discussed the warning — it does not indicate they agree with it.",
+      'Employee Copies. A copy is not provided automatically at signing. If an employee requests to inspect or receive a copy of their personnel record, it must be provided within 30 days per Labor Code section 1198.5 and 432.',
+      "Retention. Write-ups are retained for the duration of employment plus a minimum of 4 years after separation, matching California's FEHA claims statute of limitations. Do not delete or purge write-ups on any shorter internal timer.",
+      'Recent Write-Ups and Promotion/Transfer Eligibility. A recent active write-up may be considered in promotion or transfer decisions, applied consistently — same rule, same lookback period, for every employee. Use judgment on severity rather than a rigid rule with no flexibility.',
+    ],
   },
 ];
 
@@ -235,7 +320,7 @@ document.getElementById('load-sops-btn').addEventListener('click', async () => {
     if (!toAdd.length) { showToast('Already loaded.'); return; }
     for (const s of toAdd) {
       await setDoc(doc(collection(db, 'training_documents')), {
-        title: s.title, category: 'sop', content_type: 'text', body: s.body,
+        ...s, category: 'sop', content_type: 'sop',
         entered_by: profile.uid, uploaded_at: serverTimestamp(),
       });
     }
@@ -271,7 +356,7 @@ function render() {
   document.getElementById('docs-summary').textContent = `${visible.length} of ${docs.length}`;
   document.getElementById('doc-rows').innerHTML = visible.length ? visible.map((d) => `
     <tr>
-      <td>${d.content_type === 'text'
+      <td>${d.content_type === 'text' || d.content_type === 'sop'
         ? `<a href="#" class="view-doc-link" data-id="${d.id}">${escapeHtmlAttr(d.title)}</a>`
         : `<a href="${d.file_url}" target="_blank" rel="noopener">${escapeHtmlAttr(d.title)}</a>`
       }${d.policy_doc_id ? ' <span class="pill ok">In Policy Compliance</span>' : ''}</td>
