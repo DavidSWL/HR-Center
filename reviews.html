@@ -64,6 +64,7 @@
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
 import { db } from './firebaseconfig.js';
+import { ONBOARDING_CHECKLIST } from './letterhead-assets.js';
 import {
   collection, collectionGroup, doc, getDocs, updateDoc, addDoc, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -80,6 +81,7 @@ const today = new Date();
 
 let employees = [];
 let reviews = []; // {id, empId, milestone, due_date, review_completed, form_received}
+let paperworkCountByEmp = {}; // empId -> # of the 24 onboarding checklist items on file
 
 function empById(id) { return employees.find((e) => e.id === id); }
 function daysBetween(a, b) { return Math.round((a - b) / (1000 * 60 * 60 * 24)); }
@@ -87,6 +89,17 @@ function daysBetween(a, b) { return Math.round((a - b) / (1000 * 60 * 60 * 24));
 async function loadEmployees() {
   const snap = await getDocs(collection(db, 'employees'));
   employees = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+// Only the small number of employees currently onboarding — no need to
+// touch onboarding_docs for the whole 100+-person roster.
+async function loadPaperwork() {
+  const onboarding = employees.filter((e) => e.status === 'onboarding');
+  paperworkCountByEmp = {};
+  await Promise.all(onboarding.map(async (e) => {
+    const snap = await getDocs(collection(db, 'employees', e.id, 'onboarding_docs'));
+    paperworkCountByEmp[e.id] = snap.docs.filter((d) => d.data().on_file).length;
+  }));
 }
 
 async function loadReviews() {
@@ -142,13 +155,14 @@ function renderBoard() {
         </td>
       </tr>
     ` : '';
+    const paperworkCount = paperworkCountByEmp[emp.id] || 0;
     return `
     <tr>
       <td><b>${emp.first_name} ${emp.last_name}</b> <span class="mono dim">${emp.id}</span></td>
       <td class="mono">${emp.division || '—'}</td>
       <td class="mono">${day}${day > 90 ? ' <span class="pill bad">Past 90</span>' : ''}</td>
       <td>${milestoneCell}</td>
-      <td class="mono dim">—</td>
+      <td><a class="gh" href="docgen.html?open=onboarding&emp=${emp.id}" style="font-size:12px;padding:4px 10px;display:inline-block;text-decoration:none">${paperworkCount}/${ONBOARDING_CHECKLIST.length} on file →</a></td>
     </tr>
     ${expandRow}
   `;
@@ -270,6 +284,7 @@ document.getElementById('status-filter').addEventListener('change', renderQueue)
 try {
   await loadEmployees();
   await loadReviews();
+  await loadPaperwork();
   renderBoard();
   renderQueue();
   renderEscalation();

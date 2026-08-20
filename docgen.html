@@ -1533,8 +1533,8 @@ async function renderOnboarding(lang) {
     <div class="form-doc" id="onb-sheet" hidden></div>
   `;
 
-  async function loadChecklist() {
-    const empId = document.getElementById('onb-emp').value;
+  async function loadChecklist(empIdOverride) {
+    const empId = empIdOverride || document.getElementById('onb-emp').value;
     const emp = employees.find((e) => e.id === empId);
     const isEs = document.getElementById('lang-select').value === 'es';
     const snap = await getDocs(collection(db, 'employees', empId, 'onboarding_docs'));
@@ -1605,7 +1605,16 @@ async function renderOnboarding(lang) {
     });
   }
 
-  document.getElementById('onb-load-btn').addEventListener('click', loadChecklist);
+  document.getElementById('onb-load-btn').addEventListener('click', () => loadChecklist());
+
+  // Deep link from the New Hire board's "Paperwork" column — jump
+  // straight to that employee's checklist instead of making HR pick
+  // them again from the dropdown.
+  const linkedEmpId = new URLSearchParams(window.location.search).get('emp');
+  if (linkedEmpId && employees.some((e) => e.id === linkedEmpId)) {
+    document.getElementById('onb-emp').value = linkedEmpId;
+    loadChecklist(linkedEmpId);
+  }
 }
 
 // ---- Medical Treatment Refusal — matches the real bilingual SWL form
