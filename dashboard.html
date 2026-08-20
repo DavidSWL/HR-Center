@@ -205,7 +205,10 @@ if (profile) {
 
     const dueReviews = reviewSnap.docs
       .map((d) => ({ id: d.id, empId: d.ref.parent.parent.id, ...d.data() }))
-      .filter((r) => !r.review_completed && r.due_date)
+      // Unassigned reviews (nothing picked in New hires & reviews yet)
+      // still show for everyone so nothing silently disappears — once
+      // assigned, only that person sees it.
+      .filter((r) => !r.review_completed && r.due_date && (!r.assigned_to || r.assigned_to === profile.uid))
       .map((r) => ({ due_date: r.due_date, title: `${r.milestone}-day review — ${empName(r.empId)}`, sub: 'New hire review' }));
 
     const dueSoon = [...dueTasks, ...dueReviews]
