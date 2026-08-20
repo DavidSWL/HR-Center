@@ -21,12 +21,14 @@
   background-image:var(--photo-url);background-size:cover;background-position:50% 58%;
   display:flex;align-items:flex-end;
 }
-.home-photo::before{ /* duotone pass: the photo takes the brand green instead of sitting on top of it */
-  content:"";position:absolute;inset:0;background:#154733;mix-blend-mode:color;opacity:.5;
+.home-photo::before{ /* duotone pass: a light brand-green tint, not a wash over the whole photo */
+  content:"";position:absolute;inset:0;background:#154733;mix-blend-mode:color;opacity:.28;
 }
-.home-photo::after{ /* same dark ombré recipe as the sign-in screen, so the photo reads as this brand's ground, not a stock image */
+.home-photo::after{ /* vignette top and bottom (edges only) instead of a scrim over most of the frame, so the truck and plants stay visible in the middle */
   content:"";position:absolute;inset:0;
-  background:linear-gradient(0deg, rgba(4,7,5,.92) 0%, rgba(4,7,5,.55) 32%, rgba(4,7,5,.08) 62%, rgba(4,7,5,0) 82%);
+  background:
+    linear-gradient(180deg, rgba(4,7,5,.45) 0%, rgba(4,7,5,0) 20%),
+    linear-gradient(0deg, rgba(4,7,5,.85) 0%, rgba(4,7,5,.42) 16%, rgba(4,7,5,.08) 34%, rgba(4,7,5,0) 50%);
 }
 .home-photo-in{position:relative;z-index:2;padding:26px 28px;color:#fff;display:flex;align-items:flex-end;justify-content:space-between;gap:24px;width:100%}
 .home-k{font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;opacity:.8}
