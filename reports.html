@@ -293,17 +293,59 @@ async function renderReport(key) {
   }
 
   else if (key === 'attendance') {
-    await ensureLoaded(['attendance']);
+    await ensureLoaded(['attendance', 'employees']);
     const occs = data.attendance.filter((a) => inRange(a.date, range));
     const ncns = occs.filter((o) => o.type === 'ncns').length;
     const other = occs.length - ncns;
     const byDivision = {};
     occs.forEach((o) => { byDivision[o.division || 'Unspecified'] = (byDivision[o.division || 'Unspecified'] || 0) + 1; });
+
+    const empName = (id) => {
+      const e = data.employees.find((x) => x.id === id);
+      return e ? `${e.first_name} ${e.last_name}` : id;
+    };
+    const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const byEmp = {};
+    occs.forEach((o) => {
+      if (!byEmp[o.emp_id]) byEmp[o.emp_id] = { ncns: 0, other: 0, days: {}, last: null };
+      const rec = byEmp[o.emp_id];
+      if (o.type === 'ncns') rec.ncns++; else rec.other++;
+      if (o.date) {
+        const day = WEEKDAYS[new Date(o.date + 'T00:00:00').getDay()];
+        rec.days[day] = (rec.days[day] || 0) + 1;
+        if (!rec.last || o.date > rec.last) rec.last = o.date;
+      }
+    });
+    const freqRows = Object.entries(byEmp)
+      .map(([empId, rec]) => {
+        const topDay = Object.entries(rec.days).sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
+        return { empId, ...rec, total: rec.ncns + rec.other, topDay };
+      })
+      .sort((a, b) => b.total - a.total);
+
     body.innerHTML = statLine(range, `denominator: ${occs.length} occurrences in range`) + `
       <div class="big">
         <div><div class="v n">${occs.length}</div><div class="k">Total occurrences</div></div>
         <div><div class="v hot">${ncns}</div><div class="k">No Call No Show</div></div>
         <div><div class="v n">${other}</div><div class="k">Other</div></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Frequency by employee</h3><span>${freqRows.length} employees with occurrences</span></div>
+        <table>
+          <thead><tr><th>Employee</th><th>NCNS</th><th>Other</th><th>Total</th><th>Most common day</th><th>Last occurrence</th></tr></thead>
+          <tbody>
+            ${freqRows.length ? freqRows.map((r) => `
+              <tr>
+                <td>${empName(r.empId)}</td>
+                <td class="mono">${r.ncns}</td>
+                <td class="mono">${r.other}</td>
+                <td class="mono" style="font-weight:700">${r.total}</td>
+                <td class="mono">${r.topDay}</td>
+                <td class="mono">${formatDate(r.last)}</td>
+              </tr>
+            `).join('') : '<tr><td colspan="6" class="dim">No occurrences in range.</td></tr>'}
+          </tbody>
+        </table>
       </div>
     `;
     lastCsv = [['Division', 'Count'], ...Object.entries(byDivision)];
