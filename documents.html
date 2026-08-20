@@ -174,60 +174,70 @@ function renderBodyHtml(body) {
 // bars, a Responsibilities table, a numbered Procedure table, and
 // standalone notice boxes at the bottom — not just a wall of text.
 function renderSopHtml(d) {
-  const metaCell = (label, value) => `<div class="form-cell"><b>${escapeHtmlAttr(label)}</b>${escapeHtmlAttr(value || '—')}</div>`;
   const respRows = (d.responsibilities || []).map((r) => `
-    <tr><td>${escapeHtmlAttr(r.role)}</td><td>${escapeHtmlAttr(r.responsible_for)}</td></tr>
+    <tr><td class="step-title">${escapeHtmlAttr(r.role)}</td><td>${escapeHtmlAttr(r.responsible_for)}</td></tr>
   `).join('');
   const procRows = (d.procedure || []).map((p, i) => `
     <tr>
-      <td style="text-align:center">${i + 1}</td>
-      <td>${escapeHtmlAttr(p.title)}</td>
+      <td class="step-num">${i + 1}</td>
+      <td class="step-title">${escapeHtmlAttr(p.title)}</td>
       <td>${(p.instructions || []).map((line) => `• ${escapeHtmlAttr(line)}`).join('<br>')}</td>
     </tr>
   `).join('');
-  const notices = (d.notices || []).map((n) => `<div class="form-callout">${escapeHtmlAttr(n)}</div>`).join('');
+  const notices = (d.notices || []).map((n) => {
+    const dotIdx = n.indexOf('. ');
+    const lead = dotIdx > -1 && dotIdx < 60 ? n.slice(0, dotIdx + 1) : '';
+    const rest = lead ? n.slice(dotIdx + 2) : n;
+    return `<div class="sop-callout">${lead ? `<b>${escapeHtmlAttr(lead)}</b> ` : ''}${escapeHtmlAttr(rest)}</div>`;
+  }).join('');
 
   return `
-    <div class="form-doc-inner">
-      <div class="form-head">
+    <div class="sop-doc-inner">
+      <div class="sop-head">
         <img src="${LOGO_DATA_URL}" alt="SouthWest Landscape">
         <div class="wordmark">SouthWest<br>Landscape</div>
       </div>
-      <div class="dim" style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:2px">Standard Operating Procedure</div>
-      <div class="form-title">${escapeHtmlAttr(d.title)}</div>
-      <div class="form-grid c3">
-        ${metaCell('Date created', formatDate(d.date_created))}
-        ${metaCell('SOP number', d.sop_number)}
-        ${metaCell('Prepared by', d.prepared_by)}
-        ${metaCell('Implementation date', formatDate(d.implementation_date))}
-        ${metaCell('Revision number', d.revision_number)}
-        ${metaCell('Last updated', formatDate(d.last_updated))}
+      <div class="sop-eyebrow">Standard Operating</div>
+      <div class="sop-bigtitle">Procedure</div>
+      <div class="sop-name-label">Name of Procedure</div>
+      <div class="sop-name">${escapeHtmlAttr(d.title)}</div>
+      <div class="sop-meta">
+        <div><b>Date Created</b>${escapeHtmlAttr(formatDate(d.date_created))}</div>
+        <div><b>SOP Number</b>${escapeHtmlAttr(d.sop_number) || '—'}</div>
+        <div><b>Prepared By</b>${escapeHtmlAttr(d.prepared_by) || '—'}</div>
+        <div><b>Implementation Date</b>${escapeHtmlAttr(formatDate(d.implementation_date))}</div>
+        <div><b>Revision Number</b>${escapeHtmlAttr(d.revision_number) || '—'}</div>
+        <div><b>Last Updated</b>${escapeHtmlAttr(formatDate(d.last_updated))}</div>
       </div>
-      <div class="form-section">Purpose</div>
-      <div class="form-box">${escapeHtmlAttr(d.purpose)}</div>
-      <div class="form-section">Scope</div>
-      <div class="form-box">${escapeHtmlAttr(d.scope)}</div>
+      <div class="sop-section">Purpose</div>
+      <div class="sop-box">${escapeHtmlAttr(d.purpose)}</div>
+      <div class="sop-section">Scope</div>
+      <div class="sop-box">${escapeHtmlAttr(d.scope)}</div>
       ${respRows ? `
-        <div class="form-section">Responsibilities</div>
-        <table class="form-notice-table">
-          <thead><tr><th style="width:26%">Role</th><th>Responsible for</th></tr></thead>
+        <div class="sop-section">Responsibilities</div>
+        <table class="sop-table">
+          <thead><tr><th style="width:26%">Role</th><th>Responsible For</th></tr></thead>
           <tbody>${respRows}</tbody>
         </table>
       ` : ''}
       ${procRows ? `
-        <div class="form-section">Procedure</div>
-        <table class="form-notice-table">
-          <thead><tr><th style="width:6%">Step</th><th style="width:22%">Procedure title</th><th>Instructions</th></tr></thead>
+        <div class="sop-section">Procedure</div>
+        <table class="sop-table">
+          <thead><tr><th>Step</th><th>Procedure Title</th><th>Instructions</th></tr></thead>
           <tbody>${procRows}</tbody>
         </table>
       ` : ''}
-      ${notices ? `<div style="margin-top:14px">${notices}</div>` : ''}
+      ${notices}
+      <div class="sop-footer">SouthWest Landscape, Inc. — Internal Use Only${d.sop_number ? ` — SOP ${escapeHtmlAttr(d.sop_number)}` : ''}</div>
     </div>
   `;
 }
 
 function openView(d) {
-  document.getElementById('view-sheet').innerHTML = d.content_type === 'sop'
+  const sheet = document.getElementById('view-sheet');
+  const isSop = d.content_type === 'sop';
+  sheet.className = isSop ? 'sop-doc' : 'form-doc';
+  sheet.innerHTML = isSop
     ? renderSopHtml(d)
     : `<div class="form-doc-inner"><div class="form-title">${escapeHtmlAttr(d.title)}</div>${renderBodyHtml(d.body)}</div>`;
   document.getElementById('view-overlay').hidden = false;
