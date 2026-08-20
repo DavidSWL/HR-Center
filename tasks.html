@@ -68,11 +68,26 @@
             <option value="open">Open</option>
             <option value="all">All, including completed</option>
           </select>
+          <div class="toggle" style="margin-left:auto">
+            <button class="on" id="view-list-btn" type="button">List</button>
+            <button id="view-cal-btn" type="button">Calendar</button>
+          </div>
         </div>
-        <table>
+        <table id="list-view">
           <thead><tr><th>Due</th><th>Assigned to</th><th>What's needed</th><th>Recurring</th><th></th></tr></thead>
           <tbody id="rows"></tbody>
         </table>
+        <div id="cal-view" hidden>
+          <div class="tools" style="border-top:0">
+            <button class="gh" id="cal-prev-btn" type="button">&larr;</button>
+            <span id="cal-month-label" style="font-family:var(--display);font-size:15px;min-width:160px;text-align:center"></span>
+            <button class="gh" id="cal-next-btn" type="button">&rarr;</button>
+            <button class="gh" id="cal-today-btn" type="button">This month</button>
+            <span class="dim" id="cal-progress" style="margin-left:auto;font-size:12.5px"></span>
+          </div>
+          <div class="trk" style="margin:0 16px 12px"><i id="cal-progress-bar"></i></div>
+          <div id="cal-grid"></div>
+        </div>
       </div>
     </section>
   </div>
@@ -204,6 +219,128 @@ async function reassignTask(id) {
 
 document.getElementById('person-filter').addEventListener('change', render);
 document.getElementById('status-filter').addEventListener('change', render);
+
+// ---- Calendar view — month grid of due dates, so a deadline is a
+// place on a calendar you can see coming, not just a row in a list.
+// Shows every task regardless of the Open/All filter above (open and
+// complete together) since "how close are we this month" is exactly
+// the open-vs-done comparison that filter would hide. ----
+
+let calMonth = new Date();
+calMonth.setDate(1);
+
+function setView(isCal) {
+  document.getElementById('list-view').hidden = isCal;
+  document.getElementById('cal-view').hidden = !isCal;
+  document.getElementById('view-list-btn').classList.toggle('on', !isCal);
+  document.getElementById('view-cal-btn').classList.toggle('on', isCal);
+  if (isCal) renderCalendar();
+}
+document.getElementById('view-list-btn').addEventListener('click', () => setView(false));
+document.getElementById('view-cal-btn').addEventListener('click', () => setView(true));
+
+document.getElementById('cal-prev-btn').addEventListener('click', () => {
+  calMonth.setMonth(calMonth.getMonth() - 1);
+  renderCalendar();
+});
+document.getElementById('cal-next-btn').addEventListener('click', () => {
+  calMonth.setMonth(calMonth.getMonth() + 1);
+  renderCalendar();
+});
+document.getElementById('cal-today-btn').addEventListener('click', () => {
+  calMonth = new Date();
+  calMonth.setDate(1);
+  renderCalendar();
+});
+
+function renderCalendar() {
+  const personFilter = document.getElementById('person-filter').value;
+  const year = calMonth.getFullYear();
+  const month = calMonth.getMonth();
+
+  document.getElementById('cal-month-label').textContent =
+    calMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  const monthTasks = tasks.filter((t) => {
+    if (personFilter && t.assigned_to !== personFilter) return false;
+    if (!t.due_date) return false;
+    const [y, m] = t.due_date.split('-').map(Number);
+    return y === year && (m - 1) === month;
+  });
+  const doneCount = monthTasks.filter((t) => t.status === 'complete').length;
+  document.getElementById('cal-progress').textContent = monthTasks.length
+    ? `${doneCount} of ${monthTasks.length} due this month completed`
+    : 'Nothing due this month';
+  document.getElementById('cal-progress-bar').style.width = monthTasks.length
+    ? `${Math.round((doneCount / monthTasks.length) * 100)}%` : '0%';
+
+  const byDay = {};
+  monthTasks.forEach((t) => {
+    const day = Number(t.due_date.split('-')[2]);
+    (byDay[day] = byDay[day] || []).push(t);
+  });
+
+  const firstWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayY = new Date().getFullYear(), todayM = new Date().getMonth(), todayD = new Date().getDate();
+
+  const dowHeader = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    .map((d) => `<div style="padding:6px 8px;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);background:var(--panel);border-bottom:1px solid var(--line)">${d}</div>`).join('');
+
+  const cells = [];
+  for (let i = 0; i < firstWeekday; i++) cells.push('<div style="background:var(--panel);border:1px solid var(--line)"></div>');
+  for (let day = 1; day <= daysInMonth; day++) {
+    const isToday = year === todayY && month === todayM && day === todayD;
+    const dayTasks = byDay[day] || [];
+    const chips = dayTasks.map((t) => {
+      const overdue = t.status !== 'complete' && t.due_date < todayStr;
+      const style = t.status === 'complete'
+        ? 'text-decoration:line-through;color:var(--faint)'
+        : overdue ? 'color:var(--alertTx);font-weight:600' : 'color:var(--text)';
+      return `<div class="cal-task" data-id="${t.id}" style="${style};cursor:pointer;font-size:11px;padding:2px 4px;margin-top:2px;border-left:2px solid ${t.status === 'complete' ? 'var(--faint)' : overdue ? 'var(--alertTx)' : 'var(--accent)'}" title="${escapeAttr(staffName(t.assigned_to))} — click to ${t.status === 'complete' ? 'reopen' : 'complete'}">${escapeAttr(t.instructions).slice(0, 40)}${t.instructions.length > 40 ? '…' : ''}</div>`;
+    }).join('');
+    cells.push(`
+      <div style="background:var(--raise);border:1px solid var(--line);min-height:88px;padding:5px 6px;${isToday ? 'box-shadow:inset 0 0 0 2px var(--accent)' : ''}">
+        <div style="font-family:var(--mono);font-size:11px;color:${isToday ? 'var(--accentTx)' : 'var(--faint)'};font-weight:${isToday ? 700 : 400}">${day}</div>
+        ${chips}
+      </div>
+    `);
+  }
+
+  document.getElementById('cal-grid').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(7,1fr)">${dowHeader}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr)">${cells.join('')}</div>
+  `;
+
+  document.querySelectorAll('.cal-task').forEach((el) => {
+    el.addEventListener('click', () => toggleCalTask(el.dataset.id));
+  });
+}
+
+function escapeAttr(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+async function toggleCalTask(id) {
+  const t = tasks.find((x) => x.id === id);
+  if (!t) return;
+  if (t.status === 'complete') {
+    try {
+      await updateDoc(doc(db, 'tasks', id), { status: 'open', completed_at: null, completed_by: null });
+      showToast('Reopened.');
+      await loadTasks();
+      renderCalendar();
+    } catch (err) {
+      console.error(err);
+      showToast('Could not update — ' + err.message, 'error');
+    }
+  } else {
+    await completeTask(id);
+    renderCalendar();
+  }
+}
 
 document.getElementById('task-form').addEventListener('submit', async (e) => {
   e.preventDefault();
