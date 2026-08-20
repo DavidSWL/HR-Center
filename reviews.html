@@ -31,6 +31,7 @@
 
       <div class="card" style="margin-bottom:16px">
         <div class="card-h"><h3>New hire board</h3><span id="board-summary">—</span></div>
+        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Click a milestone to check off the review and paperwork for that employee.</p>
         <table>
           <thead><tr><th>Employee</th><th>Division</th><th>Day</th><th>Next milestone</th><th>Paperwork</th></tr></thead>
           <tbody id="board-rows"></tbody>
@@ -63,6 +64,7 @@
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
 import { db } from './firebaseconfig.js';
+import { ONBOARDING_CHECKLIST } from './letterhead-assets.js';
 import {
   collection, collectionGroup, doc, getDocs, updateDoc, addDoc, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -79,6 +81,7 @@ const today = new Date();
 
 let employees = [];
 let reviews = []; // {id, empId, milestone, due_date, review_completed, form_received}
+let paperworkCountByEmp = {}; // empId -> # of the 24 onboarding checklist items on file
 
 function empById(id) { return employees.find((e) => e.id === id); }
 function daysBetween(a, b) { return Math.round((a - b) / (1000 * 60 * 60 * 24)); }
@@ -86,6 +89,17 @@ function daysBetween(a, b) { return Math.round((a - b) / (1000 * 60 * 60 * 24));
 async function loadEmployees() {
   const snap = await getDocs(collection(db, 'employees'));
   employees = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+// Only the small number of employees currently onboarding — no need to
+// touch onboarding_docs for the whole 100+-person roster.
+async function loadPaperwork() {
+  const onboarding = employees.filter((e) => e.status === 'onboarding');
+  paperworkCountByEmp = {};
+  await Promise.all(onboarding.map(async (e) => {
+    const snap = await getDocs(collection(db, 'employees', e.id, 'onboarding_docs'));
+    paperworkCountByEmp[e.id] = snap.docs.filter((d) => d.data().on_file).length;
+  }));
 }
 
 async function loadReviews() {
@@ -97,6 +111,8 @@ async function loadReviews() {
   }));
 }
 
+let expandedBoardEmpId = null;
+
 function renderBoard() {
   const onboarding = employees
     .filter((e) => e.status === 'onboarding')
@@ -105,7 +121,7 @@ function renderBoard() {
       const day = daysBetween(today, hireDate);
       const empReviews = reviews.filter((r) => r.empId === e.id).sort((a, b) => a.milestone - b.milestone);
       const next = empReviews.find((r) => !r.review_completed);
-      return { emp: e, day, next };
+      return { emp: e, day, next, empReviews };
     })
     .sort((a, b) => a.day - b.day);
 
@@ -115,15 +131,55 @@ function renderBoard() {
   const overdueCount = onboarding.filter((r) => r.day > 90).length;
   document.getElementById('board-summary').textContent =
     `${onboarding.length} in onboarding` + (overdueCount ? ` · ${overdueCount} past 90 days` : '');
-  document.getElementById('board-rows').innerHTML = onboarding.length ? onboarding.map(({ emp, day, next }) => `
+  document.getElementById('board-rows').innerHTML = onboarding.length ? onboarding.map(({ emp, day, next, empReviews }) => {
+    const expanded = expandedBoardEmpId === emp.id;
+    const milestoneCell = next
+      ? `<button type="button" class="gh milestone-toggle" data-emp="${emp.id}" style="font-size:12px;padding:4px 10px">${next.milestone}-day, due ${formatDate(next.due_date)}${expanded ? ' ▲' : ' ▼'}</button>`
+      : `<button type="button" class="gh milestone-toggle" data-emp="${emp.id}" style="font-size:12px;padding:4px 10px"><span class="pill ok">All done</span>${expanded ? ' ▲' : ' ▼'}</button>`;
+    const expandRow = expanded ? `
+      <tr>
+        <td colspan="5" style="background:var(--hover);padding:10px 14px">
+          <table style="margin:0">
+            <thead><tr><th style="font-size:10.5px">Milestone</th><th style="font-size:10.5px">Due</th><th style="font-size:10.5px">Review done</th><th style="font-size:10.5px">Form received</th></tr></thead>
+            <tbody>
+              ${empReviews.map((r) => `
+                <tr>
+                  <td class="mono">${r.milestone}-day</td>
+                  <td class="mono dim">${formatDate(r.due_date)}</td>
+                  <td><input type="checkbox" class="review-toggle" data-emp="${emp.id}" data-milestone="${r.milestone}" ${r.review_completed ? 'checked' : ''}></td>
+                  <td><input type="checkbox" class="form-toggle" data-emp="${emp.id}" data-milestone="${r.milestone}" ${r.form_received ? 'checked' : ''}></td>
+                </tr>
+              `).join('') || '<tr><td colspan="4" class="dim">No 30/60/90 records yet.</td></tr>'}
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    ` : '';
+    const paperworkCount = paperworkCountByEmp[emp.id] || 0;
+    return `
     <tr>
       <td><b>${emp.first_name} ${emp.last_name}</b> <span class="mono dim">${emp.id}</span></td>
       <td class="mono">${emp.division || '—'}</td>
       <td class="mono">${day}${day > 90 ? ' <span class="pill bad">Past 90</span>' : ''}</td>
-      <td>${next ? `${next.milestone}-day, due ${formatDate(next.due_date)}` : '<span class="pill ok">All done</span>'}</td>
-      <td class="mono dim">—</td>
+      <td>${milestoneCell}</td>
+      <td><a class="gh" href="docgen.html?open=onboarding&emp=${emp.id}" style="font-size:12px;padding:4px 10px;display:inline-block;text-decoration:none">${paperworkCount}/${ONBOARDING_CHECKLIST.length} on file →</a></td>
     </tr>
-  `).join('') : '<tr><td colspan="5" class="dim">No one currently in onboarding.</td></tr>';
+    ${expandRow}
+  `;
+  }).join('') : '<tr><td colspan="5" class="dim">No one currently in onboarding.</td></tr>';
+
+  document.querySelectorAll('.milestone-toggle').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      expandedBoardEmpId = expandedBoardEmpId === btn.dataset.emp ? null : btn.dataset.emp;
+      renderBoard();
+    });
+  });
+  document.querySelectorAll('#board-rows .review-toggle').forEach((cb) => {
+    cb.addEventListener('change', () => toggleField(cb.dataset.emp, cb.dataset.milestone, 'review_completed', cb.checked));
+  });
+  document.querySelectorAll('#board-rows .form-toggle').forEach((cb) => {
+    cb.addEventListener('change', () => toggleField(cb.dataset.emp, cb.dataset.milestone, 'form_received', cb.checked));
+  });
 }
 
 function renderQueue() {
@@ -225,11 +281,18 @@ async function toggleField(empId, milestone, field, value) {
 
 document.getElementById('status-filter').addEventListener('change', renderQueue);
 
-await loadEmployees();
-await loadReviews();
-renderBoard();
-renderQueue();
-renderEscalation();
+try {
+  await loadEmployees();
+  await loadReviews();
+  await loadPaperwork();
+  renderBoard();
+  renderQueue();
+  renderEscalation();
+} catch (err) {
+  console.error(err);
+  document.getElementById('board-rows').innerHTML = `<tr><td colspan="5" class="dim">Could not load — ${err.message}</td></tr>`;
+  showToast('Could not load this page — ' + err.message, 'error');
+}
 </script>
 </body>
 </html>

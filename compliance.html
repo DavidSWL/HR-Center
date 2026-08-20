@@ -65,31 +65,7 @@
           <span><i class="chip n"></i> Missing</span>
           <span><i class="chip s"></i> Superseded</span>
           <span><i class="chip x"></i> Not applicable</span>
-          <span class="dim">Click a cell to change it.</span>
-        </div>
-      </div>
-
-      <div class="card" style="margin-top:16px">
-        <div class="card-h">
-          <h3>Onboarding checklist compliance</h3>
-          <span id="onb-matrix-summary">—</span>
-        </div>
-        <div class="tools">
-          <input class="inp" id="onb-search" placeholder="Search employee" style="min-width:190px">
-          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)">
-            <input type="checkbox" id="onb-missing-only"> Show missing only
-          </label>
-        </div>
-        <div style="overflow-x:auto">
-          <table class="mx" id="onb-matrix-table">
-            <thead><tr id="onb-matrix-head"><th style="min-width:170px">Employee</th></tr></thead>
-            <tbody id="onb-matrix-body"></tbody>
-          </table>
-        </div>
-        <div class="legend">
-          <span><i class="chip y"></i> On file</span>
-          <span><i class="chip n"></i> Missing</span>
-          <span class="dim">The same 24-item Employee File Checklist from the onboarding packet. Click a cell to toggle. Someone with no record here (added before this checklist existed, or never onboarded through this system) shows every item missing — that reflects what's tracked, not necessarily what's actually on file.</span>
+          <span class="dim">Documents + the 24-item onboarding checklist, one row per employee. Click a cell to change it — onboarding checklist items can also be checked off from that employee's paperwork on the New Hire board.</span>
         </div>
       </div>
     </section>
@@ -204,7 +180,6 @@ async function loadAll() {
 
   renderDocs();
   renderMatrix();
-  renderOnboardingMatrix();
 }
 
 function renderDocs() {
@@ -229,7 +204,8 @@ function renderMatrix() {
 
   const head = document.getElementById('matrix-head');
   head.innerHTML = '<th style="min-width:170px">Employee</th>' +
-    documents.map((d) => `<th class="d"><div>${d.title}</div></th>`).join('');
+    documents.map((d) => `<th class="d"><div>${d.title}</div></th>`).join('') +
+    ONBOARDING_CHECKLIST.map((item) => `<th class="d"><div>${item.en}</div></th>`).join('');
 
   let visible = employees.filter((e) =>
     !q || `${e.first_name} ${e.last_name}`.toLowerCase().includes(q)
@@ -242,22 +218,31 @@ function renderMatrix() {
         const status = ack?.status || 'missing';
         return status === 'missing' || status === 'superseded';
       })
+      || ONBOARDING_CHECKLIST.some((item, i) => !onbByEmpItem[`${e.id}__${i}`]?.on_file)
     );
   }
 
-  document.getElementById('matrix-summary').textContent = `${visible.length} of ${employees.length} employees · ${documents.length} documents`;
+  document.getElementById('matrix-summary').textContent =
+    `${visible.length} of ${employees.length} employees · ${documents.length} documents + ${ONBOARDING_CHECKLIST.length} checklist items`;
 
   document.getElementById('matrix-body').innerHTML = visible.map((e) => {
-    const cells = documents.map((d) => {
+    const docCells = documents.map((d) => {
       const ack = ackByEmpDoc[`${e.id}__${d.id}`];
       const status = ack?.status || 'missing';
       return `<td class="c" data-emp="${e.id}" data-doc="${d.id}" style="cursor:pointer" title="${status.replace('_',' ')}"><i class="chip ${chipClass(status)}"></i></td>`;
     }).join('');
-    return `<tr><td>${e.first_name} ${e.last_name} <span class="mono dim">${e.id}</span></td>${cells}</tr>`;
+    const checklistCells = ONBOARDING_CHECKLIST.map((item, i) => {
+      const onFile = !!onbByEmpItem[`${e.id}__${i}`]?.on_file;
+      return `<td class="c" data-emp="${e.id}" data-item="${i}" style="cursor:pointer" title="${onFile ? 'on file' : 'missing'}"><i class="chip ${onFile ? 'y' : 'n'}"></i></td>`;
+    }).join('');
+    return `<tr><td>${e.first_name} ${e.last_name} <span class="mono dim">${e.id}</span></td>${docCells}${checklistCells}</tr>`;
   }).join('');
 
-  document.querySelectorAll('#matrix-body td.c').forEach((cell) => {
+  document.querySelectorAll('#matrix-body td.c[data-doc]').forEach((cell) => {
     cell.addEventListener('click', () => cycleCell(cell.dataset.emp, cell.dataset.doc));
+  });
+  document.querySelectorAll('#matrix-body td.c[data-item]').forEach((cell) => {
+    cell.addEventListener('click', () => toggleOnboardingCell(cell.dataset.emp, cell.dataset.item));
   });
 }
 
@@ -288,39 +273,6 @@ async function cycleCell(empId, docId) {
   }
 }
 
-function renderOnboardingMatrix() {
-  const q = document.getElementById('onb-search').value.trim().toLowerCase();
-  const missingOnly = document.getElementById('onb-missing-only').checked;
-
-  const head = document.getElementById('onb-matrix-head');
-  head.innerHTML = '<th style="min-width:170px">Employee</th>' +
-    ONBOARDING_CHECKLIST.map((item, i) => `<th class="d"><div>${item.en}</div></th>`).join('');
-
-  let visible = employees.filter((e) =>
-    !q || `${e.first_name} ${e.last_name}`.toLowerCase().includes(q)
-  );
-
-  if (missingOnly) {
-    visible = visible.filter((e) =>
-      ONBOARDING_CHECKLIST.some((item, i) => !onbByEmpItem[`${e.id}__${i}`]?.on_file)
-    );
-  }
-
-  document.getElementById('onb-matrix-summary').textContent = `${visible.length} of ${employees.length} employees · ${ONBOARDING_CHECKLIST.length} items`;
-
-  document.getElementById('onb-matrix-body').innerHTML = visible.map((e) => {
-    const cells = ONBOARDING_CHECKLIST.map((item, i) => {
-      const onFile = !!onbByEmpItem[`${e.id}__${i}`]?.on_file;
-      return `<td class="c" data-emp="${e.id}" data-item="${i}" style="cursor:pointer" title="${onFile ? 'on file' : 'missing'}"><i class="chip ${onFile ? 'y' : 'n'}"></i></td>`;
-    }).join('');
-    return `<tr><td>${e.first_name} ${e.last_name} <span class="mono dim">${e.id}</span></td>${cells}</tr>`;
-  }).join('');
-
-  document.querySelectorAll('#onb-matrix-body td.c').forEach((cell) => {
-    cell.addEventListener('click', () => toggleOnboardingCell(cell.dataset.emp, cell.dataset.item));
-  });
-}
-
 async function toggleOnboardingCell(empId, itemIndex) {
   const key = `${empId}__${itemIndex}`;
   const current = !!onbByEmpItem[key]?.on_file;
@@ -332,7 +284,7 @@ async function toggleOnboardingCell(empId, itemIndex) {
   try {
     await setDoc(doc(db, 'employees', empId, 'onboarding_docs', String(itemIndex)), payload, { merge: true });
     onbByEmpItem[key] = payload;
-    renderOnboardingMatrix();
+    renderMatrix();
   } catch (err) {
     console.error(err);
     showToast('Could not update — ' + err.message, 'error');
@@ -379,8 +331,6 @@ async function publishNewVersion(docId) {
 
 document.getElementById('search').addEventListener('input', renderMatrix);
 document.getElementById('missing-only').addEventListener('change', renderMatrix);
-document.getElementById('onb-search').addEventListener('input', renderOnboardingMatrix);
-document.getElementById('onb-missing-only').addEventListener('change', renderOnboardingMatrix);
 
 const overlay = document.getElementById('modal-overlay');
 document.getElementById('add-doc-btn').addEventListener('click', () => { overlay.hidden = false; });
