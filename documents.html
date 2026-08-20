@@ -29,7 +29,7 @@
 
     <section class="view">
       <div class="card" style="margin-bottom:16px">
-        <div class="card-h"><h3>Upload a document</h3><span></span></div>
+        <div class="card-h"><h3>Add a document</h3><span></span></div>
         <div class="card-body">
           <div class="frow">
             <div class="field">
@@ -64,10 +64,18 @@
             employee acknowledgment — everything else here is reference-only.
           </p>
           <div class="field">
-            <label class="f-lab" for="doc-file">File</label>
-            <input class="f-in" id="doc-file" type="file" accept="application/pdf,image/*,.doc,.docx,.xls,.xlsx">
+            <label class="f-lab" for="doc-body">Content</label>
+            <textarea class="f-in" id="doc-body" rows="10" style="resize:vertical;font-family:var(--sans)" placeholder="Paste or type the document text here. Start a line with ## to make it a section heading, e.g.&#10;&#10;## Purpose&#10;This SOP covers...&#10;&#10;## Procedure&#10;1. First step...&#10;"></textarea>
           </div>
-          <button class="gh solid" id="doc-upload-btn" type="button">Upload</button>
+          <button class="gh solid" id="doc-upload-btn" type="button">Save document</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>Company SOPs</h3><span></span></div>
+        <div class="card-body">
+          <p class="dim" style="margin:0 0 10px;font-size:12.5px">One-click load of the 3 real SOPs (Onboarding, Termination, Write-Up) — same content already used to build the matching training courses.</p>
+          <button class="gh" id="load-sops-btn" type="button">Load the 3 SOPs</button>
         </div>
       </div>
 
@@ -95,14 +103,26 @@
   </div>
 </div>
 
+<!-- view text document -->
+<div class="modal-overlay no-print" id="view-overlay" hidden>
+  <div class="modal" style="width:850px">
+    <div class="modal-h no-print"><h3>Document</h3><button class="modal-close" id="view-close" type="button">&times;</button></div>
+    <div class="modal-body">
+      <div class="acts no-print" style="margin-bottom:12px">
+        <button class="gh solid" id="view-print-btn" type="button">Print</button>
+      </div>
+      <div class="form-doc" id="view-sheet"></div>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
-import { db, storage } from './firebaseconfig.js';
+import { db } from './firebaseconfig.js';
 import {
   collection, doc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
@@ -123,21 +143,111 @@ function escapeHtmlAttr(str) {
   return div.innerHTML;
 }
 
-// Browsers don't reliably report the correct MIME type for Office
-// documents (depends on OS file-type associations) — Storage rules
-// check contentType, so a wrong or blank guess gets the upload silently
-// rejected with no obvious cause. Deciding it from the extension instead
-// of trusting file.type makes this consistent regardless of the browser.
-const EXT_CONTENT_TYPES = {
-  pdf: 'application/pdf',
-  doc: 'application/msword',
-  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
-};
-function contentTypeFor(file) {
-  const ext = (file.name.split('.').pop() || '').toLowerCase();
-  return EXT_CONTENT_TYPES[ext] || file.type || 'application/octet-stream';
+// "## Heading" starts a new section bar (matches the printed-form look
+// used everywhere else in the app); everything else is body paragraphs,
+// split on blank lines.
+function renderBodyHtml(body) {
+  const lines = (body || '').split('\n');
+  let html = '';
+  let para = [];
+  const flush = () => {
+    if (para.length) { html += `<p style="margin:0 0 10px">${escapeHtmlAttr(para.join(' '))}</p>`; para = []; }
+  };
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('## ')) {
+      flush();
+      html += `<div class="form-section">${escapeHtmlAttr(trimmed.slice(3))}</div>`;
+    } else if (trimmed === '') {
+      flush();
+    } else {
+      para.push(trimmed);
+    }
+  });
+  flush();
+  return html;
 }
+
+function openView(d) {
+  document.getElementById('view-sheet').innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-title">${escapeHtmlAttr(d.title)}</div>
+      ${renderBodyHtml(d.body)}
+    </div>
+  `;
+  document.getElementById('view-overlay').hidden = false;
+}
+document.getElementById('view-close').addEventListener('click', () => { document.getElementById('view-overlay').hidden = true; });
+document.getElementById('view-print-btn').addEventListener('click', () => window.print());
+
+const SOPS = [
+  {
+    title: 'SOP: New Hire Onboarding Process (HR-002)',
+    body: `## Purpose & responsibilities
+This SOP covers onboarding from offer acceptance through completed documentation, training, and orientation, across Maintenance, Irrigation, and Landscape. HR prepares the onboarding packet, schedules orientation, verifies Form I-9 within 3 business days of start, submits the DMV pull for driving positions, coordinates pesticide handler training where applicable, tracks completion via the EE File Checklist, and files all signed documents. The hiring manager confirms start date and role details, and flags any role-specific requirements (driving duties, pesticide handling) before Day One. The new hire completes and signs all required documentation accurately.
+
+## The 6-step procedure
+1. Pre-Start Preparation — HR preps the file and packet; orientation is scheduled for Wednesday or Friday, Mondays avoided when possible for payroll priority.
+
+2. Core Onboarding Documents — Application, Emergency Contact, Form I-9, W-4, DE-4, Direct Deposit Authorization; I-9 must be completed and verified within 3 business days of start (federal requirement).
+
+3. Role-Specific Requirements — DMV Pull Notice for driving positions (24-48 hour turnaround); pesticide handler training and a completed Pesticide Safety Training Record before that employee performs any handler task.
+
+4. Company Policy Acknowledgments — Notice to Employee, MPN Acknowledgment, Confidentiality and Trade Secrets Agreement, Arbitration Agreement, Handbook acknowledgment (original + file copy), Discrimination/Harassment/Retaliation Prevention Policy.
+
+5. Additional Acknowledgments — GPS Tracking, Attendance & Punctuality, Photo Release Waiver, Company Vehicle Use & Care (if assigned a vehicle).
+
+6. Verification & Filing — HR confirms every line on the EE File Checklist is complete and signed; documents filed in the personnel file, with medical/I-9 records kept separate as required.
+
+## Critical deadlines and role-specific gaps
+Form I-9 must be completed no later than the 3rd business day after the start date — this federal deadline is not extended for any reason. If supporting documents aren't available yet, contact HR immediately rather than delaying the form itself. If a new hire's actual duties turn out to include driving or pesticide handling and this wasn't flagged before Day One, do not allow the employee to perform that task until the corresponding requirement is complete and documented.`,
+  },
+  {
+    title: 'SOP: Employee Termination Process (HR-003)',
+    body: `## Purpose, responsibilities & notification
+This SOP covers voluntary and involuntary separations across Maintenance, Irrigation, and Landscape, including final pay timing, required notices, and property return. HR prepares the Termination Form, coordinates final pay timing with Payroll, provides all legally required separation notices, confirms return of company property, and files final documentation. The manager/supervisor notifies HR of a termination decision or resignation, including effective date and reason, and conducts or participates in the termination meeting. Payroll calculates and issues final wages, including accrued vacation payout, within the legally required timeframe.
+
+## Final pay timing & the termination meeting
+Involuntary termination: final wages are due immediately, same day — there is no grace period; wages must be ready and available at the termination meeting itself. Voluntary resignation with less than 72 hours' notice: final wages due within 72 hours. Missing the final pay deadline triggers waiting-time penalties under Labor Code §201-203, up to 30 days of the employee's daily wage. The Termination Form is completed during the meeting: reason, description of circumstances, final hours, and method of delivery.
+
+## Required notices, property return & filing
+Four separation notices apply based on criteria, and none are optional regardless of how routine the separation seems: the EDD "For Your Benefit" Pamphlet (DE 2320) is required for every separation, including voluntary resignations; Notice to Employee as to Change in Relationship for involuntary separations; COBRA Election Notice to the plan administrator; HIPP Notice (DHCS 9061) for eligible employees losing group health coverage. Company property (keys, uniform, laptop, phone, CC/gas card, vehicle) is collected, and email/system and building/key fob access is revoked. The completed Termination Form, with all Required Notices Provided checkboxes filled in and signed (or witnessed if the employee refuses/is unavailable), is filed in the personnel file.`,
+  },
+  {
+    title: 'SOP: Employee Write-Up / Disciplinary Process (HR-004)',
+    body: `## Identifying the issue & warning level
+The manager/supervisor documents the specific infraction — tardiness/leaving early, absenteeism, violation of company policies, substandard work, violation of safety rules, or rudeness to customers/coworkers — then determines the warning level (Verbal, First, Second, or Final) based on severity and prior history. The Company reserves the right to skip steps or proceed directly to termination for serious misconduct. HR reviews completed write-ups for consistency and monitors for patterns across employees or divisions.
+
+## Completing the form, discussing it, and signatures
+The write-up form covers Description of Infraction, Plan for Improvement with a Follow-Up Review Date, and Consequences of Further Infractions. The manager reviews it with the employee in person; the employee may add optional comments/response. Employee and manager both sign; a witness signs if the employee understands the warning but refuses to sign. The original is filed in the personnel file, and HR is notified for pattern tracking. The manager checks in with the employee at the Follow-Up Review Date to assess improvement.
+
+## Retention, copies, and how write-ups factor into other decisions
+An employee's signature confirms they received and discussed the warning — it does not indicate agreement, and this document does not create a contract of employment or alter at-will status. A copy is not provided automatically at signing; if an employee requests to inspect or receive a copy of their personnel record, it must be provided within 30 days per Labor Code §1198.5 and §432. Write-ups are retained for the duration of employment plus a minimum of 4 years after separation, matching California's FEHA claims statute of limitations — never purge write-ups on a shorter internal timer. A recent active write-up may be considered in promotion or transfer decisions, applied consistently (same rule, same lookback period, for every employee), using judgment on severity rather than a rigid rule.`,
+  },
+];
+
+document.getElementById('load-sops-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('load-sops-btn');
+  btn.disabled = true;
+  try {
+    const existingTitles = new Set(docs.map((d) => d.title));
+    const toAdd = SOPS.filter((s) => !existingTitles.has(s.title));
+    if (!toAdd.length) { showToast('Already loaded.'); return; }
+    for (const s of toAdd) {
+      await setDoc(doc(collection(db, 'training_documents')), {
+        title: s.title, category: 'sop', content_type: 'text', body: s.body,
+        entered_by: profile.uid, uploaded_at: serverTimestamp(),
+      });
+    }
+    showToast(`Loaded ${toAdd.length} SOP${toAdd.length === 1 ? '' : 's'}.`);
+    await loadDocs();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not load — ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 let docs = [];
 
@@ -161,12 +271,23 @@ function render() {
   document.getElementById('docs-summary').textContent = `${visible.length} of ${docs.length}`;
   document.getElementById('doc-rows').innerHTML = visible.length ? visible.map((d) => `
     <tr>
-      <td><a href="${d.file_url}" target="_blank" rel="noopener">${escapeHtmlAttr(d.title)}</a>${d.policy_doc_id ? ' <span class="pill ok">In Policy Compliance</span>' : ''}</td>
+      <td>${d.content_type === 'text'
+        ? `<a href="#" class="view-doc-link" data-id="${d.id}">${escapeHtmlAttr(d.title)}</a>`
+        : `<a href="${d.file_url}" target="_blank" rel="noopener">${escapeHtmlAttr(d.title)}</a>`
+      }${d.policy_doc_id ? ' <span class="pill ok">In Policy Compliance</span>' : ''}</td>
       <td class="mono dim">${CATEGORY_LABELS[d.category] || 'Other reference'}</td>
       <td class="dim" style="font-size:12px">${d.uploaded_at?.seconds ? formatDate(new Date(d.uploaded_at.seconds * 1000)) : ''}</td>
       <td style="text-align:right"><button class="gh delete-doc-btn" data-id="${d.id}" type="button">Delete</button></td>
     </tr>
   `).join('') : '<tr><td colspan="4" class="dim">No documents uploaded yet.</td></tr>';
+
+  document.querySelectorAll('.view-doc-link').forEach((a) => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      const d = docs.find((x) => x.id === a.dataset.id);
+      if (d) openView(d);
+    });
+  });
 
   document.querySelectorAll('.delete-doc-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -177,7 +298,6 @@ function render() {
         : `Delete "${docItem.title}"? This can't be undone.`;
       if (!window.confirm(warn)) return;
       try {
-        if (docItem.file_path) await deleteObject(ref(storage, docItem.file_path)).catch(() => {});
         await deleteDoc(doc(db, 'training_documents', docItem.id));
         if (docItem.policy_doc_id) {
           await updateDoc(doc(db, 'policy_documents', docItem.policy_doc_id), { active: false, entered_by: profile.uid }).catch(() => {});
@@ -201,9 +321,7 @@ document.getElementById('doc-category').addEventListener('change', (e) => {
 document.getElementById('doc-upload-btn').addEventListener('click', async () => {
   const title = document.getElementById('doc-title').value.trim();
   const category = document.getElementById('doc-category').value;
-  const file = document.getElementById('doc-file').files[0];
   if (!title) { showToast('Enter a title.', 'error'); return; }
-  if (!file) { showToast('Choose a file.', 'error'); return; }
   const isPolicy = POLICY_CATEGORIES.has(category);
   const versionLabel = document.getElementById('doc-version').value.trim();
   const effectiveDate = document.getElementById('doc-effective').value;
@@ -212,41 +330,40 @@ document.getElementById('doc-upload-btn').addEventListener('click', async () => 
     return;
   }
 
+  const body = document.getElementById('doc-body').value.trim();
+  if (!body) { showToast('Type in the document content.', 'error'); return; }
+
   const btn = document.getElementById('doc-upload-btn');
   btn.disabled = true;
   try {
     const docRef = doc(collection(db, 'training_documents'));
-    const filePath = `training/${docRef.id}/${file.name}`;
-    const storageRef = ref(storage, filePath);
-    await uploadBytes(storageRef, file, { contentType: contentTypeFor(file) });
-    const fileUrl = await getDownloadURL(storageRef);
 
     let policyDocId = null;
     if (isPolicy) {
       const policyRef = doc(collection(db, 'policy_documents'));
       await setDoc(policyRef, {
         title, type: category, version_label: versionLabel, effective_date: effectiveDate,
-        active: true, file_url: fileUrl, file_path: filePath,
+        active: true, content_type: 'text', body,
         entered_by: profile.uid, created_at: serverTimestamp(),
       });
       policyDocId = policyRef.id;
     }
 
     await setDoc(docRef, {
-      title, category, file_url: fileUrl, file_path: filePath,
+      title, category, content_type: 'text', body,
       policy_doc_id: policyDocId,
       entered_by: profile.uid, uploaded_at: serverTimestamp(),
     });
 
     document.getElementById('doc-title').value = '';
-    document.getElementById('doc-file').value = '';
+    document.getElementById('doc-body').value = '';
     document.getElementById('doc-version').value = '';
     document.getElementById('doc-effective').value = '';
-    showToast(isPolicy ? 'Uploaded — also added to Policy Compliance for acknowledgment tracking.' : 'Document uploaded.');
+    showToast(isPolicy ? 'Saved — also added to Policy Compliance for acknowledgment tracking.' : 'Document saved.');
     await loadDocs();
   } catch (err) {
     console.error(err);
-    showToast('Could not upload — ' + err.message, 'error');
+    showToast('Could not save — ' + err.message, 'error');
   } finally {
     btn.disabled = false;
   }
