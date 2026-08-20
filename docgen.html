@@ -167,6 +167,7 @@ const GENERATORS = [
   { key: 'offer', title: 'Offer / increase / promotion', desc: '7 letter types, matches the branded SWL letterhead exactly' },
   { key: 'onboarding', title: 'Onboarding packet', desc: 'Assembles the required document checklist' },
   { key: 'refusal', title: 'Medical Treatment Refusal', desc: 'Matches the SWL acknowledgment form — English or Spanish' },
+  { key: 'sop', title: 'SOP', desc: 'Standard Operating Procedure — matches the real SWL SOP format, saves to Documents' },
 ];
 
 document.getElementById('tiles').innerHTML = GENERATORS.map((g) => `
@@ -236,6 +237,7 @@ function renderCurrent() {
   if (currentKey === 'offer') renderLetters();
   if (currentKey === 'onboarding') renderOnboarding(lang);
   if (currentKey === 'refusal') renderRefusal(lang);
+  if (currentKey === 'sop') renderSop();
 }
 
 // ---- PIP ----
@@ -1727,6 +1729,173 @@ function renderRefusalSheet(lang) {
     <button class="gh no-print" id="ref-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
   `;
   document.getElementById('ref-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+}
+
+// ---- SOP — matches the real SWL Standard Operating Procedure format:
+// letterhead, a metadata grid (SOP number/dates/revision), PURPOSE and
+// SCOPE section bars, a Responsibilities table, a numbered Procedure
+// table, and standalone notice boxes. Saves straight to Documents
+// (training_documents, content_type:'sop') rather than a print-only
+// sheet — an SOP is reference content people look up later, not a
+// one-time signed record. ----
+
+function renderSop() {
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <div class="frow">
+          <div class="field"><label class="f-lab">Name of procedure</label><input class="f-in" id="sop-title" placeholder="e.g. Equipment Damage Reporting"></div>
+          <div class="field"><label class="f-lab">SOP number</label><input class="f-in" id="sop-number" placeholder="e.g. HR-005"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Date created</label><input class="f-in" id="sop-date-created" type="date"></div>
+          <div class="field"><label class="f-lab">Implementation date</label><input class="f-in" id="sop-impl-date" type="date"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Revision number</label><input class="f-in" id="sop-revision" value="1"></div>
+          <div class="field"><label class="f-lab">Prepared by</label><input class="f-in" id="sop-prepared-by" value="Human Resources"></div>
+        </div>
+        <div class="field"><label class="f-lab">Purpose</label><textarea class="f-in" id="sop-purpose" rows="2" style="resize:vertical" placeholder="Why this SOP exists, in a sentence or two."></textarea></div>
+        <div class="field"><label class="f-lab">Scope</label><textarea class="f-in" id="sop-scope" rows="2" style="resize:vertical" placeholder="Who this applies to and when."></textarea></div>
+        <div class="field">
+          <label class="f-lab">Responsibilities — one role per line: Role | what they're responsible for</label>
+          <textarea class="f-in" id="sop-responsibilities" rows="4" style="resize:vertical" placeholder="Manager/Supervisor | Identifying the issue and notifying HR&#10;Human Resources | Reviewing and filing the completed record"></textarea>
+        </div>
+        <div class="field">
+          <label class="f-lab">Procedure steps — one step per line: Step title | instruction; instruction; instruction</label>
+          <textarea class="f-in" id="sop-procedure" rows="6" style="resize:vertical" placeholder="Identify the Issue | Manager documents what happened; notes date and time&#10;Notify HR | HR is copied within 24 hours"></textarea>
+        </div>
+        <div class="field">
+          <label class="f-lab">Notice boxes (optional) — one per line, e.g. legal reminders or exceptions</label>
+          <textarea class="f-in" id="sop-notices" rows="3" style="resize:vertical" placeholder="Retention. Keep this record for the duration of employment plus 4 years."></textarea>
+        </div>
+        <button class="gh solid" id="sop-preview-btn" type="button">Preview</button>
+        <button class="gh" id="sop-save-btn" type="button">Save to Documents</button>
+      </div>
+    </div>
+    <div class="form-doc" id="sop-sheet" hidden></div>
+  `;
+
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('sop-date-created').value = today;
+  document.getElementById('sop-impl-date').value = today;
+
+  document.getElementById('sop-preview-btn').addEventListener('click', () => {
+    const record = buildSopRecord();
+    if (record) renderSopSheet(record);
+  });
+  document.getElementById('sop-save-btn').addEventListener('click', saveSop);
+}
+
+// "Role | text" / "Title | a; b; c" — a small line-based convention
+// rather than dynamic add/remove-row UI, since an SOP is written once
+// and rarely edited after.
+function buildSopRecord() {
+  const title = document.getElementById('sop-title').value.trim();
+  if (!title) { showToast('Enter the procedure name.', 'error'); return null; }
+
+  const responsibilities = document.getElementById('sop-responsibilities').value.split('\n')
+    .map((l) => l.trim()).filter(Boolean)
+    .map((l) => {
+      const [role, responsible_for] = l.split('|').map((s) => (s || '').trim());
+      return { role: role || '', responsible_for: responsible_for || '' };
+    });
+
+  const procedure = document.getElementById('sop-procedure').value.split('\n')
+    .map((l) => l.trim()).filter(Boolean)
+    .map((l) => {
+      const [stepTitle, rest] = l.split('|').map((s) => (s || '').trim());
+      const instructions = (rest || '').split(';').map((s) => s.trim()).filter(Boolean);
+      return { title: stepTitle || '', instructions };
+    });
+
+  const notices = document.getElementById('sop-notices').value.split('\n').map((l) => l.trim()).filter(Boolean);
+
+  return {
+    title,
+    sop_number: document.getElementById('sop-number').value.trim(),
+    date_created: document.getElementById('sop-date-created').value,
+    implementation_date: document.getElementById('sop-impl-date').value,
+    revision_number: document.getElementById('sop-revision').value.trim(),
+    prepared_by: document.getElementById('sop-prepared-by').value.trim(),
+    last_updated: new Date().toISOString().slice(0, 10),
+    purpose: document.getElementById('sop-purpose').value.trim(),
+    scope: document.getElementById('sop-scope').value.trim(),
+    responsibilities, procedure, notices,
+  };
+}
+
+// Same layout as documents.html's renderSopHtml — kept as a duplicate
+// on purpose (this app has no shared-JS-across-pages setup), so the
+// preview here and the saved version viewed from Documents look
+// identical rather than drifting apart over time.
+function renderSopSheet(record) {
+  const metaCell = (label, value) => `<div class="form-cell"><b>${escapeHtml(label)}</b>${escapeHtml(value) || '—'}</div>`;
+  const respRows = record.responsibilities.map((r) => `<tr><td>${escapeHtml(r.role)}</td><td>${escapeHtml(r.responsible_for)}</td></tr>`).join('');
+  const procRows = record.procedure.map((p, i) => `
+    <tr>
+      <td style="text-align:center">${i + 1}</td>
+      <td>${escapeHtml(p.title)}</td>
+      <td>${p.instructions.map((line) => `• ${escapeHtml(line)}`).join('<br>')}</td>
+    </tr>
+  `).join('');
+  const notices = record.notices.map((n) => `<div class="form-callout">${escapeHtml(n)}</div>`).join('');
+
+  const sheet = document.getElementById('sop-sheet');
+  sheet.hidden = false;
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  sheet.innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <div class="dim" style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:2px">Standard Operating Procedure</div>
+      <div class="form-title">${escapeHtml(record.title)}</div>
+      <div class="form-grid c3">
+        ${metaCell('Date created', formatDate(record.date_created))}
+        ${metaCell('SOP number', record.sop_number)}
+        ${metaCell('Prepared by', record.prepared_by)}
+        ${metaCell('Implementation date', formatDate(record.implementation_date))}
+        ${metaCell('Revision number', record.revision_number)}
+        ${metaCell('Last updated', formatDate(record.last_updated))}
+      </div>
+      <div class="form-section">Purpose</div>
+      <div class="form-box">${escapeHtml(record.purpose) || '—'}</div>
+      <div class="form-section">Scope</div>
+      <div class="form-box">${escapeHtml(record.scope) || '—'}</div>
+      ${respRows ? `
+        <div class="form-section">Responsibilities</div>
+        <table class="form-notice-table">
+          <thead><tr><th style="width:26%">Role</th><th>Responsible for</th></tr></thead>
+          <tbody>${respRows}</tbody>
+        </table>
+      ` : ''}
+      ${procRows ? `
+        <div class="form-section">Procedure</div>
+        <table class="form-notice-table">
+          <thead><tr><th style="width:6%">Step</th><th style="width:22%">Procedure title</th><th>Instructions</th></tr></thead>
+          <tbody>${procRows}</tbody>
+        </table>
+      ` : ''}
+      ${notices ? `<div style="margin-top:14px">${notices}</div>` : ''}
+    </div>
+    <button class="gh no-print" id="sop-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
+  `;
+  document.getElementById('sop-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+}
+
+async function saveSop() {
+  const record = buildSopRecord();
+  if (!record) return;
+  try {
+    await setDoc(doc(collection(db, 'training_documents')), {
+      ...record, category: 'sop', content_type: 'sop',
+      entered_by: profile.uid, uploaded_at: serverTimestamp(),
+    });
+    showToast('Saved — view it any time in Documents.');
+    renderSopSheet(record);
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
 }
 
 await loadEmployees();

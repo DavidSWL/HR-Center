@@ -328,6 +328,9 @@ select.f-in{
 .form-notice-table th,.form-notice-table td{border:1px solid #999;padding:5px 8px;text-align:left}
 .form-notice-table th{background:#eee;font-size:9.5px;text-transform:uppercase;letter-spacing:.03em}
 .form-fine{font-size:9.5px;color:#444;font-style:italic;border:1px solid #999;border-top:none;padding:7px 9px;background:#f7f7f7}
+.form-callout{font-size:11px;color:#333;border:1px solid #999;padding:8px 10px;background:#f7f7f7;margin-top:6px}
+.form-callout:first-of-type{margin-top:0}
+.form-callout b{font-weight:700}
 .form-sig{display:grid;grid-template-columns:2fr 1fr;border:1px solid #999;border-top:none}
 .form-sig div{padding:8px 9px;border-right:1px solid #999;font-size:12px}
 .form-sig div:last-child{border-right:none}
