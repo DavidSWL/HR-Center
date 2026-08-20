@@ -567,6 +567,7 @@ form.addEventListener('submit', async (e) => {
               due_date: due.toISOString().slice(0, 10),
               review_completed: false,
               form_received: false,
+              assigned_to: profile.uid,
               entered_by: profile.uid,
             });
           });
@@ -593,6 +594,7 @@ form.addEventListener('submit', async (e) => {
           due_date: due.toISOString().slice(0, 10),
           review_completed: false,
           form_received: false,
+          assigned_to: profile.uid,
           entered_by: profile.uid,
         });
       });
@@ -823,7 +825,8 @@ document.getElementById('import-confirm-btn').addEventListener('click', async ()
             due.setDate(due.getDate() + days);
             batch.set(doc(db, 'employees', r.id, 'reviews', String(days)), {
               milestone: days, due_date: due.toISOString().slice(0, 10),
-              review_completed: false, form_received: false, entered_by: profile.uid,
+              review_completed: false, form_received: false,
+              assigned_to: profile.uid, entered_by: profile.uid,
             });
           });
           ONBOARDING_CHECKLIST

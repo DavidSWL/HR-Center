@@ -41,13 +41,14 @@
       <div class="card" style="margin-bottom:16px">
         <div class="card-h"><h3>Review queue</h3><span id="queue-summary">—</span></div>
         <div class="tools">
+          <select class="inp" id="person-filter"><option value="">Everyone</option></select>
           <select class="inp" id="status-filter">
             <option value="open">Open only</option>
             <option value="all">All, including completed</option>
           </select>
         </div>
         <table>
-          <thead><tr><th>Due</th><th>Employee</th><th>Division</th><th>Milestone</th><th>Review done</th><th>Form received</th></tr></thead>
+          <thead><tr><th>Due</th><th>Employee</th><th>Division</th><th>Milestone</th><th>Assigned to</th><th>Review done</th><th>Form received</th></tr></thead>
           <tbody id="queue-rows"></tbody>
         </table>
       </div>
@@ -66,7 +67,7 @@ import { initShell, showToast, formatDate } from './app.js';
 import { db } from './firebaseconfig.js';
 import { ONBOARDING_CHECKLIST } from './letterhead-assets.js';
 import {
-  collection, collectionGroup, doc, getDocs, updateDoc, addDoc, serverTimestamp,
+  collection, collectionGroup, doc, getDocs, updateDoc, addDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
@@ -80,15 +81,28 @@ const todayStr = new Date().toISOString().slice(0, 10);
 const today = new Date();
 
 let employees = [];
-let reviews = []; // {id, empId, milestone, due_date, review_completed, form_received}
+let reviews = []; // {id, empId, milestone, due_date, review_completed, form_received, assigned_to}
 let paperworkCountByEmp = {}; // empId -> # of the 24 onboarding checklist items on file
+let staff = [];
 
 function empById(id) { return employees.find((e) => e.id === id); }
+function staffName(uid) {
+  if (!uid) return 'Unassigned';
+  const s = staff.find((x) => x.id === uid);
+  return s ? s.name : uid;
+}
 function daysBetween(a, b) { return Math.round((a - b) / (1000 * 60 * 60 * 24)); }
 
 async function loadEmployees() {
   const snap = await getDocs(collection(db, 'employees'));
   employees = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+async function loadStaff() {
+  const snap = await getDocs(collection(db, 'users'));
+  staff = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  document.getElementById('person-filter').innerHTML =
+    '<option value="">Everyone</option>' + staff.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
 }
 
 // Only the small number of employees currently onboarding — no need to
@@ -136,9 +150,17 @@ function renderBoard() {
     const milestoneCell = next
       ? `<button type="button" class="gh milestone-toggle" data-emp="${emp.id}" style="font-size:12px;padding:4px 10px">${next.milestone}-day, due ${formatDate(next.due_date)}${expanded ? ' ▲' : ' ▼'}</button>`
       : `<button type="button" class="gh milestone-toggle" data-emp="${emp.id}" style="font-size:12px;padding:4px 10px"><span class="pill ok">All done</span>${expanded ? ' ▲' : ' ▼'}</button>`;
+    const currentAssignee = empReviews[0]?.assigned_to || '';
     const expandRow = expanded ? `
       <tr>
         <td colspan="5" style="background:var(--hover);padding:10px 14px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:10px">
+            <span class="dim" style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase">All 3 reviews assigned to</span>
+            <select class="inp assignee-select" data-emp="${emp.id}" style="max-width:220px">
+              <option value="">Unassigned</option>
+              ${staff.map((s) => `<option value="${s.id}" ${currentAssignee === s.id ? 'selected' : ''}>${s.name}</option>`).join('')}
+            </select>
+          </label>
           <table style="margin:0">
             <thead><tr><th style="font-size:10.5px">Milestone</th><th style="font-size:10.5px">Due</th><th style="font-size:10.5px">Review done</th><th style="font-size:10.5px">Form received</th></tr></thead>
             <tbody>
@@ -180,12 +202,17 @@ function renderBoard() {
   document.querySelectorAll('#board-rows .form-toggle').forEach((cb) => {
     cb.addEventListener('change', () => toggleField(cb.dataset.emp, cb.dataset.milestone, 'form_received', cb.checked));
   });
+  document.querySelectorAll('.assignee-select').forEach((sel) => {
+    sel.addEventListener('change', () => reassignAllReviews(sel.dataset.emp, sel.value));
+  });
 }
 
 function renderQueue() {
   const statusFilter = document.getElementById('status-filter').value;
+  const personFilter = document.getElementById('person-filter').value;
   let visible = reviews.filter((r) => empById(r.empId));
   if (statusFilter === 'open') visible = visible.filter((r) => !r.review_completed);
+  if (personFilter) visible = visible.filter((r) => r.assigned_to === personFilter);
   visible = visible.sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''));
 
   document.getElementById('queue-summary').textContent = `${visible.length} of ${reviews.length}`;
@@ -202,17 +229,26 @@ function renderQueue() {
         <td>${emp.first_name} ${emp.last_name}</td>
         <td class="mono dim">${emp.division || '—'}</td>
         <td class="mono">${r.milestone}-day</td>
+        <td>
+          <select class="inp assignee-select-row" data-emp="${r.empId}" data-milestone="${r.milestone}">
+            <option value="">Unassigned</option>
+            ${staff.map((s) => `<option value="${s.id}" ${r.assigned_to === s.id ? 'selected' : ''}>${s.name}</option>`).join('')}
+          </select>
+        </td>
         <td><input type="checkbox" class="review-toggle" data-emp="${r.empId}" data-milestone="${r.milestone}" ${r.review_completed ? 'checked' : ''}></td>
         <td><input type="checkbox" class="form-toggle" data-emp="${r.empId}" data-milestone="${r.milestone}" ${r.form_received ? 'checked' : ''}></td>
       </tr>
     `;
-  }).join('') : '<tr><td colspan="6" class="dim">No reviews match.</td></tr>';
+  }).join('') : '<tr><td colspan="7" class="dim">No reviews match.</td></tr>';
 
   document.querySelectorAll('.review-toggle').forEach((cb) => {
     cb.addEventListener('change', () => toggleField(cb.dataset.emp, cb.dataset.milestone, 'review_completed', cb.checked));
   });
   document.querySelectorAll('.form-toggle').forEach((cb) => {
     cb.addEventListener('change', () => toggleField(cb.dataset.emp, cb.dataset.milestone, 'form_received', cb.checked));
+  });
+  document.querySelectorAll('.assignee-select-row').forEach((sel) => {
+    sel.addEventListener('change', () => toggleField(sel.dataset.emp, sel.dataset.milestone, 'assigned_to', sel.value));
   });
 }
 
@@ -243,6 +279,7 @@ function renderEscalation() {
           <tr>
             <td>${emp.first_name} ${emp.last_name}</td>
             <td class="mono">${r.milestone}-day</td>
+            <td class="mono dim">${staffName(r.assigned_to)}</td>
             <td class="mono" style="color:var(--alertTx)">due ${formatDate(r.due_date)}</td>
           </tr>
         `).join('')}
@@ -279,10 +316,32 @@ async function toggleField(empId, milestone, field, value) {
   }
 }
 
+async function reassignAllReviews(empId, newAssignee) {
+  const empReviews = reviews.filter((r) => r.empId === empId);
+  try {
+    const batch = writeBatch(db);
+    empReviews.forEach((r) => {
+      batch.update(doc(db, 'employees', empId, 'reviews', String(r.milestone)), {
+        assigned_to: newAssignee,
+        entered_by: profile.uid,
+      });
+      r.assigned_to = newAssignee;
+    });
+    await batch.commit();
+    showToast('Reviews reassigned.');
+    renderQueue();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not reassign — ' + err.message, 'error');
+  }
+}
+
 document.getElementById('status-filter').addEventListener('change', renderQueue);
+document.getElementById('person-filter').addEventListener('change', renderQueue);
 
 try {
   await loadEmployees();
+  await loadStaff();
   await loadReviews();
   await loadPaperwork();
   renderBoard();
