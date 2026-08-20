@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SouthWest Landscape — HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="login">
+  <div class="login-card">
+    <div class="mark">SouthWest<br>Landscape <i>/ HR</i></div>
+    <p class="login-sub" id="msg">Taking you to the right page…</p>
+    <p style="margin-top:14px">
+      <a id="manual-link" href="/HR-Center/" style="font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:#7E8C82;text-transform:uppercase">Click here if you're not redirected</a>
+    </p>
+  </div>
+</div>
+
+<script>
+// A bookmark, browser-autocomplete entry, or home-screen shortcut saved
+// without "/HR-Center/" in it (e.g. davidswl.github.io/dashboard.html
+// instead of davidswl.github.io/HR-Center/dashboard.html) lands here
+// instead of the real page. Repair the URL instead of leaving a dead
+// link: if the requested path is just missing the site's own folder
+// name, send the visitor on to the exact page they meant. Anything else
+// (a genuinely bad/typo’d path) falls back to the sign-in page, since
+// there's no more specific correct destination to guess at.
+(function () {
+  var BASE = '/HR-Center';
+  var path = window.location.pathname;
+  var dest;
+
+  if (path.indexOf(BASE + '/') === 0 || path === BASE) {
+    // Already under the right folder, so this is a genuinely missing
+    // page, not a missing-prefix bookmark.
+    dest = BASE + '/index.html';
+  } else {
+    dest = BASE + path;
+  }
+  dest += window.location.search + window.location.hash;
+
+  document.getElementById('manual-link').href = dest;
+  window.location.replace(dest);
+})();
+</script>
+</body>
+</html>
