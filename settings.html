@@ -43,6 +43,18 @@
         <div class="legend"><span>Entries in use are retired, not deleted — historical records keep their label either way.</span></div>
       </div>
 
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>Managers</h3><span id="managers-summary">—</span></div>
+        <div class="tools">
+          <input class="inp" id="managers-search" placeholder="Search employees" style="min-width:220px">
+        </div>
+        <table>
+          <thead><tr><th>Employee</th><th>Division</th><th>Title</th><th></th></tr></thead>
+          <tbody id="managers-rows"></tbody>
+        </table>
+        <div class="legend"><span>Checked employees appear in the "Reports to" list on offer/increase/promotion letters, which auto-fills their title onto the letter from here. Title is the same "Job title" field as on that employee's roster record — editing it here updates it there too.</span></div>
+      </div>
+
       <div class="card">
         <div class="card-h"><h3>HR team &amp; access</h3><span>Read-only here</span></div>
         <table>
@@ -60,7 +72,7 @@ import { requireAuth } from './auth.js';
 import { initShell, showToast } from './app.js';
 import { db } from './firebaseconfig.js';
 import {
-  collection, doc, getDoc, setDoc, getDocs, serverTimestamp,
+  collection, doc, getDoc, setDoc, updateDoc, getDocs, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
@@ -154,6 +166,69 @@ document.getElementById('add-value-btn').addEventListener('click', async () => {
   }
 });
 
+let allEmployees = [];
+let managerIds = new Set();
+
+async function loadManagers() {
+  const [empSnap, mgrSnap] = await Promise.all([
+    getDocs(collection(db, 'employees')),
+    getDoc(doc(db, 'settings', 'managers')),
+  ]);
+  allEmployees = empSnap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((e) => e.status !== 'terminated')
+    .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
+  managerIds = new Set(mgrSnap.exists() ? (mgrSnap.data().employee_ids || []) : []);
+  renderManagers();
+}
+
+function renderManagers() {
+  const q = document.getElementById('managers-search').value.trim().toLowerCase();
+  const visible = allEmployees.filter((e) => !q || `${e.first_name} ${e.last_name}`.toLowerCase().includes(q));
+  document.getElementById('managers-summary').textContent = `${managerIds.size} marked as manager`;
+  document.getElementById('managers-rows').innerHTML = visible.length ? visible.map((e) => `
+    <tr>
+      <td>${e.first_name} ${e.last_name}</td>
+      <td class="mono dim">${e.division || '—'}</td>
+      <td><input class="inp title-in" data-id="${e.id}" value="${(e.position || '').replace(/"/g, '&quot;')}" placeholder="Job title" style="width:100%"></td>
+      <td style="text-align:right"><input type="checkbox" class="manager-check" data-id="${e.id}" ${managerIds.has(e.id) ? 'checked' : ''}></td>
+    </tr>
+  `).join('') : '<tr><td colspan="4" class="dim">No employees match.</td></tr>';
+
+  document.querySelectorAll('.manager-check').forEach((cb) => {
+    cb.addEventListener('change', async () => {
+      if (cb.checked) managerIds.add(cb.dataset.id);
+      else managerIds.delete(cb.dataset.id);
+      try {
+        await setDoc(doc(db, 'settings', 'managers'), {
+          employee_ids: [...managerIds], entered_by: profile.uid, updated_at: serverTimestamp(),
+        });
+        document.getElementById('managers-summary').textContent = `${managerIds.size} marked as manager`;
+      } catch (err) {
+        console.error(err);
+        showToast('Could not update — ' + err.message, 'error');
+      }
+    });
+  });
+
+  document.querySelectorAll('.title-in').forEach((input) => {
+    input.addEventListener('change', async () => {
+      const empId = input.dataset.id;
+      const title = input.value.trim();
+      try {
+        await updateDoc(doc(db, 'employees', empId), { position: title, entered_by: profile.uid });
+        const emp = allEmployees.find((e) => e.id === empId);
+        if (emp) emp.position = title;
+        showToast('Title updated.');
+      } catch (err) {
+        console.error(err);
+        showToast('Could not update — ' + err.message, 'error');
+      }
+    });
+  });
+}
+document.getElementById('managers-search').addEventListener('input', renderManagers);
+
 async function loadStaff() {
   const snap = await getDocs(collection(db, 'users'));
   const ROLE_LABELS = { david: 'David (can close ER cases)', tanya: 'Tanya', admin_assistant: 'Admin Assistant' };
@@ -165,6 +240,7 @@ async function loadStaff() {
 
 renderTabs();
 await loadList();
+await loadManagers();
 await loadStaff();
 </script>
 </body>
