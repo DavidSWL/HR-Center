@@ -22,6 +22,7 @@ export const NAV_SECTIONS = [
     label: 'People',
     items: [
       { key: 'roster', label: 'Employee roster', href: 'employees.html', built: true },
+      { key: 'applicants', label: 'Applicants', href: 'applicants.html', built: true },
       { key: 'comp', label: 'Policy compliance', href: 'compliance.html', built: true },
       { key: 'attendance', label: 'Attendance', href: 'attendance.html', built: true },
       { key: 'reviews', label: 'New hires & reviews', href: 'reviews.html', built: true },

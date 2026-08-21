@@ -94,6 +94,7 @@ const REPORTS = [
   { key: 'safety', title: 'Safety and cost', desc: 'Cost by type, incident rankings' },
   { key: 'compliance', title: 'Policy compliance', desc: 'Current snapshot — missing by document' },
   { key: 'reviews', title: 'New hires and reviews', desc: 'Onboarding volume, overdue reviews' },
+  { key: 'applicants', title: 'Applicants', desc: 'Applications received, rejected by reason' },
   { key: 'recurring', title: 'Recurring issues', desc: 'Employees showing up across multiple modules' },
   { key: 'output', title: 'Team output', desc: 'Completed work by person, from the activity log' },
 ];
@@ -520,6 +521,36 @@ async function renderReport(key) {
       <p class="dim">Full review-by-review detail lives on the New hires &amp; reviews tab.</p>
     `;
     lastCsv = [['Onboarding count'], [onboarding.length]];
+  }
+
+  else if (key === 'applicants') {
+    await ensureLoaded(['applicant_counts']);
+    const days = data.applicant_counts.filter((d) => inRange(d.date, range));
+    const inPerson = days.reduce((s, d) => s + (d.in_person || 0), 0);
+    const online = days.reduce((s, d) => s + (d.online || 0), 0);
+    const rejQual = days.reduce((s, d) => s + (d.rejected_qualifications || 0), 0);
+    const rejRef = days.reduce((s, d) => s + (d.rejected_references || 0), 0);
+    const totalApps = inPerson + online;
+    const totalRejected = rejQual + rejRef;
+
+    body.innerHTML = statLine(range, `denominator: ${totalApps} applications logged in range`) + `
+      <div class="big">
+        <div><div class="v n">${totalApps}</div><div class="k">Applications</div></div>
+        <div><div class="v n">${inPerson}</div><div class="k">In person</div></div>
+        <div><div class="v n">${online}</div><div class="k">Online</div></div>
+        <div><div class="v hot">${totalRejected}</div><div class="k">Rejected</div></div>
+        <div><div class="v n">${Math.max(0, totalApps - totalRejected)}</div><div class="k">Still open</div></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Rejections by reason</h3><span></span></div>
+        <table><tbody>
+          <tr><td>Qualifications</td><td class="mono" style="text-align:right">${rejQual}</td></tr>
+          <tr><td>References</td><td class="mono" style="text-align:right">${rejRef}</td></tr>
+        </tbody></table>
+      </div>
+      <p class="dim" style="margin-top:10px;font-size:12px">Counts only — no applicant names are tracked. Logged day by day on the Applicants tab.</p>
+    `;
+    lastCsv = [['Metric', 'Count'], ['In person', inPerson], ['Online', online], ['Rejected — qualifications', rejQual], ['Rejected — references', rejRef]];
   }
 
   else if (key === 'recurring') {

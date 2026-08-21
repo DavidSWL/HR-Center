@@ -136,6 +136,14 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Applicant counts — one doc per date, tallies only. No applicant
+    // names or identifying info are ever written here by design.
+    match /applicant_counts/{dateId} {
+      allow read: if isHrUser();
+      allow create, update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+    }
+
     // ---- discipline & notes ----------------------------------------------
     match /disciplinary_actions/{actionId} {
       allow read: if isHrUser();
