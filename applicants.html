@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Applicants — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>
+.tally-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--line)}
+.tally-btn{background:var(--raise);border:0;padding:22px 18px;cursor:pointer;text-align:left;display:flex;flex-direction:column;gap:6px;width:100%}
+.tally-btn:hover{background:var(--hover)}
+.tally-btn .lab{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.tally-btn .num{font-family:var(--display);font-size:40px;line-height:1;color:var(--text);font-variant-numeric:tabular-nums}
+.tally-btn.rej .num{color:var(--alertTx)}
+.tally-btn .plus{font-family:var(--mono);font-size:11px;color:var(--accentTx);align-self:flex-end}
+.tally-foot{display:flex;justify-content:space-between;align-items:center;padding:8px 18px 18px}
+.undo-btn{background:none;border:0;color:var(--faint);font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;padding:2px 0}
+.undo-btn:hover{color:var(--alertTx)}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1>Applicants</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3 id="today-label">Today</h3><span>Tap to log one — no names, ever</span></div>
+        <div class="tally-grid">
+          <div>
+            <button type="button" class="tally-btn" id="btn-in-person">
+              <span class="lab">Application — in person</span>
+              <span class="num" id="num-in-person">0</span>
+              <span class="plus">+ tap to add</span>
+            </button>
+          </div>
+          <div>
+            <button type="button" class="tally-btn" id="btn-online">
+              <span class="lab">Application — online</span>
+              <span class="num" id="num-online">0</span>
+              <span class="plus">+ tap to add</span>
+            </button>
+          </div>
+          <div>
+            <button type="button" class="tally-btn rej" id="btn-rejected-qualifications">
+              <span class="lab">Rejected — qualifications</span>
+              <span class="num" id="num-rejected-qualifications">0</span>
+              <span class="plus">+ tap to add</span>
+            </button>
+          </div>
+          <div>
+            <button type="button" class="tally-btn rej" id="btn-rejected-references">
+              <span class="lab">Rejected — references</span>
+              <span class="num" id="num-rejected-references">0</span>
+              <span class="plus">+ tap to add</span>
+            </button>
+          </div>
+        </div>
+        <div class="tally-foot">
+          <span class="dim" style="font-size:11.5px">Tapped the wrong one? Undo takes back your last tap.</span>
+          <button type="button" class="undo-btn" id="undo-btn" disabled>Undo last tap</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>This week</h3><span id="week-range">—</span></div>
+        <div class="big" id="week-stats">
+          <div><div class="v">—</div><div class="k">Loading…</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>Recent days</h3><span id="recent-summary">—</span></div>
+        <table>
+          <thead><tr><th>Date</th><th>In person</th><th>Online</th><th>Rejected — qual.</th><th>Rejected — ref.</th></tr></thead>
+          <tbody id="recent-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, showToast, formatDate } from './app.js';
+import { db } from './firebaseconfig.js';
+import {
+  doc, getDoc, getDocs, collection, setDoc, increment, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('applicants', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+const FIELDS = ['in_person', 'online', 'rejected_qualifications', 'rejected_references'];
+const todayStr = new Date().toISOString().slice(0, 10);
+document.getElementById('today-label').textContent =
+  'Today — ' + new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+
+let lastTapField = null; // for undo — only ever un-does this session's own last tap
+
+async function loadToday() {
+  const snap = await getDoc(doc(db, 'applicant_counts', todayStr));
+  const data = snap.exists() ? snap.data() : {};
+  FIELDS.forEach((f) => {
+    document.getElementById('num-' + f.replace(/_/g, '-')).textContent = data[f] || 0;
+  });
+}
+
+async function tap(field) {
+  const btn = document.getElementById('btn-' + field.replace(/_/g, '-'));
+  btn.disabled = true;
+  try {
+    await setDoc(doc(db, 'applicant_counts', todayStr), {
+      date: todayStr,
+      [field]: increment(1),
+      entered_by: profile.uid,
+      updated_at: serverTimestamp(),
+    }, { merge: true });
+    const numEl = document.getElementById('num-' + field.replace(/_/g, '-'));
+    numEl.textContent = String(parseInt(numEl.textContent, 10) + 1);
+    lastTapField = field;
+    document.getElementById('undo-btn').disabled = false;
+    await loadWeekAndRecent();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('undo-btn').addEventListener('click', async () => {
+  if (!lastTapField) return;
+  const field = lastTapField;
+  lastTapField = null;
+  document.getElementById('undo-btn').disabled = true;
+  try {
+    await setDoc(doc(db, 'applicant_counts', todayStr), {
+      [field]: increment(-1),
+      entered_by: profile.uid,
+      updated_at: serverTimestamp(),
+    }, { merge: true });
+    const numEl = document.getElementById('num-' + field.replace(/_/g, '-'));
+    numEl.textContent = String(Math.max(0, parseInt(numEl.textContent, 10) - 1));
+    showToast('Undone.');
+    await loadWeekAndRecent();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not undo — ' + err.message, 'error');
+  }
+});
+
+FIELDS.forEach((f) => {
+  document.getElementById('btn-' + f.replace(/_/g, '-')).addEventListener('click', () => tap(f));
+});
+
+function mondayOf(d) {
+  const date = new Date(d);
+  const day = date.getDay(); // 0 = Sun
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + diff);
+  return date;
+}
+
+async function loadWeekAndRecent() {
+  // Pull the last 10 days' docs directly by ID — simpler and cheaper than
+  // a range query for a handful of daily documents.
+  const dates = [];
+  for (let i = 0; i < 10; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+  const snaps = await Promise.all(dates.map((d) => getDoc(doc(db, 'applicant_counts', d))));
+  const byDate = {};
+  dates.forEach((d, i) => { byDate[d] = snaps[i].exists() ? snaps[i].data() : null; });
+
+  const monday = mondayOf(new Date()).toISOString().slice(0, 10);
+  document.getElementById('week-range').textContent = `${formatDate(monday)} – ${formatDate(todayStr)}`;
+
+  const weekTotals = { in_person: 0, online: 0, rejected_qualifications: 0, rejected_references: 0 };
+  Object.entries(byDate).forEach(([d, rec]) => {
+    if (!rec || d < monday) return;
+    FIELDS.forEach((f) => { weekTotals[f] += rec[f] || 0; });
+  });
+  const totalApps = weekTotals.in_person + weekTotals.online;
+  const totalRejected = weekTotals.rejected_qualifications + weekTotals.rejected_references;
+
+  document.getElementById('week-stats').innerHTML = `
+    <div><div class="v n">${totalApps}</div><div class="k">Applications<small style="display:block;font-weight:400;color:var(--faint);font-size:11px;margin-top:2px">${weekTotals.in_person} in person, ${weekTotals.online} online</small></div></div>
+    <div><div class="v hot">${weekTotals.rejected_qualifications}</div><div class="k">Rejected — qualifications</div></div>
+    <div><div class="v hot">${weekTotals.rejected_references}</div><div class="k">Rejected — references</div></div>
+    <div><div class="v n">${Math.max(0, totalApps - totalRejected)}</div><div class="k">Still open</div></div>
+  `;
+
+  const recentDates = dates.filter((d) => byDate[d]);
+  document.getElementById('recent-summary').textContent = `${recentDates.length} of last 10 days logged`;
+  document.getElementById('recent-rows').innerHTML = dates.map((d) => {
+    const rec = byDate[d] || {};
+    return `
+      <tr>
+        <td class="mono ${d === todayStr ? '' : 'dim'}">${formatDate(d)}${d === todayStr ? ' · today' : ''}</td>
+        <td class="mono">${rec.in_person || 0}</td>
+        <td class="mono">${rec.online || 0}</td>
+        <td class="mono">${rec.rejected_qualifications || 0}</td>
+        <td class="mono">${rec.rejected_references || 0}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+await loadToday();
+await loadWeekAndRecent();
+</script>
+</body>
+</html>

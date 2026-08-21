@@ -108,6 +108,18 @@ service cloud.firestore {
       }
     }
 
+    // The New Hire board and Review queue run a collection-group query
+    // (collectionGroup(db, 'reviews')) to pull every employee's review
+    // rows in one read instead of one query per employee. Firestore
+    // treats that as a different kind of request than reading a single
+    // employee's own /reviews subcollection, and only grants it under a
+    // rule declared with the {path=**} wildcard — the nested rule above
+    // covers direct reads but not this. Without this block, that query
+    // fails with a permissions error and silently blanks the whole page.
+    match /{path=**}/reviews/{milestone} {
+      allow read: if isHrUser();
+    }
+
     // ---- policy documents -----------------------------------------------
     match /policy_documents/{docId} {
       allow read: if isHrUser();
@@ -121,6 +133,14 @@ service cloud.firestore {
       allow create: if isHrUser() && isClean(request.resource.data)
         && stamped(request.resource.data);
       allow update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+    }
+
+    // Applicant counts — one doc per date, tallies only. No applicant
+    // names or identifying info are ever written here by design.
+    match /applicant_counts/{dateId} {
+      allow read: if isHrUser();
+      allow create, update: if isHrUser() && isClean(request.resource.data);
       allow delete: if false;
     }
 
