@@ -126,6 +126,7 @@ import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate, readSpreadsheetSheets, objectsFromRows } from './app.js';
 import { db } from './firebaseconfig.js';
 import { LOGO_DATA_URL, LOCATIONS, SCHEDULE_PRESETS, HR_SIGNER, ONBOARDING_CHECKLIST } from './letterhead-assets.js';
+import { JOB_DESCRIPTIONS } from './job-descriptions-data.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -168,6 +169,7 @@ const GENERATORS = [
   { key: 'onboarding', title: 'Onboarding packet', desc: 'Assembles the required document checklist' },
   { key: 'refusal', title: 'Medical Treatment Refusal', desc: 'Matches the SWL acknowledgment form — English or Spanish' },
   { key: 'sop', title: 'SOP', desc: 'Standard Operating Procedure — matches the real SWL SOP format, saves to Documents' },
+  { key: 'jobdesc', title: 'Job description', desc: 'Matches the real SWL Job Description format — English or Spanish, saves to Documents' },
 ];
 
 document.getElementById('tiles').innerHTML = GENERATORS.map((g) => `
@@ -225,7 +227,7 @@ function openGenerator(key) {
   // exactly as supplied — those forms are English-only, so the language
   // toggle only applies to PIP, Onboarding, and the letters (which manage
   // English/Spanish through their own letter-type list instead).
-  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal') ? '' : 'none';
+  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc') ? '' : 'none';
   renderCurrent();
 }
 
@@ -238,6 +240,7 @@ function renderCurrent() {
   if (currentKey === 'onboarding') renderOnboarding(lang);
   if (currentKey === 'refusal') renderRefusal(lang);
   if (currentKey === 'sop') renderSop();
+  if (currentKey === 'jobdesc') renderJobDescription(lang);
 }
 
 // ---- PIP ----
@@ -1911,6 +1914,151 @@ async function saveSop() {
     });
     showToast('Saved — view it any time in Documents.');
     renderSopSheet(record);
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+}
+
+// ---- Job description — pulled from the real SWL job description files
+// (English + Spanish), one role at a time. Nothing here is typed in by
+// HR; the picker just selects which pre-loaded role to view/print/save.
+// A handful of roles have a real gap in their own source file (missing
+// Purpose paragraph, missing Physical Demands table, or missing the
+// Safety-Sensitive section in one language but not the other) — shown
+// as-is rather than invented, with a note on screen when it happens. ----
+
+function renderJobDescription(lang) {
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <div class="field">
+          <label class="f-lab">Role</label>
+          <select class="f-in" id="jd-role">${JOB_DESCRIPTIONS.map((r) => `<option value="${r.key}">${escapeHtml(r.title.en)}</option>`).join('')}</select>
+        </div>
+        <button class="gh solid" id="jd-load-btn" type="button">Load</button>
+      </div>
+    </div>
+    <div class="jd-doc" id="jd-sheet" hidden></div>
+  `;
+  const load = () => {
+    const role = JOB_DESCRIPTIONS.find((r) => r.key === document.getElementById('jd-role').value);
+    if (role) renderJobDescriptionSheet(role, document.getElementById('lang-select').value);
+  };
+  document.getElementById('jd-load-btn').addEventListener('click', load);
+  load();
+}
+
+function jdField(role, base, lang) {
+  return role[`${base}_${lang}`] ?? role[`${base}_en`] ?? '';
+}
+
+function renderJobDescriptionSheet(role, lang) {
+  const t = {
+    en: { doctype: 'Job Description', sub: 'Employee Review & Signature Document', ack: 'Acknowledgment', equipTitle: 'Equipment — Must Operate Safely', category: 'Category',
+          physReq: 'Physical Requirement', physNotes: 'Notes', ada: 'Reasonable accommodations will be evaluated through the ADA interactive process in partnership with HR.',
+          empName: 'Employee Name (Print)', empSig: 'Employee Signature', date: 'Date', mgrName: "Manager Name (Print)", mgrSig: 'Manager Signature', back: '← Back to document generator' },
+    es: { doctype: 'Descripción del Puesto', sub: 'Documento de Revisión y Firma del Empleado', ack: 'Reconocimiento', equipTitle: 'Equipo — Debe Operar de Forma Segura', category: 'Categoría',
+          physReq: 'Requisito Físico', physNotes: 'Notas', ada: 'Las adaptaciones razonables se evaluarán mediante el proceso interactivo de la ADA en conjunto con Recursos Humanos.',
+          empName: 'Nombre del Empleado (Imprenta)', empSig: 'Firma del Empleado', date: 'Fecha', mgrName: 'Nombre del Gerente (Imprenta)', mgrSig: 'Firma del Gerente', back: '← Volver al generador de documentos' },
+  }[lang];
+
+  const meta = role[`meta_${lang}`] || {};
+  const titleBar = jdField(role, 'title', lang) ? `${escapeHtml(jdField(role, 'title', lang))}` : '';
+  const purpose = jdField(role, 'purpose', lang);
+  const responsibilities = role[`responsibilities_${lang}`]?.length ? role[`responsibilities_${lang}`] : role.responsibilities_en;
+  const equipIntro = jdField(role, 'equipment_intro', lang);
+  const equipment = role[`equipment_${lang}`]?.length ? role[`equipment_${lang}`] : role.equipment_en;
+  const qualifications = role[`qualifications_${lang}`]?.length ? role[`qualifications_${lang}`] : role.qualifications_en;
+  const safety = role[`safety_sensitive_${lang}`] || [];
+  const physical = role[`physical_demands_${lang}`] || [];
+  const adaNote = jdField(role, 'ada_note', lang) || t.ada;
+  const ack = jdField(role, 'acknowledgment', lang);
+  const footer = jdField(role, 'footer', lang);
+
+  const gaps = [];
+  if (!purpose) gaps.push(lang === 'es' ? 'Falta el párrafo de propósito del puesto en el documento original.' : 'This role\'s source file has no Position Purpose paragraph.');
+  if (!physical.length) gaps.push(lang === 'es' ? 'Falta la tabla de exigencias físicas en el documento original.' : 'This role\'s source file has no Physical Demands table.');
+  if (!safety.length) gaps.push(lang === 'es' ? 'Falta la sección de puesto sensible en materia de seguridad en el documento original.' : 'This role\'s source file has no Safety-Sensitive Position section.');
+
+  const respHtml = responsibilities.map((r) => `
+    <div class="jd-resp">
+      <div class="jd-resp-title">${escapeHtml(r.title)}</div>
+      <ul>${r.bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join('')}</ul>
+      ${r.standard ? `<div class="jd-standard"><b>${lang === 'es' ? 'ESTÁNDAR DE RESPONSABILIDAD:' : 'ACCOUNTABILITY STANDARD:'}</b> ${escapeHtml(r.standard)}</div>` : ''}
+    </div>
+  `).join('');
+
+  const equipRows = equipment.map(([cat, item]) => `<tr><td class="cat">${escapeHtml(cat)}</td><td>${escapeHtml(item)}</td></tr>`).join('');
+
+  const physRows = physical.map((p) => `<tr><td>${escapeHtml(p.req)}</td><td>${escapeHtml(p.freq || '')}</td><td>${escapeHtml(p.notes || '')}</td></tr>`).join('');
+
+  const safetyHtml = safety.map((s) => s.bold
+    ? `<div class="jd-safety-lead">${escapeHtml(s.text)}</div>`
+    : `<div class="jd-box" style="padding-top:2px">${escapeHtml(s.text)}</div>`
+  ).join('');
+
+  const sheet = document.getElementById('jd-sheet');
+  sheet.hidden = false;
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  sheet.innerHTML = `
+    <div class="jd-topbar">
+      <div class="wordmark">SouthWest Landscape</div>
+      <div class="sub"><span class="doctype">${t.doctype}</span><span class="docmeta">${t.sub}${meta['Last Revised'] ? ' · ' + escapeHtml(meta['Last Revised']) : ''}</span></div>
+    </div>
+    <div class="jd-eyebrow">${escapeHtml(meta['Division'] || '')}${meta['Compensation Level'] ? ' · ' + escapeHtml(meta['Compensation Level']) : ''} — ${titleBar}</div>
+    <div class="jd-inner">
+      ${gaps.length ? `<p class="no-print" style="background:#FDEDEC;border:1px solid #E0A8A0;color:#7A1F2B;font-size:11px;padding:8px 10px;margin:12px 0 0">${gaps.join(' ')}</p>` : ''}
+      <div class="jd-meta">
+        ${Object.entries(meta).map(([k, v]) => `<div><b>${escapeHtml(k)}</b><span>${escapeHtml(v)}</span></div>`).join('')}
+      </div>
+      ${purpose ? `<div class="jd-box">${escapeHtml(purpose)}</div>` : ''}
+      ${respHtml}
+      ${equipment.length ? `
+        <div class="jd-box" style="padding-bottom:0">${escapeHtml(equipIntro)}</div>
+        <table class="jd-table"><thead><tr><th>${t.category}</th><th>${t.equipTitle}</th></tr></thead><tbody>${equipRows}</tbody></table>
+      ` : ''}
+      ${qualifications.length ? `<ul class="jd-list">${qualifications.map((q) => `<li>${escapeHtml(q)}</li>`).join('')}</ul>` : ''}
+      ${safetyHtml}
+      ${physical.length ? `
+        <table class="jd-table"><thead><tr><th>${t.physReq}</th><th>${lang === 'es' ? 'Frecuencia' : 'Frequency'}</th><th>${t.physNotes}</th></tr></thead><tbody>${physRows}</tbody></table>
+      ` : ''}
+      <div class="jd-ada">${escapeHtml(adaNote)}</div>
+      <div class="jd-ack">
+        <b>${t.ack}:</b> ${escapeHtml(ack)}
+        <div class="jd-sig">
+          <div><b>${t.empName}</b><div class="line"></div><b>${t.empSig}</b><div class="line"></div><b>${t.date}</b><div class="line"></div></div>
+          <div><b>${t.mgrName}</b><div class="line"></div><b>${t.mgrSig}</b><div class="line"></div><b>${t.date}</b><div class="line"></div></div>
+        </div>
+      </div>
+      <div class="jd-footer">${escapeHtml(footer)}</div>
+    </div>
+    <button class="gh no-print" id="jd-save-btn" type="button" style="margin:14px">Save to Documents</button>
+    <button class="gh no-print" id="jd-back-btn" type="button" style="margin:14px">${t.back}</button>
+  `;
+  document.getElementById('jd-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  document.getElementById('jd-save-btn').addEventListener('click', () => saveJobDescription(role, lang));
+}
+
+async function saveJobDescription(role, lang) {
+  try {
+    await setDoc(doc(collection(db, 'training_documents')), {
+      role_key: role.key, lang, title: jdField(role, 'title', lang),
+      meta: role[`meta_${lang}`] || {},
+      purpose: jdField(role, 'purpose', lang),
+      responsibilities: role[`responsibilities_${lang}`]?.length ? role[`responsibilities_${lang}`] : role.responsibilities_en,
+      equipment_intro: jdField(role, 'equipment_intro', lang),
+      equipment: role[`equipment_${lang}`]?.length ? role[`equipment_${lang}`] : role.equipment_en,
+      qualifications: role[`qualifications_${lang}`]?.length ? role[`qualifications_${lang}`] : role.qualifications_en,
+      safety_sensitive: role[`safety_sensitive_${lang}`] || [],
+      physical_demands: role[`physical_demands_${lang}`] || [],
+      ada_note: jdField(role, 'ada_note', lang),
+      acknowledgment: jdField(role, 'acknowledgment', lang),
+      footer: jdField(role, 'footer', lang),
+      category: 'job_description', content_type: 'jobdesc',
+      entered_by: profile.uid, uploaded_at: serverTimestamp(),
+    });
+    showToast('Saved — view it any time in Documents.');
   } catch (err) {
     console.error(err);
     showToast('Could not save — ' + err.message, 'error');
