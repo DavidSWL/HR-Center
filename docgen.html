@@ -21,6 +21,7 @@
   .letter { width:8.5in; min-height:11in; box-shadow:none; margin:0; padding:1in; }
   .force-break { break-before:page; page-break-before:always; }
 }
+.gen-category{background:var(--panel);border:1px solid var(--line);padding:14px 14px 16px;margin-bottom:14px}
 .gen-menu{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:20px}
 .gen-tile{border:1px solid var(--line);background:var(--raise);padding:16px;cursor:pointer;text-align:left}
 .gen-tile:hover{border-color:var(--accent)}
@@ -182,14 +183,16 @@ const GENERATORS = [
 const CATEGORY_ORDER = ['New hire & offers', 'Performance & conduct', 'Separation', 'Pay & time', 'Safety', 'Reference library'];
 
 document.getElementById('tiles').innerHTML = CATEGORY_ORDER.map((cat) => `
-  <div class="lh">${cat}</div>
-  <div class="gen-menu">
-    ${GENERATORS.filter((g) => g.category === cat).map((g) => `
-      <button class="gen-tile${g.linkout ? ' linkout' : ''}" data-key="${g.key}" type="button">
-        <h4>${g.title}</h4>
-        <p>${g.desc}</p>
-      </button>
-    `).join('')}
+  <div class="gen-category">
+    <div class="lh" style="margin-top:0">${cat}</div>
+    <div class="gen-menu" style="margin-bottom:0">
+      ${GENERATORS.filter((g) => g.category === cat).map((g) => `
+        <button class="gen-tile${g.linkout ? ' linkout' : ''}" data-key="${g.key}" type="button">
+          <h4>${g.title}</h4>
+          <p>${g.desc}</p>
+        </button>
+      `).join('')}
+    </div>
   </div>
 `).join('');
 
