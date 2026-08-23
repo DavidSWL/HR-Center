@@ -170,6 +170,7 @@ const GENERATORS = [
   { key: 'refusal', title: 'Medical Treatment Refusal', desc: 'Matches the SWL acknowledgment form — English or Spanish' },
   { key: 'sop', title: 'SOP', desc: 'Standard Operating Procedure — matches the real SWL SOP format, saves to Documents' },
   { key: 'jobdesc', title: 'Job description', desc: 'Matches the real SWL Job Description format — English or Spanish, saves to Documents' },
+  { key: 'timecard', title: 'Time card adjustment', desc: 'Employee-signed record of an Aspire punch correction — print, sign, file' },
 ];
 
 document.getElementById('tiles').innerHTML = GENERATORS.map((g) => `
@@ -227,7 +228,7 @@ function openGenerator(key) {
   // exactly as supplied — those forms are English-only, so the language
   // toggle only applies to PIP, Onboarding, and the letters (which manage
   // English/Spanish through their own letter-type list instead).
-  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc') ? '' : 'none';
+  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard') ? '' : 'none';
   renderCurrent();
 }
 
@@ -241,6 +242,7 @@ function renderCurrent() {
   if (currentKey === 'refusal') renderRefusal(lang);
   if (currentKey === 'sop') renderSop();
   if (currentKey === 'jobdesc') renderJobDescription(lang);
+  if (currentKey === 'timecard') renderTimecard(lang);
 }
 
 // ---- PIP ----
@@ -2038,6 +2040,162 @@ function renderJobDescriptionSheet(role, lang) {
   `;
   document.getElementById('jd-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
   document.getElementById('jd-save-btn').addEventListener('click', () => saveJobDescription(role, lang));
+}
+
+// ---- Time card adjustment — a record of a correction to an Aspire
+// timeclock punch, signed by the employee. Print-and-sign like Medical
+// Treatment Refusal: this only logs to activity for an audit trail, no
+// dedicated collection, since HR files the signed PDF in OneDrive
+// themselves. Punch times are typed in from Aspire, never pulled live —
+// this app has no connection to Aspire and never stores pay data. ----
+
+function renderTimecard(lang) {
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <div class="frow">
+          <div class="field"><label class="f-lab">Employee</label><select class="f-in" id="tc-emp">${empSelectOptions()}</select></div>
+          <div class="field"><label class="f-lab">Date of punch(es)</label><input class="f-in" id="tc-date" type="date"></div>
+        </div>
+        <div class="field">
+          <label class="f-lab">Punch corrections — one per line: Punch type | Original time (Aspire) | Corrected time | Reason</label>
+          <textarea class="f-in" id="tc-punches" rows="4" style="resize:vertical" placeholder="Clock In | 8:15 AM | 8:00 AM | Forgot to clock in, started work at 8:00&#10;Clock Out | — | 4:30 PM | Missed punch, left at end of shift as scheduled"></textarea>
+        </div>
+        <button class="gh solid" id="tc-generate-btn" type="button">Generate</button>
+        <button class="gh" id="tc-log-btn" type="button">Log to activity</button>
+      </div>
+    </div>
+    <div class="form-doc" id="tc-sheet" hidden></div>
+  `;
+
+  document.getElementById('tc-generate-btn').addEventListener('click', () => renderTimecardSheet(lang));
+  document.getElementById('tc-log-btn').addEventListener('click', async () => {
+    const emp = employees.find((e) => e.id === document.getElementById('tc-emp').value);
+    if (!emp) { showToast('Select an employee.', 'error'); return; }
+    try {
+      await addDoc(collection(db, 'activity'), {
+        module: 'documents', item: `Time card adjustment generated — ${emp.first_name} ${emp.last_name} (${formatDate(document.getElementById('tc-date').value)})`,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast('Logged to activity.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not log — ' + err.message, 'error');
+    }
+  });
+}
+
+let tcSigCtx = null;
+let tcSigDrawing = false;
+let tcSigHasStroke = false;
+
+function setUpSignaturePad() {
+  const canvas = document.getElementById('tc-sig-pad');
+  if (!canvas) return;
+  const ratio = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * ratio;
+  canvas.height = rect.height * ratio;
+  tcSigCtx = canvas.getContext('2d');
+  tcSigCtx.scale(ratio, ratio);
+  tcSigCtx.lineWidth = 1.6;
+  tcSigCtx.lineCap = 'round';
+  tcSigCtx.strokeStyle = '#111';
+  tcSigHasStroke = false;
+
+  const pos = (e) => {
+    const r = canvas.getBoundingClientRect();
+    const p = e.touches ? e.touches[0] : e;
+    return { x: p.clientX - r.left, y: p.clientY - r.top };
+  };
+  const start = (e) => { e.preventDefault(); tcSigDrawing = true; const p = pos(e); tcSigCtx.beginPath(); tcSigCtx.moveTo(p.x, p.y); };
+  const move = (e) => {
+    if (!tcSigDrawing) return;
+    e.preventDefault();
+    const p = pos(e);
+    tcSigCtx.lineTo(p.x, p.y);
+    tcSigCtx.stroke();
+    tcSigHasStroke = true;
+  };
+  const end = () => { tcSigDrawing = false; };
+
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', end);
+  canvas.addEventListener('touchstart', start, { passive: false });
+  canvas.addEventListener('touchmove', move, { passive: false });
+  canvas.addEventListener('touchend', end);
+
+  document.getElementById('tc-sig-clear').addEventListener('click', () => {
+    tcSigCtx.clearRect(0, 0, canvas.width, canvas.height);
+    tcSigHasStroke = false;
+  });
+}
+
+function renderTimecardSheet(lang) {
+  const isEs = lang === 'es';
+  const emp = employees.find((e) => e.id === document.getElementById('tc-emp').value);
+  if (!emp) { showToast('Select an employee.', 'error'); return; }
+  const date = document.getElementById('tc-date').value;
+  const mgr = emp.manager_emp_id ? employees.find((e) => e.id === emp.manager_emp_id) : null;
+
+  const rows = document.getElementById('tc-punches').value.split('\n')
+    .map((l) => l.trim()).filter(Boolean)
+    .map((l) => {
+      const [type, original, corrected, reason] = l.split('|').map((s) => (s || '').trim());
+      return { type: type || '', original: original || '—', corrected: corrected || '—', reason: reason || '' };
+    });
+
+  const sheet = document.getElementById('tc-sheet');
+  sheet.hidden = false;
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  sheet.innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">${isEs ? 'Solicitud de Ajuste de Tarjeta de Tiempo' : 'Time Card Adjustment Request'}</h1>
+      <div class="form-section">${isEs ? 'Información del Empleado' : 'Employee Information'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Nombre del Empleado' : 'Employee Name'}</b>${emp.first_name} ${emp.last_name}</div>
+        <div class="form-cell"><b>${isEs ? 'ID del Empleado' : 'Employee ID'}</b>${emp.id}</div>
+        <div class="form-cell"><b>${isEs ? 'División' : 'Division'}</b>${emp.division || ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Puesto' : 'Position'}</b>${emp.position || ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Supervisor' : 'Supervisor'}</b>${mgr ? `${mgr.first_name} ${mgr.last_name}` : ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha del Ponche' : 'Date of Punch(es)'}</b>${formatDate(date)}</div>
+      </div>
+      <div class="form-section">${isEs ? 'Corrección de Ponches — Registrado en Aspire' : 'Punch Correction — As Recorded in Aspire'}</div>
+      <table class="form-notice-table">
+        <thead><tr>
+          <th>${isEs ? 'Tipo de Ponche' : 'Punch Type'}</th>
+          <th>${isEs ? 'Hora Original (Aspire)' : 'Original Time (Aspire)'}</th>
+          <th>${isEs ? 'Hora Corregida' : 'Corrected Time'}</th>
+          <th>${isEs ? 'Motivo' : 'Reason'}</th>
+        </tr></thead>
+        <tbody>
+          ${rows.length ? rows.map((r) => `
+            <tr><td>${escapeHtml(r.type)}</td><td>${escapeHtml(r.original)}</td><td>${escapeHtml(r.corrected)}</td><td>${escapeHtml(r.reason)}</td></tr>
+          `).join('') : `<tr><td colspan="4" class="dim">${isEs ? 'Sin correcciones registradas.' : 'No corrections entered.'}</td></tr>`}
+        </tbody>
+      </table>
+      <div class="form-section">${isEs ? 'Certificación del Empleado' : 'Employee Certification'}</div>
+      <div class="form-box">${isEs
+        ? 'Certifico que la(s) hora(s) corregida(s) anteriores reflejan con precisión el tiempo que realmente trabajé. Entiendo que este registro se usará para corregir mi tarjeta de tiempo en Aspire.'
+        : 'I certify that the corrected time(s) above accurately reflect the time I actually worked. I understand this record will be used to correct my time card in Aspire.'}</div>
+      <div class="form-section">${isEs ? 'Firma Electrónica del Empleado' : 'Employee Electronic Signature'}</div>
+      <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
+        <canvas id="tc-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
+      </div>
+      <button type="button" class="gh no-print" id="tc-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      <div class="form-sig" style="grid-template-columns:1fr">
+        <div style="border-right:none">${isEs ? 'Firma del Supervisor o RH / Fecha' : 'Supervisor or HR Signature / Date'}: _______________________________________</div>
+      </div>
+      <div class="form-fine">${isEs
+        ? 'Este registro corrige únicamente el tiempo trabajado; no crea ni modifica ninguna tasa de pago. Firmar arriba, imprimir como PDF y archivar según el proceso de RH.'
+        : 'This record corrects worked time only; it does not create or change any pay rate. Sign above, print to PDF, and file per HR process.'}</div>
+    </div>
+    <button class="gh no-print" id="tc-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
+  `;
+  document.getElementById('tc-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  setUpSignaturePad();
 }
 
 async function saveJobDescription(role, lang) {
