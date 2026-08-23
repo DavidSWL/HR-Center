@@ -103,7 +103,7 @@
           Write-up, Termination, 30/60/90 Review, and Offer/Increase/Promotion letters match the real SWL
           forms exactly. Every generator produces a print view — use your browser's Print → Save as PDF.
         </p>
-        <div class="gen-menu" id="tiles"></div>
+        <div id="tiles"></div>
       </div>
 
       <div id="gen-view" hidden>
@@ -161,24 +161,36 @@ const T = {
 };
 
 const GENERATORS = [
-  { key: 'writeup', title: 'Write-up', desc: 'Lives in Disciplinary actions — matches the SWL warning form', linkout: 'discipline.html' },
-  { key: 'pip', title: 'Performance Improvement Plan', desc: 'PIP with a four-check-in schedule' },
-  { key: 'review', title: '30 / 60 / 90 review', desc: 'Matches the SWL new-hire review template' },
-  { key: 'termination', title: 'Termination', desc: 'Matches the SWL termination form — log, generate, and import' },
-  { key: 'offer', title: 'Offer / increase / promotion', desc: '7 letter types, matches the branded SWL letterhead exactly' },
-  { key: 'onboarding', title: 'Onboarding packet', desc: 'Assembles the required document checklist' },
-  { key: 'refusal', title: 'Medical Treatment Refusal', desc: 'Matches the SWL acknowledgment form — English or Spanish' },
-  { key: 'sop', title: 'SOP', desc: 'Standard Operating Procedure — matches the real SWL SOP format, saves to Documents' },
-  { key: 'jobdesc', title: 'Job description', desc: 'Matches the real SWL Job Description format — English or Spanish, saves to Documents' },
-  { key: 'timecard', title: 'Time card adjustment', desc: 'Employee-signed record of an Aspire punch correction — print, sign, file' },
-  { key: 'mealpenalty', title: 'Missed meal period', desc: 'Documents a missed/delayed break, the CA meal premium owed, and whether a late lunch was still given' },
+  { key: 'onboarding', title: 'Onboarding packet', desc: 'Assembles the required document checklist', category: 'New hire & offers' },
+  { key: 'offer', title: 'Offer / increase / promotion', desc: '7 letter types, matches the branded SWL letterhead exactly', category: 'New hire & offers' },
+
+  { key: 'writeup', title: 'Write-up', desc: 'Lives in Disciplinary actions — matches the SWL warning form', linkout: 'discipline.html', category: 'Performance & conduct' },
+  { key: 'pip', title: 'Performance Improvement Plan', desc: 'PIP with a four-check-in schedule', category: 'Performance & conduct' },
+  { key: 'review', title: '30 / 60 / 90 review', desc: 'Matches the SWL new-hire review template', category: 'Performance & conduct' },
+
+  { key: 'termination', title: 'Termination', desc: 'Matches the SWL termination form — log, generate, and import', category: 'Separation' },
+
+  { key: 'timecard', title: 'Time card adjustment', desc: 'Employee-signed record of an Aspire punch correction — print, sign, file', category: 'Pay & time' },
+  { key: 'mealpenalty', title: 'Missed meal period', desc: 'Documents a missed/delayed break, the CA meal premium owed, and whether a late lunch was still given', category: 'Pay & time' },
+
+  { key: 'refusal', title: 'Medical Treatment Refusal', desc: 'Matches the SWL acknowledgment form — English or Spanish', category: 'Safety' },
+
+  { key: 'sop', title: 'SOP', desc: 'Standard Operating Procedure — matches the real SWL SOP format, saves to Documents', category: 'Reference library' },
+  { key: 'jobdesc', title: 'Job description', desc: 'Matches the real SWL Job Description format — English or Spanish, saves to Documents', category: 'Reference library' },
 ];
 
-document.getElementById('tiles').innerHTML = GENERATORS.map((g) => `
-  <button class="gen-tile${g.linkout ? ' linkout' : ''}" data-key="${g.key}" type="button">
-    <h4>${g.title}</h4>
-    <p>${g.desc}</p>
-  </button>
+const CATEGORY_ORDER = ['New hire & offers', 'Performance & conduct', 'Separation', 'Pay & time', 'Safety', 'Reference library'];
+
+document.getElementById('tiles').innerHTML = CATEGORY_ORDER.map((cat) => `
+  <div class="lh">${cat}</div>
+  <div class="gen-menu">
+    ${GENERATORS.filter((g) => g.category === cat).map((g) => `
+      <button class="gen-tile${g.linkout ? ' linkout' : ''}" data-key="${g.key}" type="button">
+        <h4>${g.title}</h4>
+        <p>${g.desc}</p>
+      </button>
+    `).join('')}
+  </div>
 `).join('');
 
 document.querySelectorAll('.gen-tile').forEach((btn) => {
