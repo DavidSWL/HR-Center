@@ -68,16 +68,8 @@
             <option value="open">Open</option>
             <option value="all">All, including completed</option>
           </select>
-          <div class="toggle" style="margin-left:auto">
-            <button class="on" id="view-list-btn" type="button">List</button>
-            <button id="view-cal-btn" type="button">Calendar</button>
-          </div>
         </div>
-        <table id="list-view">
-          <thead><tr><th>Due</th><th>Assigned to</th><th>What's needed</th><th>Recurring</th><th></th></tr></thead>
-          <tbody id="rows"></tbody>
-        </table>
-        <div id="cal-view" hidden>
+        <div id="cal-view">
           <div class="tools" style="border-top:0">
             <button class="gh" id="cal-prev-btn" type="button">&larr;</button>
             <span id="cal-month-label" style="font-family:var(--display);font-size:15px;min-width:160px;text-align:center"></span>
@@ -88,6 +80,10 @@
           <div class="trk" style="margin:0 16px 12px"><i id="cal-progress-bar"></i></div>
           <div id="cal-grid"></div>
         </div>
+        <table id="list-view" style="margin-top:16px">
+          <thead><tr><th>Due</th><th>Assigned to</th><th>What's needed</th><th>Recurring</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
       </div>
     </section>
   </div>
@@ -131,6 +127,7 @@ async function loadTasks() {
     .map((d) => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''));
   render();
+  renderCalendar();
 }
 
 function render() {
@@ -217,27 +214,18 @@ async function reassignTask(id) {
   }
 }
 
-document.getElementById('person-filter').addEventListener('change', render);
+document.getElementById('person-filter').addEventListener('change', () => { render(); renderCalendar(); });
 document.getElementById('status-filter').addEventListener('change', render);
 
 // ---- Calendar view — month grid of due dates, so a deadline is a
 // place on a calendar you can see coming, not just a row in a list.
-// Shows every task regardless of the Open/All filter above (open and
-// complete together) since "how close are we this month" is exactly
-// the open-vs-done comparison that filter would hide. ----
+// Shown above the list, always both on screen. Shows every task
+// regardless of the Open/All filter above (open and complete together)
+// since "how close are we this month" is exactly the open-vs-done
+// comparison that filter would hide. ----
 
 let calMonth = new Date();
 calMonth.setDate(1);
-
-function setView(isCal) {
-  document.getElementById('list-view').hidden = isCal;
-  document.getElementById('cal-view').hidden = !isCal;
-  document.getElementById('view-list-btn').classList.toggle('on', !isCal);
-  document.getElementById('view-cal-btn').classList.toggle('on', isCal);
-  if (isCal) renderCalendar();
-}
-document.getElementById('view-list-btn').addEventListener('click', () => setView(false));
-document.getElementById('view-cal-btn').addEventListener('click', () => setView(true));
 
 document.getElementById('cal-prev-btn').addEventListener('click', () => {
   calMonth.setMonth(calMonth.getMonth() - 1);
@@ -331,14 +319,12 @@ async function toggleCalTask(id) {
       await updateDoc(doc(db, 'tasks', id), { status: 'open', completed_at: null, completed_by: null });
       showToast('Reopened.');
       await loadTasks();
-      renderCalendar();
     } catch (err) {
       console.error(err);
       showToast('Could not update — ' + err.message, 'error');
     }
   } else {
     await completeTask(id);
-    renderCalendar();
   }
 }
 
