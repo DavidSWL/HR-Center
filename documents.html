@@ -87,6 +87,7 @@
             <option value="">All categories</option>
             <option value="job_description">Job descriptions</option>
             <option value="sop">SOPs</option>
+            <option value="pay_time">Pay &amp; time</option>
             <option value="form_template">Forms / templates</option>
             <option value="policy">Policies</option>
             <option value="handbook">Handbooks</option>
@@ -135,6 +136,7 @@ document.getElementById('header-date').textContent =
 const CATEGORY_LABELS = {
   job_description: 'Job description', sop: 'SOP', form_template: 'Form / template',
   other: 'Other reference', policy: 'Policy', handbook: 'Handbook', notice: 'Notice',
+  pay_time: 'Pay & time',
 };
 const POLICY_CATEGORIES = new Set(['policy', 'handbook', 'notice']);
 
@@ -296,15 +298,79 @@ function renderJobDescHtml(d) {
   `;
 }
 
+// Mirrors docgen.html's renderTimecardSheet, minus the input form and
+// with the captured signature shown as an image instead of a live pad —
+// this is the read-only "look at what was signed" view.
+function renderTimecardHtml(d) {
+  const rows = d.rows || [];
+  return `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">Time Card Adjustment Request</h1>
+      <div class="form-section">Employee Information</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Employee Name</b>${escapeHtmlAttr(d.emp_name)}</div>
+        <div class="form-cell"><b>Employee ID</b>${escapeHtmlAttr(d.emp_id)}</div>
+        <div class="form-cell"><b>Division</b>${escapeHtmlAttr(d.division)}</div>
+        <div class="form-cell"><b>Position</b>${escapeHtmlAttr(d.position)}</div>
+        <div class="form-cell"><b>Date of Punch(es)</b>${formatDate(d.date)}</div>
+      </div>
+      <div class="form-section">Punch Correction — As Recorded in Aspire</div>
+      <table class="form-notice-table">
+        <thead><tr><th>Punch Type</th><th>Original Time (Aspire)</th><th>Corrected Time</th><th>Reason</th></tr></thead>
+        <tbody>
+          ${rows.length ? rows.map((r) => `<tr><td>${escapeHtmlAttr(r.type)}</td><td>${escapeHtmlAttr(r.original)}</td><td>${escapeHtmlAttr(r.corrected)}</td><td>${escapeHtmlAttr(r.reason)}</td></tr>`).join('') : '<tr><td colspan="4" class="dim">No corrections entered.</td></tr>'}
+        </tbody>
+      </table>
+      <div class="form-section">Employee Electronic Signature</div>
+      ${d.signature_data_url ? `<img src="${d.signature_data_url}" alt="Employee signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not yet signed.</div>'}
+      <div class="form-fine" style="margin-top:10px">This record corrects worked time only; it does not create or change any pay rate. Signed ${formatDate(d.signed_at?.toDate ? d.signed_at.toDate().toISOString().slice(0, 10) : '')}.</div>
+    </div>
+  `;
+}
+
+// Mirrors docgen.html's renderMealPenaltySheet, same read-only pattern.
+function renderMealPenaltyHtml(d) {
+  return `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">Missed Meal Period Record</h1>
+      <div class="form-section">Employee Information</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Employee Name</b>${escapeHtmlAttr(d.emp_name)}</div>
+        <div class="form-cell"><b>Employee ID</b>${escapeHtmlAttr(d.emp_id)}</div>
+        <div class="form-cell"><b>Division</b>${escapeHtmlAttr(d.division)}</div>
+        <div class="form-cell"><b>Date</b>${formatDate(d.date)}</div>
+        <div class="form-cell"><b>Shift</b>${escapeHtmlAttr(d.shift_start)} – ${escapeHtmlAttr(d.shift_end)}</div>
+      </div>
+      <div class="form-section">Reason — Meal Period Could Not Be Taken by the 5th Hour</div>
+      <div class="form-box">${escapeHtmlAttr(d.reason) || '—'}</div>
+      <div class="form-section">Delayed Meal Period</div>
+      <div class="form-box">${d.late_lunch ? `The employee was given a meal period later in the shift, at ${escapeHtmlAttr(d.late_lunch_time)}.` : 'No meal period could be given at any point during the shift.'}</div>
+      <div class="form-section">Meal Period Premium (California Labor Code 226.7)</div>
+      <div class="form-box">One additional hour of pay at the employee's regular rate is owed for this day. Status: ${d.premium_pending ? `pending, to be paid by ${formatDate(d.premium_due_date)}` : `paid on ${formatDate(d.pay_date)}`}.</div>
+      <div class="form-section">Employee Electronic Signature</div>
+      ${d.signature_data_url ? `<img src="${d.signature_data_url}" alt="Employee signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not yet signed.</div>'}
+      <div class="form-fine" style="margin-top:10px">This record documents the meal period and the premium owed; it does not create or change any regular pay rate. Signed ${formatDate(d.signed_at?.toDate ? d.signed_at.toDate().toISOString().slice(0, 10) : '')}.</div>
+    </div>
+  `;
+}
+
 function openView(d) {
   const sheet = document.getElementById('view-sheet');
   const isSop = d.content_type === 'sop';
   const isJobDesc = d.content_type === 'jobdesc';
+  const isTimecard = d.content_type === 'timecard';
+  const isMealPenalty = d.content_type === 'mealpenalty';
   sheet.className = isSop ? 'sop-doc' : isJobDesc ? 'jd-doc' : 'form-doc';
   sheet.innerHTML = isSop
     ? renderSopHtml(d)
     : isJobDesc
     ? renderJobDescHtml(d)
+    : isTimecard
+    ? renderTimecardHtml(d)
+    : isMealPenalty
+    ? renderMealPenaltyHtml(d)
     : `<div class="form-doc-inner"><div class="form-title">${escapeHtmlAttr(d.title)}</div>${renderBodyHtml(d.body)}</div>`;
   document.getElementById('view-overlay').hidden = false;
 }
@@ -416,6 +482,10 @@ async function loadDocs() {
   const snap = await getDocs(collection(db, 'training_documents'));
   docs = snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
+    // A record saved via "Save for signature later" isn't a finished
+    // document yet — it only belongs here once it's actually signed.
+    // Until then it's only reachable through its linked task.
+    .filter((d) => d.status !== 'pending_signature')
     .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
   render();
 }
@@ -432,7 +502,7 @@ function render() {
   document.getElementById('docs-summary').textContent = `${visible.length} of ${docs.length}`;
   document.getElementById('doc-rows').innerHTML = visible.length ? visible.map((d) => `
     <tr>
-      <td>${d.content_type === 'text' || d.content_type === 'sop' || d.content_type === 'jobdesc'
+      <td>${d.content_type === 'text' || d.content_type === 'sop' || d.content_type === 'jobdesc' || d.content_type === 'timecard' || d.content_type === 'mealpenalty'
         ? `<a href="#" class="view-doc-link" data-id="${d.id}">${escapeHtmlAttr(d.title)}</a>`
         : `<a href="${d.file_url}" target="_blank" rel="noopener">${escapeHtmlAttr(d.title)}</a>`
       }${d.policy_doc_id ? ' <span class="pill ok">In Policy Compliance</span>' : ''}</td>

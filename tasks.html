@@ -153,6 +153,9 @@ function render() {
         <td style="text-align:right;white-space:nowrap">
           ${t.status === 'complete'
             ? '<span class="pill ok">Done</span>'
+            : t.linked_doc_id
+            ? `<button class="gh solid open-doc-btn" data-id="${t.id}" data-doc="${t.linked_doc_id}" data-type="${t.linked_doc_type}" type="button">Open document</button>
+               <button class="gh reassign-btn" data-id="${t.id}" type="button">Reassign</button>`
             : `<button class="gh complete-btn" data-id="${t.id}" type="button">Complete</button>
                <button class="gh reassign-btn" data-id="${t.id}" type="button">Reassign</button>`}
         </td>
@@ -165,6 +168,11 @@ function render() {
   });
   document.querySelectorAll('.reassign-btn').forEach((btn) => {
     btn.addEventListener('click', () => reassignTask(btn.dataset.id));
+  });
+  document.querySelectorAll('.open-doc-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      window.location.href = `docgen.html?open=${btn.dataset.type}&doc=${btn.dataset.doc}&task=${btn.dataset.id}`;
+    });
   });
 }
 
@@ -285,7 +293,7 @@ function renderCalendar() {
       const style = t.status === 'complete'
         ? 'text-decoration:line-through;color:var(--faint)'
         : overdue ? 'color:var(--alertTx);font-weight:600' : 'color:var(--text)';
-      return `<div class="cal-task" data-id="${t.id}" style="${style};cursor:pointer;font-size:11px;padding:2px 4px;margin-top:2px;border-left:2px solid ${t.status === 'complete' ? 'var(--faint)' : overdue ? 'var(--alertTx)' : 'var(--accent)'}" title="${escapeAttr(staffName(t.assigned_to))} — click to ${t.status === 'complete' ? 'reopen' : 'complete'}">${escapeAttr(t.instructions).slice(0, 40)}${t.instructions.length > 40 ? '…' : ''}</div>`;
+      return `<div class="cal-task" data-id="${t.id}" style="${style};cursor:pointer;font-size:11px;padding:2px 4px;margin-top:2px;border-left:2px solid ${t.status === 'complete' ? 'var(--faint)' : overdue ? 'var(--alertTx)' : 'var(--accent)'}" title="${escapeAttr(staffName(t.assigned_to))} — click to ${t.status === 'complete' ? 'reopen' : t.linked_doc_id ? 'open the document' : 'complete'}">${escapeAttr(t.instructions).slice(0, 40)}${t.instructions.length > 40 ? '…' : ''}</div>`;
     }).join('');
     cells.push(`
       <div style="background:var(--raise);border:1px solid var(--line);min-height:88px;padding:5px 6px;${isToday ? 'box-shadow:inset 0 0 0 2px var(--accent)' : ''}">
@@ -314,6 +322,10 @@ function escapeAttr(str) {
 async function toggleCalTask(id) {
   const t = tasks.find((x) => x.id === id);
   if (!t) return;
+  if (t.status !== 'complete' && t.linked_doc_id) {
+    window.location.href = `docgen.html?open=${t.linked_doc_type}&doc=${t.linked_doc_id}&task=${t.id}`;
+    return;
+  }
   if (t.status === 'complete') {
     try {
       await updateDoc(doc(db, 'tasks', id), { status: 'open', completed_at: null, completed_by: null });

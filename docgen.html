@@ -243,6 +243,8 @@ function empSelectOptions(list = employees) {
 
 function openGenerator(key) {
   currentKey = key;
+  pendingSigDocId = null;
+  pendingSigTaskId = null;
   document.getElementById('menu-view').hidden = true;
   document.getElementById('gen-view').hidden = false;
   document.getElementById('page-title').textContent = GENERATORS.find((g) => g.key === key).title;
@@ -2072,6 +2074,26 @@ function renderJobDescriptionSheet(role, lang) {
 // themselves. Punch times are typed in from Aspire, never pulled live —
 // this app has no connection to Aspire and never stores pay data. ----
 
+// When a document needing a signature is saved for later, this tracks
+// which training_documents record (and its linked task, if any) the
+// eventual signature should be written back to — reset every time a
+// fresh generator is opened, and set by loadPendingSignatureDoc() when
+// reopened from a task's "Open document" link.
+let pendingSigDocId = null;
+let pendingSigTaskId = null;
+
+function readTimecardForm() {
+  const emp = employees.find((e) => e.id === document.getElementById('tc-emp').value);
+  if (!emp) { showToast('Select an employee.', 'error'); return null; }
+  const rows = document.getElementById('tc-punches').value.split('\n')
+    .map((l) => l.trim()).filter(Boolean)
+    .map((l) => {
+      const [type, original, corrected, reason] = l.split('|').map((s) => (s || '').trim());
+      return { type: type || '', original: original || '—', corrected: corrected || '—', reason: reason || '' };
+    });
+  return { emp, date: document.getElementById('tc-date').value, rows };
+}
+
 function renderTimecard(lang) {
   document.getElementById('gen-body').innerHTML = `
     <div class="card no-print" style="margin-bottom:16px">
@@ -2086,10 +2108,16 @@ function renderTimecard(lang) {
         </div>
         <button class="gh solid" id="tc-generate-btn" type="button">Generate</button>
         <button class="gh" id="tc-log-btn" type="button">Log to activity</button>
+        <div class="frow" style="margin-top:12px">
+          <div class="field"><label class="f-lab">Not signing right now? Save it and get the signature later — who should get it signed</label><select class="f-in" id="tc-sig-assignee">${staff.map((s) => `<option value="${s.id}">${s.name}</option>`).join('')}</select></div>
+          <div class="field"><label class="f-lab">By when</label><input class="f-in" id="tc-sig-due" type="date"></div>
+        </div>
+        <button class="gh" id="tc-save-later-btn" type="button">Save for signature later</button>
       </div>
     </div>
     <div class="form-doc" id="tc-sheet" hidden></div>
   `;
+  document.getElementById('tc-sig-due').value = new Date().toISOString().slice(0, 10);
 
   document.getElementById('tc-generate-btn').addEventListener('click', () => renderTimecardSheet(lang));
   document.getElementById('tc-log-btn').addEventListener('click', async () => {
@@ -2106,6 +2134,114 @@ function renderTimecard(lang) {
       showToast('Could not log — ' + err.message, 'error');
     }
   });
+  document.getElementById('tc-save-later-btn').addEventListener('click', () => saveTimecardForSignature());
+}
+
+async function saveTimecardForSignature() {
+  const f = readTimecardForm();
+  if (!f) return;
+  const assigneeId = document.getElementById('tc-sig-assignee').value;
+  const dueDate = document.getElementById('tc-sig-due').value;
+  if (!assigneeId || !dueDate) { showToast('Pick who should get the signature and by when.', 'error'); return; }
+  const assignee = staff.find((s) => s.id === assigneeId);
+  try {
+    const docRef = doc(collection(db, 'training_documents'));
+    await setDoc(docRef, {
+      content_type: 'timecard', category: 'pay_time', status: 'pending_signature',
+      title: `Time Card Adjustment — ${f.emp.first_name} ${f.emp.last_name} (${formatDate(f.date)})`,
+      emp_id: f.emp.id, emp_name: `${f.emp.first_name} ${f.emp.last_name}`,
+      division: f.emp.division || '', position: f.emp.position || '',
+      date: f.date, rows: f.rows,
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    const taskRef = doc(collection(db, 'tasks'));
+    await setDoc(taskRef, {
+      assigned_to: assigneeId, due_date: dueDate,
+      instructions: `Get signature — Time Card Adjustment — ${f.emp.first_name} ${f.emp.last_name} (${formatDate(f.date)})`,
+      recurring: 'none', status: 'open', linked_doc_id: docRef.id, linked_doc_type: 'timecard',
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    await addDoc(collection(db, 'activity'), {
+      module: 'documents', item: `Time card adjustment saved for signature — ${f.emp.first_name} ${f.emp.last_name} (${formatDate(f.date)}) — assigned to ${assignee?.name || assigneeId}`,
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    showToast('Saved. A task was created — open it from Tasks when the employee is ready to sign.');
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+}
+
+async function loadPendingSignatureDoc(type, id) {
+  try {
+    const snap = await getDoc(doc(db, 'training_documents', id));
+    if (!snap.exists()) { showToast('That saved document could not be found.', 'error'); return; }
+    const d = snap.data();
+    pendingSigDocId = id;
+    pendingSigTaskId = new URLSearchParams(window.location.search).get('task') || null;
+    if (type === 'timecard') {
+      document.getElementById('tc-emp').value = d.emp_id;
+      document.getElementById('tc-date').value = d.date;
+      document.getElementById('tc-punches').value = (d.rows || [])
+        .map((r) => `${r.type} | ${r.original} | ${r.corrected} | ${r.reason}`).join('\n');
+      renderTimecardSheet('en');
+    } else if (type === 'mealpenalty') {
+      document.getElementById('mp-emp').value = d.emp_id;
+      document.getElementById('mp-date').value = d.date;
+      document.getElementById('mp-shift-start').value = d.shift_start || '';
+      document.getElementById('mp-shift-end').value = d.shift_end || '';
+      document.getElementById('mp-reason').value = d.reason || '';
+      document.getElementById('mp-late-lunch').value = d.late_lunch ? 'yes' : 'no';
+      document.getElementById('mp-late-lunch').dispatchEvent(new Event('change'));
+      if (d.late_lunch) document.getElementById('mp-late-lunch-time').value = d.late_lunch_time || '';
+      document.getElementById('mp-premium-status').value = d.premium_pending ? 'pending' : 'paid';
+      document.getElementById('mp-premium-status').dispatchEvent(new Event('change'));
+      if (d.premium_pending) {
+        document.getElementById('mp-assignee').value = d.premium_assignee_id || '';
+        document.getElementById('mp-due-date').value = d.premium_due_date || '';
+      } else {
+        document.getElementById('mp-pay-date').value = d.pay_date || '';
+      }
+      renderMealPenaltySheet('en');
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Could not load the saved document — ' + err.message, 'error');
+  }
+}
+
+// Shared by both timecard and meal-penalty sheets: captures the drawn
+// signature as an image, saves (or updates) the signed record in
+// Documents, and — if this came from a "save for later" task — completes
+// that task so the follow-up doesn't linger once it's actually signed.
+async function finalizeSignedDocument(canvasId, docData) {
+  const state = sigPads[canvasId];
+  if (!state || !state.hasStroke) { showToast('Get a signature first — the pad is empty.', 'error'); return; }
+  const canvas = document.getElementById(canvasId);
+  const signatureDataUrl = canvas.toDataURL('image/png');
+  try {
+    const docRef = pendingSigDocId ? doc(db, 'training_documents', pendingSigDocId) : doc(collection(db, 'training_documents'));
+    await setDoc(docRef, {
+      ...docData, status: 'signed', signature_data_url: signatureDataUrl,
+      signed_by: profile.uid, signed_at: serverTimestamp(),
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    }, { merge: true });
+    if (pendingSigTaskId) {
+      await updateDoc(doc(db, 'tasks', pendingSigTaskId), {
+        status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid,
+      });
+    }
+    await addDoc(collection(db, 'activity'), {
+      module: 'documents', item: `${docData.content_type === 'timecard' ? 'Time card adjustment' : 'Missed meal period record'} signed — ${docData.emp_name}`,
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    showToast('Signed and saved — find it any time in Documents.');
+    pendingSigDocId = null;
+    pendingSigTaskId = null;
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
 }
 
 // Reusable draw-to-sign canvas — keyed by canvas element id so more than
@@ -2210,6 +2346,7 @@ function renderTimecardSheet(lang) {
         <canvas id="tc-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
       </div>
       <button type="button" class="gh no-print" id="tc-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      <button type="button" class="gh solid no-print" id="tc-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
       <div class="form-sig" style="grid-template-columns:1fr">
         <div style="border-right:none">${isEs ? 'Firma del Supervisor o RH / Fecha' : 'Supervisor or HR Signature / Date'}: _______________________________________</div>
       </div>
@@ -2220,6 +2357,13 @@ function renderTimecardSheet(lang) {
     <button class="gh no-print" id="tc-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
   `;
   document.getElementById('tc-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  document.getElementById('tc-sig-save').addEventListener('click', () => finalizeSignedDocument('tc-sig-pad', {
+    content_type: 'timecard', category: 'pay_time',
+    title: `Time Card Adjustment — ${emp.first_name} ${emp.last_name} (${formatDate(date)})`,
+    emp_id: emp.id, emp_name: `${emp.first_name} ${emp.last_name}`,
+    division: emp.division || '', position: emp.position || '',
+    date, rows,
+  }));
   setUpSignaturePad('tc-sig-pad', 'tc-sig-clear');
 }
 
@@ -2271,6 +2415,11 @@ function renderMealPenalty(lang) {
         </div>
         <button class="gh solid" id="mp-generate-btn" type="button">Generate</button>
         <button class="gh" id="mp-save-btn" type="button">Save record</button>
+        <div class="frow" style="margin-top:12px">
+          <div class="field"><label class="f-lab">Not signing right now? Save it and get the signature later — who should get it signed</label><select class="f-in" id="mp-sig-assignee">${staff.map((s) => `<option value="${s.id}">${s.name}</option>`).join('')}</select></div>
+          <div class="field"><label class="f-lab">By when</label><input class="f-in" id="mp-sig-due" type="date"></div>
+        </div>
+        <button class="gh" id="mp-save-later-btn" type="button">Save for signature later</button>
       </div>
     </div>
     <div class="form-doc" id="mp-sheet" hidden></div>
@@ -2295,9 +2444,49 @@ function renderMealPenalty(lang) {
   document.getElementById('mp-date').value = today;
   document.getElementById('mp-pay-date').value = today;
   document.getElementById('mp-due-date').value = today;
+  document.getElementById('mp-sig-due').value = today;
 
   document.getElementById('mp-generate-btn').addEventListener('click', () => renderMealPenaltySheet(lang));
   document.getElementById('mp-save-btn').addEventListener('click', () => saveMealPenalty(lang));
+  document.getElementById('mp-save-later-btn').addEventListener('click', () => saveMealPenaltyForSignature());
+}
+
+async function saveMealPenaltyForSignature() {
+  const f = readMealPenaltyForm();
+  if (!f) return;
+  const assigneeId = document.getElementById('mp-sig-assignee').value;
+  const dueDate = document.getElementById('mp-sig-due').value;
+  if (!assigneeId || !dueDate) { showToast('Pick who should get the signature and by when.', 'error'); return; }
+  const assignee = staff.find((s) => s.id === assigneeId);
+  try {
+    const docRef = doc(collection(db, 'training_documents'));
+    await setDoc(docRef, {
+      content_type: 'mealpenalty', category: 'pay_time', status: 'pending_signature',
+      title: `Missed Meal Period Record — ${f.emp.first_name} ${f.emp.last_name} (${formatDate(f.date)})`,
+      emp_id: f.emp.id, emp_name: `${f.emp.first_name} ${f.emp.last_name}`,
+      division: f.emp.division || '',
+      date: f.date, shift_start: f.shiftStart, shift_end: f.shiftEnd, reason: f.reason,
+      late_lunch: f.lateLunch, late_lunch_time: f.lateLunchTime,
+      premium_pending: f.premiumPending, pay_date: f.payDate,
+      premium_assignee_id: f.assigneeId, premium_due_date: f.dueDate,
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    const taskRef = doc(collection(db, 'tasks'));
+    await setDoc(taskRef, {
+      assigned_to: assigneeId, due_date: dueDate,
+      instructions: `Get signature — Missed Meal Period Record — ${f.emp.first_name} ${f.emp.last_name} (${formatDate(f.date)})`,
+      recurring: 'none', status: 'open', linked_doc_id: docRef.id, linked_doc_type: 'mealpenalty',
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    await addDoc(collection(db, 'activity'), {
+      module: 'documents', item: `Missed meal period record saved for signature — ${f.emp.first_name} ${f.emp.last_name} (${formatDate(f.date)}) — assigned to ${assignee?.name || assigneeId}`,
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    showToast('Saved. A task was created — open it from Tasks when the employee is ready to sign.');
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
 }
 
 function readMealPenaltyForm() {
@@ -2361,6 +2550,7 @@ function renderMealPenaltySheet(lang) {
         <canvas id="mp-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
       </div>
       <button type="button" class="gh no-print" id="mp-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      <button type="button" class="gh solid no-print" id="mp-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
       <div class="form-sig" style="grid-template-columns:1fr">
         <div style="border-right:none">${isEs ? 'Firma del Supervisor o RH / Fecha' : 'Supervisor or HR Signature / Date'}: _______________________________________</div>
       </div>
@@ -2371,6 +2561,16 @@ function renderMealPenaltySheet(lang) {
     <button class="gh no-print" id="mp-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
   `;
   document.getElementById('mp-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  document.getElementById('mp-sig-save').addEventListener('click', () => finalizeSignedDocument('mp-sig-pad', {
+    content_type: 'mealpenalty', category: 'pay_time',
+    title: `Missed Meal Period Record — ${f.emp.first_name} ${f.emp.last_name} (${formatDate(f.date)})`,
+    emp_id: f.emp.id, emp_name: `${f.emp.first_name} ${f.emp.last_name}`,
+    division: f.emp.division || '',
+    date: f.date, shift_start: f.shiftStart, shift_end: f.shiftEnd, reason: f.reason,
+    late_lunch: f.lateLunch, late_lunch_time: f.lateLunchTime,
+    premium_pending: f.premiumPending, pay_date: f.payDate,
+    premium_assignee_id: f.assigneeId, premium_due_date: f.dueDate,
+  }));
   setUpSignaturePad('mp-sig-pad', 'mp-sig-clear');
 }
 
@@ -2441,8 +2641,12 @@ await loadStaff();
 // A nav item can jump straight into a specific generator (used for the
 // Terminations tab) instead of always landing on the tile menu.
 const requestedOpen = new URLSearchParams(window.location.search).get('open');
+const requestedDocId = new URLSearchParams(window.location.search).get('doc');
 if (requestedOpen && GENERATORS.some((g) => g.key === requestedOpen)) {
   openGenerator(requestedOpen);
+  if (requestedDocId && (requestedOpen === 'timecard' || requestedOpen === 'mealpenalty')) {
+    await loadPendingSignatureDoc(requestedOpen, requestedDocId);
+  }
 }
 </script>
 </body>
