@@ -68,7 +68,7 @@ form.addEventListener('submit', async (e) => {
 
   try {
     await login(email, password, rememberMe);
-    window.location.href = 'dashboard.html';
+    window.location.href = '/HR-Center/dashboard.html';
   } catch (err) {
     errorBox.textContent = friendlyAuthError(err);
     errorBox.hidden = false;

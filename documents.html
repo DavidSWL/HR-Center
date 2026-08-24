@@ -233,12 +233,78 @@ function renderSopHtml(d) {
   `;
 }
 
+// Mirrors docgen.html's renderJobDescriptionSheet for a single, already-
+// resolved language snapshot (saveJobDescription there flattens to one
+// language before writing) — kept as a duplicate on purpose, same as the
+// SOP functions, so the app has no shared-JS-across-pages setup.
+function renderJobDescHtml(d) {
+  const isEs = d.lang === 'es';
+  const t = isEs
+    ? { doctype: 'Descripción del Puesto', sub: 'Documento de Revisión y Firma del Empleado', ack: 'Reconocimiento', equipTitle: 'Equipo — Debe Operar de Forma Segura', category: 'Categoría', physReq: 'Requisito Físico', physNotes: 'Notas', freq: 'Frecuencia', empName: 'Nombre del Empleado (Imprenta)', empSig: 'Firma del Empleado', date: 'Fecha', mgrName: 'Nombre del Gerente (Imprenta)', mgrSig: 'Firma del Gerente' }
+    : { doctype: 'Job Description', sub: 'Employee Review & Signature Document', ack: 'Acknowledgment', equipTitle: 'Equipment — Must Operate Safely', category: 'Category', physReq: 'Physical Requirement', physNotes: 'Notes', freq: 'Frequency', empName: 'Employee Name (Print)', empSig: 'Employee Signature', date: 'Date', mgrName: 'Manager Name (Print)', mgrSig: 'Manager Signature' };
+
+  const meta = d.meta || {};
+  const respHtml = (d.responsibilities || []).map((r) => `
+    <div class="jd-resp">
+      <div class="jd-resp-title">${escapeHtmlAttr(r.title)}</div>
+      <ul>${(r.bullets || []).map((b) => `<li>${escapeHtmlAttr(b)}</li>`).join('')}</ul>
+      ${r.standard ? `<div class="jd-standard"><b>${isEs ? 'ESTÁNDAR DE RESPONSABILIDAD:' : 'ACCOUNTABILITY STANDARD:'}</b> ${escapeHtmlAttr(r.standard)}</div>` : ''}
+    </div>
+  `).join('');
+  const equipment = d.equipment || [];
+  const equipRows = equipment.map(([cat, item]) => `<tr><td class="cat">${escapeHtmlAttr(cat)}</td><td>${escapeHtmlAttr(item)}</td></tr>`).join('');
+  const physical = d.physical_demands || [];
+  const physRows = physical.map((p) => `<tr><td>${escapeHtmlAttr(p.req)}</td><td>${escapeHtmlAttr(p.freq || '')}</td><td>${escapeHtmlAttr(p.notes || '')}</td></tr>`).join('');
+  const qualifications = d.qualifications || [];
+  const safety = d.safety_sensitive || [];
+  const safetyHtml = safety.map((s) => s.bold
+    ? `<div class="jd-safety-lead">${escapeHtmlAttr(s.text)}</div>`
+    : `<div class="jd-box" style="padding-top:2px">${escapeHtmlAttr(s.text)}</div>`
+  ).join('');
+
+  return `
+    <div class="jd-topbar">
+      <div class="wordmark">SouthWest Landscape</div>
+      <div class="sub"><span class="doctype">${t.doctype}</span><span class="docmeta">${t.sub}${meta['Last Revised'] ? ' · ' + escapeHtmlAttr(meta['Last Revised']) : ''}</span></div>
+    </div>
+    <div class="jd-eyebrow">${escapeHtmlAttr(meta['Division'] || '')}${meta['Compensation Level'] ? ' · ' + escapeHtmlAttr(meta['Compensation Level']) : ''} — ${escapeHtmlAttr(d.title)}</div>
+    <div class="jd-inner">
+      <div class="jd-meta">
+        ${Object.entries(meta).map(([k, v]) => `<div><b>${escapeHtmlAttr(k)}</b><span>${escapeHtmlAttr(v)}</span></div>`).join('')}
+      </div>
+      ${d.purpose ? `<div class="jd-box">${escapeHtmlAttr(d.purpose)}</div>` : ''}
+      ${respHtml}
+      ${equipment.length ? `
+        <div class="jd-box" style="padding-bottom:0">${escapeHtmlAttr(d.equipment_intro)}</div>
+        <table class="jd-table"><thead><tr><th>${t.category}</th><th>${t.equipTitle}</th></tr></thead><tbody>${equipRows}</tbody></table>
+      ` : ''}
+      ${qualifications.length ? `<ul class="jd-list">${qualifications.map((q) => `<li>${escapeHtmlAttr(q)}</li>`).join('')}</ul>` : ''}
+      ${safetyHtml}
+      ${physical.length ? `
+        <table class="jd-table"><thead><tr><th>${t.physReq}</th><th>${t.freq}</th><th>${t.physNotes}</th></tr></thead><tbody>${physRows}</tbody></table>
+      ` : ''}
+      <div class="jd-ada">${escapeHtmlAttr(d.ada_note)}</div>
+      <div class="jd-ack">
+        <b>${t.ack}:</b> ${escapeHtmlAttr(d.acknowledgment)}
+        <div class="jd-sig">
+          <div><b>${t.empName}</b><div class="line"></div><b>${t.empSig}</b><div class="line"></div><b>${t.date}</b><div class="line"></div></div>
+          <div><b>${t.mgrName}</b><div class="line"></div><b>${t.mgrSig}</b><div class="line"></div><b>${t.date}</b><div class="line"></div></div>
+        </div>
+      </div>
+      <div class="jd-footer">${escapeHtmlAttr(d.footer)}</div>
+    </div>
+  `;
+}
+
 function openView(d) {
   const sheet = document.getElementById('view-sheet');
   const isSop = d.content_type === 'sop';
-  sheet.className = isSop ? 'sop-doc' : 'form-doc';
+  const isJobDesc = d.content_type === 'jobdesc';
+  sheet.className = isSop ? 'sop-doc' : isJobDesc ? 'jd-doc' : 'form-doc';
   sheet.innerHTML = isSop
     ? renderSopHtml(d)
+    : isJobDesc
+    ? renderJobDescHtml(d)
     : `<div class="form-doc-inner"><div class="form-title">${escapeHtmlAttr(d.title)}</div>${renderBodyHtml(d.body)}</div>`;
   document.getElementById('view-overlay').hidden = false;
 }
@@ -366,7 +432,7 @@ function render() {
   document.getElementById('docs-summary').textContent = `${visible.length} of ${docs.length}`;
   document.getElementById('doc-rows').innerHTML = visible.length ? visible.map((d) => `
     <tr>
-      <td>${d.content_type === 'text' || d.content_type === 'sop'
+      <td>${d.content_type === 'text' || d.content_type === 'sop' || d.content_type === 'jobdesc'
         ? `<a href="#" class="view-doc-link" data-id="${d.id}">${escapeHtmlAttr(d.title)}</a>`
         : `<a href="${d.file_url}" target="_blank" rel="noopener">${escapeHtmlAttr(d.title)}</a>`
       }${d.policy_doc_id ? ' <span class="pill ok">In Policy Compliance</span>' : ''}</td>

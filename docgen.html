@@ -21,6 +21,7 @@
   .letter { width:8.5in; min-height:11in; box-shadow:none; margin:0; padding:1in; }
   .force-break { break-before:page; page-break-before:always; }
 }
+.gen-category{background:var(--panel);border:1px solid var(--line);padding:14px 14px 16px;margin-bottom:14px}
 .gen-menu{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:20px}
 .gen-tile{border:1px solid var(--line);background:var(--raise);padding:16px;cursor:pointer;text-align:left}
 .gen-tile:hover{border-color:var(--accent)}
@@ -103,7 +104,7 @@
           Write-up, Termination, 30/60/90 Review, and Offer/Increase/Promotion letters match the real SWL
           forms exactly. Every generator produces a print view — use your browser's Print → Save as PDF.
         </p>
-        <div class="gen-menu" id="tiles"></div>
+        <div id="tiles"></div>
       </div>
 
       <div id="gen-view" hidden>
@@ -126,6 +127,7 @@ import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate, readSpreadsheetSheets, objectsFromRows } from './app.js';
 import { db } from './firebaseconfig.js';
 import { LOGO_DATA_URL, LOCATIONS, SCHEDULE_PRESETS, HR_SIGNER, ONBOARDING_CHECKLIST } from './letterhead-assets.js';
+import { JOB_DESCRIPTIONS } from './job-descriptions-data.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -160,21 +162,38 @@ const T = {
 };
 
 const GENERATORS = [
-  { key: 'writeup', title: 'Write-up', desc: 'Lives in Disciplinary actions — matches the SWL warning form', linkout: 'discipline.html' },
-  { key: 'pip', title: 'Performance Improvement Plan', desc: 'PIP with a four-check-in schedule' },
-  { key: 'review', title: '30 / 60 / 90 review', desc: 'Matches the SWL new-hire review template' },
-  { key: 'termination', title: 'Termination', desc: 'Matches the SWL termination form — log, generate, and import' },
-  { key: 'offer', title: 'Offer / increase / promotion', desc: '7 letter types, matches the branded SWL letterhead exactly' },
-  { key: 'onboarding', title: 'Onboarding packet', desc: 'Assembles the required document checklist' },
-  { key: 'refusal', title: 'Medical Treatment Refusal', desc: 'Matches the SWL acknowledgment form — English or Spanish' },
-  { key: 'sop', title: 'SOP', desc: 'Standard Operating Procedure — matches the real SWL SOP format, saves to Documents' },
+  { key: 'onboarding', title: 'Onboarding packet', desc: 'Assembles the required document checklist', category: 'New hire & offers' },
+  { key: 'offer', title: 'Offer / increase / promotion', desc: '7 letter types, matches the branded SWL letterhead exactly', category: 'New hire & offers' },
+
+  { key: 'writeup', title: 'Write-up', desc: 'Lives in Disciplinary actions — matches the SWL warning form', linkout: 'discipline.html', category: 'Performance & conduct' },
+  { key: 'pip', title: 'Performance Improvement Plan', desc: 'PIP with a four-check-in schedule', category: 'Performance & conduct' },
+  { key: 'review', title: '30 / 60 / 90 review', desc: 'Matches the SWL new-hire review template', category: 'Performance & conduct' },
+
+  { key: 'termination', title: 'Termination', desc: 'Matches the SWL termination form — log, generate, and import', category: 'Separation' },
+
+  { key: 'timecard', title: 'Time card adjustment', desc: 'Employee-signed record of an Aspire punch correction — print, sign, file', category: 'Pay & time' },
+  { key: 'mealpenalty', title: 'Missed meal period', desc: 'Documents a missed/delayed break, the CA meal premium owed, and whether a late lunch was still given', category: 'Pay & time' },
+
+  { key: 'refusal', title: 'Medical Treatment Refusal', desc: 'Matches the SWL acknowledgment form — English or Spanish', category: 'Safety' },
+
+  { key: 'sop', title: 'SOP', desc: 'Standard Operating Procedure — matches the real SWL SOP format, saves to Documents', category: 'Reference library' },
+  { key: 'jobdesc', title: 'Job description', desc: 'Matches the real SWL Job Description format — English or Spanish, saves to Documents', category: 'Reference library' },
 ];
 
-document.getElementById('tiles').innerHTML = GENERATORS.map((g) => `
-  <button class="gen-tile${g.linkout ? ' linkout' : ''}" data-key="${g.key}" type="button">
-    <h4>${g.title}</h4>
-    <p>${g.desc}</p>
-  </button>
+const CATEGORY_ORDER = ['New hire & offers', 'Performance & conduct', 'Separation', 'Pay & time', 'Safety', 'Reference library'];
+
+document.getElementById('tiles').innerHTML = CATEGORY_ORDER.map((cat) => `
+  <div class="gen-category">
+    <div class="lh" style="margin-top:0">${cat}</div>
+    <div class="gen-menu" style="margin-bottom:0">
+      ${GENERATORS.filter((g) => g.category === cat).map((g) => `
+        <button class="gen-tile${g.linkout ? ' linkout' : ''}" data-key="${g.key}" type="button">
+          <h4>${g.title}</h4>
+          <p>${g.desc}</p>
+        </button>
+      `).join('')}
+    </div>
+  </div>
 `).join('');
 
 document.querySelectorAll('.gen-tile').forEach((btn) => {
@@ -196,6 +215,7 @@ document.getElementById('lang-select').addEventListener('change', () => renderCu
 let employees = [];       // active only — for "who can this happen to" selects
 let allEmployeesEver = []; // includes terminated — for name lookups on old records
 let managerIds = new Set(); // set in Settings — who shows up in "Reports to" on letters
+let staff = []; // users collection — who a follow-up task can be assigned to
 let currentKey = null;
 
 async function loadEmployees() {
@@ -207,6 +227,11 @@ async function loadEmployees() {
 async function loadManagerIds() {
   const snap = await getDoc(doc(db, 'settings', 'managers'));
   managerIds = new Set(snap.exists() ? (snap.data().employee_ids || []) : []);
+}
+
+async function loadStaff() {
+  const snap = await getDocs(collection(db, 'users'));
+  staff = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
 function empSelectOptions(list = employees) {
@@ -225,7 +250,7 @@ function openGenerator(key) {
   // exactly as supplied — those forms are English-only, so the language
   // toggle only applies to PIP, Onboarding, and the letters (which manage
   // English/Spanish through their own letter-type list instead).
-  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal') ? '' : 'none';
+  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty') ? '' : 'none';
   renderCurrent();
 }
 
@@ -238,6 +263,9 @@ function renderCurrent() {
   if (currentKey === 'onboarding') renderOnboarding(lang);
   if (currentKey === 'refusal') renderRefusal(lang);
   if (currentKey === 'sop') renderSop();
+  if (currentKey === 'jobdesc') renderJobDescription(lang);
+  if (currentKey === 'timecard') renderTimecard(lang);
+  if (currentKey === 'mealpenalty') renderMealPenalty(lang);
 }
 
 // ---- PIP ----
@@ -1917,9 +1945,498 @@ async function saveSop() {
   }
 }
 
+// ---- Job description — pulled from the real SWL job description files
+// (English + Spanish), one role at a time. Nothing here is typed in by
+// HR; the picker just selects which pre-loaded role to view/print/save.
+// A handful of roles have a real gap in their own source file (missing
+// Purpose paragraph, missing Physical Demands table, or missing the
+// Safety-Sensitive section in one language but not the other) — shown
+// as-is rather than invented, with a note on screen when it happens. ----
+
+function renderJobDescription(lang) {
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <div class="field">
+          <label class="f-lab">Role</label>
+          <select class="f-in" id="jd-role">${JOB_DESCRIPTIONS.map((r) => `<option value="${r.key}">${escapeHtml(r.title.en)}</option>`).join('')}</select>
+        </div>
+        <button class="gh solid" id="jd-load-btn" type="button">Load</button>
+      </div>
+    </div>
+    <div class="jd-doc" id="jd-sheet" hidden></div>
+  `;
+  const load = () => {
+    const role = JOB_DESCRIPTIONS.find((r) => r.key === document.getElementById('jd-role').value);
+    if (role) renderJobDescriptionSheet(role, document.getElementById('lang-select').value);
+  };
+  document.getElementById('jd-load-btn').addEventListener('click', load);
+  load();
+}
+
+function jdField(role, base, lang) {
+  return role[`${base}_${lang}`] ?? role[`${base}_en`] ?? '';
+}
+
+function renderJobDescriptionSheet(role, lang) {
+  const t = {
+    en: { doctype: 'Job Description', sub: 'Employee Review & Signature Document', ack: 'Acknowledgment', equipTitle: 'Equipment — Must Operate Safely', category: 'Category',
+          physReq: 'Physical Requirement', physNotes: 'Notes', ada: 'Reasonable accommodations will be evaluated through the ADA interactive process in partnership with HR.',
+          empName: 'Employee Name (Print)', empSig: 'Employee Signature', date: 'Date', mgrName: "Manager Name (Print)", mgrSig: 'Manager Signature', back: '← Back to document generator' },
+    es: { doctype: 'Descripción del Puesto', sub: 'Documento de Revisión y Firma del Empleado', ack: 'Reconocimiento', equipTitle: 'Equipo — Debe Operar de Forma Segura', category: 'Categoría',
+          physReq: 'Requisito Físico', physNotes: 'Notas', ada: 'Las adaptaciones razonables se evaluarán mediante el proceso interactivo de la ADA en conjunto con Recursos Humanos.',
+          empName: 'Nombre del Empleado (Imprenta)', empSig: 'Firma del Empleado', date: 'Fecha', mgrName: 'Nombre del Gerente (Imprenta)', mgrSig: 'Firma del Gerente', back: '← Volver al generador de documentos' },
+  }[lang];
+
+  const meta = role[`meta_${lang}`] || {};
+  const titleBar = jdField(role, 'title', lang) ? `${escapeHtml(jdField(role, 'title', lang))}` : '';
+  const purpose = jdField(role, 'purpose', lang);
+  const responsibilities = role[`responsibilities_${lang}`]?.length ? role[`responsibilities_${lang}`] : role.responsibilities_en;
+  const equipIntro = jdField(role, 'equipment_intro', lang);
+  const equipment = role[`equipment_${lang}`]?.length ? role[`equipment_${lang}`] : role.equipment_en;
+  const qualifications = role[`qualifications_${lang}`]?.length ? role[`qualifications_${lang}`] : role.qualifications_en;
+  const safety = role[`safety_sensitive_${lang}`] || [];
+  const physical = role[`physical_demands_${lang}`] || [];
+  const adaNote = jdField(role, 'ada_note', lang) || t.ada;
+  const ack = jdField(role, 'acknowledgment', lang);
+  const footer = jdField(role, 'footer', lang);
+
+  const gaps = [];
+  if (!purpose) gaps.push(lang === 'es' ? 'Falta el párrafo de propósito del puesto en el documento original.' : 'This role\'s source file has no Position Purpose paragraph.');
+  if (!physical.length) gaps.push(lang === 'es' ? 'Falta la tabla de exigencias físicas en el documento original.' : 'This role\'s source file has no Physical Demands table.');
+  if (!safety.length) gaps.push(lang === 'es' ? 'Falta la sección de puesto sensible en materia de seguridad en el documento original.' : 'This role\'s source file has no Safety-Sensitive Position section.');
+
+  const respHtml = responsibilities.map((r) => `
+    <div class="jd-resp">
+      <div class="jd-resp-title">${escapeHtml(r.title)}</div>
+      <ul>${r.bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join('')}</ul>
+      ${r.standard ? `<div class="jd-standard"><b>${lang === 'es' ? 'ESTÁNDAR DE RESPONSABILIDAD:' : 'ACCOUNTABILITY STANDARD:'}</b> ${escapeHtml(r.standard)}</div>` : ''}
+    </div>
+  `).join('');
+
+  const equipRows = equipment.map(([cat, item]) => `<tr><td class="cat">${escapeHtml(cat)}</td><td>${escapeHtml(item)}</td></tr>`).join('');
+
+  const physRows = physical.map((p) => `<tr><td>${escapeHtml(p.req)}</td><td>${escapeHtml(p.freq || '')}</td><td>${escapeHtml(p.notes || '')}</td></tr>`).join('');
+
+  const safetyHtml = safety.map((s) => s.bold
+    ? `<div class="jd-safety-lead">${escapeHtml(s.text)}</div>`
+    : `<div class="jd-box" style="padding-top:2px">${escapeHtml(s.text)}</div>`
+  ).join('');
+
+  const sheet = document.getElementById('jd-sheet');
+  sheet.hidden = false;
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  sheet.innerHTML = `
+    <div class="jd-topbar">
+      <div class="wordmark">SouthWest Landscape</div>
+      <div class="sub"><span class="doctype">${t.doctype}</span><span class="docmeta">${t.sub}${meta['Last Revised'] ? ' · ' + escapeHtml(meta['Last Revised']) : ''}</span></div>
+    </div>
+    <div class="jd-eyebrow">${escapeHtml(meta['Division'] || '')}${meta['Compensation Level'] ? ' · ' + escapeHtml(meta['Compensation Level']) : ''} — ${titleBar}</div>
+    <div class="jd-inner">
+      ${gaps.length ? `<p class="no-print" style="background:#FDEDEC;border:1px solid #E0A8A0;color:#7A1F2B;font-size:11px;padding:8px 10px;margin:12px 0 0">${gaps.join(' ')}</p>` : ''}
+      <div class="jd-meta">
+        ${Object.entries(meta).map(([k, v]) => `<div><b>${escapeHtml(k)}</b><span>${escapeHtml(v)}</span></div>`).join('')}
+      </div>
+      ${purpose ? `<div class="jd-box">${escapeHtml(purpose)}</div>` : ''}
+      ${respHtml}
+      ${equipment.length ? `
+        <div class="jd-box" style="padding-bottom:0">${escapeHtml(equipIntro)}</div>
+        <table class="jd-table"><thead><tr><th>${t.category}</th><th>${t.equipTitle}</th></tr></thead><tbody>${equipRows}</tbody></table>
+      ` : ''}
+      ${qualifications.length ? `<ul class="jd-list">${qualifications.map((q) => `<li>${escapeHtml(q)}</li>`).join('')}</ul>` : ''}
+      ${safetyHtml}
+      ${physical.length ? `
+        <table class="jd-table"><thead><tr><th>${t.physReq}</th><th>${lang === 'es' ? 'Frecuencia' : 'Frequency'}</th><th>${t.physNotes}</th></tr></thead><tbody>${physRows}</tbody></table>
+      ` : ''}
+      <div class="jd-ada">${escapeHtml(adaNote)}</div>
+      <div class="jd-ack">
+        <b>${t.ack}:</b> ${escapeHtml(ack)}
+        <div class="jd-sig">
+          <div><b>${t.empName}</b><div class="line"></div><b>${t.empSig}</b><div class="line"></div><b>${t.date}</b><div class="line"></div></div>
+          <div><b>${t.mgrName}</b><div class="line"></div><b>${t.mgrSig}</b><div class="line"></div><b>${t.date}</b><div class="line"></div></div>
+        </div>
+      </div>
+      <div class="jd-footer">${escapeHtml(footer)}</div>
+    </div>
+    <button class="gh no-print" id="jd-save-btn" type="button" style="margin:14px">Save to Documents</button>
+    <button class="gh no-print" id="jd-back-btn" type="button" style="margin:14px">${t.back}</button>
+  `;
+  document.getElementById('jd-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  document.getElementById('jd-save-btn').addEventListener('click', () => saveJobDescription(role, lang));
+}
+
+// ---- Time card adjustment — a record of a correction to an Aspire
+// timeclock punch, signed by the employee. Print-and-sign like Medical
+// Treatment Refusal: this only logs to activity for an audit trail, no
+// dedicated collection, since HR files the signed PDF in OneDrive
+// themselves. Punch times are typed in from Aspire, never pulled live —
+// this app has no connection to Aspire and never stores pay data. ----
+
+function renderTimecard(lang) {
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <div class="frow">
+          <div class="field"><label class="f-lab">Employee</label><select class="f-in" id="tc-emp">${empSelectOptions()}</select></div>
+          <div class="field"><label class="f-lab">Date of punch(es)</label><input class="f-in" id="tc-date" type="date"></div>
+        </div>
+        <div class="field">
+          <label class="f-lab">Punch corrections — one per line: Punch type | Original time (Aspire) | Corrected time | Reason</label>
+          <textarea class="f-in" id="tc-punches" rows="4" style="resize:vertical" placeholder="Clock In | 8:15 AM | 8:00 AM | Forgot to clock in, started work at 8:00&#10;Clock Out | — | 4:30 PM | Missed punch, left at end of shift as scheduled"></textarea>
+        </div>
+        <button class="gh solid" id="tc-generate-btn" type="button">Generate</button>
+        <button class="gh" id="tc-log-btn" type="button">Log to activity</button>
+      </div>
+    </div>
+    <div class="form-doc" id="tc-sheet" hidden></div>
+  `;
+
+  document.getElementById('tc-generate-btn').addEventListener('click', () => renderTimecardSheet(lang));
+  document.getElementById('tc-log-btn').addEventListener('click', async () => {
+    const emp = employees.find((e) => e.id === document.getElementById('tc-emp').value);
+    if (!emp) { showToast('Select an employee.', 'error'); return; }
+    try {
+      await addDoc(collection(db, 'activity'), {
+        module: 'documents', item: `Time card adjustment generated — ${emp.first_name} ${emp.last_name} (${formatDate(document.getElementById('tc-date').value)})`,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast('Logged to activity.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not log — ' + err.message, 'error');
+    }
+  });
+}
+
+// Reusable draw-to-sign canvas — keyed by canvas element id so more than
+// one signature pad can exist on the page (or across generators) without
+// stepping on each other's state.
+const sigPads = {};
+
+function setUpSignaturePad(canvasId, clearBtnId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ratio = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * ratio;
+  canvas.height = rect.height * ratio;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(ratio, ratio);
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#111';
+  const state = { ctx, drawing: false, hasStroke: false };
+  sigPads[canvasId] = state;
+
+  const pos = (e) => {
+    const r = canvas.getBoundingClientRect();
+    const p = e.touches ? e.touches[0] : e;
+    return { x: p.clientX - r.left, y: p.clientY - r.top };
+  };
+  const start = (e) => { e.preventDefault(); state.drawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+  const move = (e) => {
+    if (!state.drawing) return;
+    e.preventDefault();
+    const p = pos(e);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    state.hasStroke = true;
+  };
+  const end = () => { state.drawing = false; };
+
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', end);
+  canvas.addEventListener('touchstart', start, { passive: false });
+  canvas.addEventListener('touchmove', move, { passive: false });
+  canvas.addEventListener('touchend', end);
+
+  document.getElementById(clearBtnId).addEventListener('click', () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    state.hasStroke = false;
+  });
+}
+
+function renderTimecardSheet(lang) {
+  const isEs = lang === 'es';
+  const emp = employees.find((e) => e.id === document.getElementById('tc-emp').value);
+  if (!emp) { showToast('Select an employee.', 'error'); return; }
+  const date = document.getElementById('tc-date').value;
+  const mgr = emp.manager_emp_id ? employees.find((e) => e.id === emp.manager_emp_id) : null;
+
+  const rows = document.getElementById('tc-punches').value.split('\n')
+    .map((l) => l.trim()).filter(Boolean)
+    .map((l) => {
+      const [type, original, corrected, reason] = l.split('|').map((s) => (s || '').trim());
+      return { type: type || '', original: original || '—', corrected: corrected || '—', reason: reason || '' };
+    });
+
+  const sheet = document.getElementById('tc-sheet');
+  sheet.hidden = false;
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  sheet.innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">${isEs ? 'Solicitud de Ajuste de Tarjeta de Tiempo' : 'Time Card Adjustment Request'}</h1>
+      <div class="form-section">${isEs ? 'Información del Empleado' : 'Employee Information'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Nombre del Empleado' : 'Employee Name'}</b>${emp.first_name} ${emp.last_name}</div>
+        <div class="form-cell"><b>${isEs ? 'ID del Empleado' : 'Employee ID'}</b>${emp.id}</div>
+        <div class="form-cell"><b>${isEs ? 'División' : 'Division'}</b>${emp.division || ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Puesto' : 'Position'}</b>${emp.position || ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Supervisor' : 'Supervisor'}</b>${mgr ? `${mgr.first_name} ${mgr.last_name}` : ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha del Ponche' : 'Date of Punch(es)'}</b>${formatDate(date)}</div>
+      </div>
+      <div class="form-section">${isEs ? 'Corrección de Ponches — Registrado en Aspire' : 'Punch Correction — As Recorded in Aspire'}</div>
+      <table class="form-notice-table">
+        <thead><tr>
+          <th>${isEs ? 'Tipo de Ponche' : 'Punch Type'}</th>
+          <th>${isEs ? 'Hora Original (Aspire)' : 'Original Time (Aspire)'}</th>
+          <th>${isEs ? 'Hora Corregida' : 'Corrected Time'}</th>
+          <th>${isEs ? 'Motivo' : 'Reason'}</th>
+        </tr></thead>
+        <tbody>
+          ${rows.length ? rows.map((r) => `
+            <tr><td>${escapeHtml(r.type)}</td><td>${escapeHtml(r.original)}</td><td>${escapeHtml(r.corrected)}</td><td>${escapeHtml(r.reason)}</td></tr>
+          `).join('') : `<tr><td colspan="4" class="dim">${isEs ? 'Sin correcciones registradas.' : 'No corrections entered.'}</td></tr>`}
+        </tbody>
+      </table>
+      <div class="form-section">${isEs ? 'Certificación del Empleado' : 'Employee Certification'}</div>
+      <div class="form-box">${isEs
+        ? 'Certifico que la(s) hora(s) corregida(s) anteriores reflejan con precisión el tiempo que realmente trabajé. Entiendo que este registro se usará para corregir mi tarjeta de tiempo en Aspire.'
+        : 'I certify that the corrected time(s) above accurately reflect the time I actually worked. I understand this record will be used to correct my time card in Aspire.'}</div>
+      <div class="form-section">${isEs ? 'Firma Electrónica del Empleado' : 'Employee Electronic Signature'}</div>
+      <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
+        <canvas id="tc-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
+      </div>
+      <button type="button" class="gh no-print" id="tc-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      <div class="form-sig" style="grid-template-columns:1fr">
+        <div style="border-right:none">${isEs ? 'Firma del Supervisor o RH / Fecha' : 'Supervisor or HR Signature / Date'}: _______________________________________</div>
+      </div>
+      <div class="form-fine">${isEs
+        ? 'Este registro corrige únicamente el tiempo trabajado; no crea ni modifica ninguna tasa de pago. Firmar arriba, imprimir como PDF y archivar según el proceso de RH.'
+        : 'This record corrects worked time only; it does not create or change any pay rate. Sign above, print to PDF, and file per HR process.'}</div>
+    </div>
+    <button class="gh no-print" id="tc-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
+  `;
+  document.getElementById('tc-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  setUpSignaturePad('tc-sig-pad', 'tc-sig-clear');
+}
+
+// ---- Missed meal period — documents a meal break that couldn't be taken
+// by the 5th hour (Labor Code 512 / IWC Wage Orders), the 1-hour premium
+// owed under Labor Code 226.7, and whether a delayed meal period was
+// still worked in once time allowed. If the premium still needs to be
+// paid, generating this creates a task for whoever runs payroll so it
+// doesn't just sit on a signed form — "already paid" cases only log to
+// activity, since there's nothing left to follow up on. ----
+
+function renderMealPenalty(lang) {
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <div class="frow">
+          <div class="field"><label class="f-lab">Employee</label><select class="f-in" id="mp-emp">${empSelectOptions()}</select></div>
+          <div class="field"><label class="f-lab">Date</label><input class="f-in" id="mp-date" type="date"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Shift start</label><input class="f-in" id="mp-shift-start" type="time"></div>
+          <div class="field"><label class="f-lab">Shift end</label><input class="f-in" id="mp-shift-end" type="time"></div>
+        </div>
+        <div class="field"><label class="f-lab">Why the meal period couldn't be taken by the 5th hour</label><textarea class="f-in" id="mp-reason" rows="2" style="resize:vertical" placeholder="e.g. Emergency — irrigation main break required immediate response"></textarea></div>
+        <div class="frow">
+          <div class="field">
+            <label class="f-lab">Was a delayed meal period still given later in the shift?</label>
+            <select class="f-in" id="mp-late-lunch">
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
+            </select>
+          </div>
+          <div class="field" id="mp-late-lunch-time-field"><label class="f-lab">What time</label><input class="f-in" id="mp-late-lunch-time" type="time"></div>
+        </div>
+        <div class="field">
+          <label class="f-lab">Meal period premium (1 hour of pay owed — Labor Code 226.7)</label>
+          <select class="f-in" id="mp-premium-status">
+            <option value="paid">Already paid</option>
+            <option value="pending">Will be paid this pay period</option>
+          </select>
+        </div>
+        <div class="frow" id="mp-paid-field">
+          <div class="field"><label class="f-lab">Pay date</label><input class="f-in" id="mp-pay-date" type="date"></div>
+          <div class="field"></div>
+        </div>
+        <div class="frow" id="mp-pending-field" hidden>
+          <div class="field"><label class="f-lab">Assign payroll follow-up to</label><select class="f-in" id="mp-assignee">${staff.map((s) => `<option value="${s.id}">${s.name}</option>`).join('')}</select></div>
+          <div class="field"><label class="f-lab">Due by</label><input class="f-in" id="mp-due-date" type="date"></div>
+        </div>
+        <button class="gh solid" id="mp-generate-btn" type="button">Generate</button>
+        <button class="gh" id="mp-save-btn" type="button">Save record</button>
+      </div>
+    </div>
+    <div class="form-doc" id="mp-sheet" hidden></div>
+  `;
+
+  const lateLunchTimeField = document.getElementById('mp-late-lunch-time-field');
+  const syncLateLunch = () => { lateLunchTimeField.style.display = document.getElementById('mp-late-lunch').value === 'yes' ? '' : 'none'; };
+  syncLateLunch();
+  document.getElementById('mp-late-lunch').addEventListener('change', syncLateLunch);
+
+  const paidField = document.getElementById('mp-paid-field');
+  const pendingField = document.getElementById('mp-pending-field');
+  const syncPremium = () => {
+    const pending = document.getElementById('mp-premium-status').value === 'pending';
+    paidField.hidden = pending;
+    pendingField.hidden = !pending;
+  };
+  syncPremium();
+  document.getElementById('mp-premium-status').addEventListener('change', syncPremium);
+
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('mp-date').value = today;
+  document.getElementById('mp-pay-date').value = today;
+  document.getElementById('mp-due-date').value = today;
+
+  document.getElementById('mp-generate-btn').addEventListener('click', () => renderMealPenaltySheet(lang));
+  document.getElementById('mp-save-btn').addEventListener('click', () => saveMealPenalty(lang));
+}
+
+function readMealPenaltyForm() {
+  const emp = employees.find((e) => e.id === document.getElementById('mp-emp').value);
+  if (!emp) { showToast('Select an employee.', 'error'); return null; }
+  const lateLunch = document.getElementById('mp-late-lunch').value === 'yes';
+  const premiumPending = document.getElementById('mp-premium-status').value === 'pending';
+  return {
+    emp,
+    date: document.getElementById('mp-date').value,
+    shiftStart: document.getElementById('mp-shift-start').value,
+    shiftEnd: document.getElementById('mp-shift-end').value,
+    reason: document.getElementById('mp-reason').value.trim(),
+    lateLunch,
+    lateLunchTime: lateLunch ? document.getElementById('mp-late-lunch-time').value : '',
+    premiumPending,
+    payDate: document.getElementById('mp-pay-date').value,
+    assigneeId: document.getElementById('mp-assignee')?.value || '',
+    dueDate: document.getElementById('mp-due-date')?.value || '',
+  };
+}
+
+function renderMealPenaltySheet(lang) {
+  const isEs = lang === 'es';
+  const f = readMealPenaltyForm();
+  if (!f) return;
+  const mgr = f.emp.manager_emp_id ? employees.find((e) => e.id === f.emp.manager_emp_id) : null;
+
+  const sheet = document.getElementById('mp-sheet');
+  sheet.hidden = false;
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  sheet.innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">${isEs ? 'Registro de Período de Comida Perdido' : 'Missed Meal Period Record'}</h1>
+      <div class="form-section">${isEs ? 'Información del Empleado' : 'Employee Information'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Nombre del Empleado' : 'Employee Name'}</b>${f.emp.first_name} ${f.emp.last_name}</div>
+        <div class="form-cell"><b>${isEs ? 'ID del Empleado' : 'Employee ID'}</b>${f.emp.id}</div>
+        <div class="form-cell"><b>${isEs ? 'División' : 'Division'}</b>${f.emp.division || ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Supervisor' : 'Supervisor'}</b>${mgr ? `${mgr.first_name} ${mgr.last_name}` : ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha' : 'Date'}</b>${formatDate(f.date)}</div>
+        <div class="form-cell"><b>${isEs ? 'Turno' : 'Shift'}</b>${escapeHtml(f.shiftStart)} – ${escapeHtml(f.shiftEnd)}</div>
+      </div>
+      <div class="form-section">${isEs ? 'Motivo — No se Pudo Tomar el Período de Comida Antes de la 5ª Hora' : 'Reason — Meal Period Could Not Be Taken by the 5th Hour'}</div>
+      <div class="form-box">${escapeHtml(f.reason) || '—'}</div>
+      <div class="form-section">${isEs ? 'Período de Comida Retrasado' : 'Delayed Meal Period'}</div>
+      <div class="form-box">${f.lateLunch
+        ? (isEs ? `Se le dio al empleado un período de comida más tarde en el turno, a las ${escapeHtml(f.lateLunchTime)}.` : `The employee was given a meal period later in the shift, at ${escapeHtml(f.lateLunchTime)}.`)
+        : (isEs ? 'No se pudo dar ningún período de comida durante el turno.' : 'No meal period could be given at any point during the shift.')}</div>
+      <div class="form-section">${isEs ? 'Prima del Período de Comida (California, Código Laboral 226.7)' : 'Meal Period Premium (California Labor Code 226.7)'}</div>
+      <div class="form-box">${isEs
+        ? `Se debe una hora adicional de pago a la tarifa regular del empleado por este día. Estado: ${f.premiumPending ? `pendiente, se pagará antes del ${formatDate(f.dueDate)}` : `pagada el ${formatDate(f.payDate)}`}.`
+        : `One additional hour of pay at the employee's regular rate is owed for this day. Status: ${f.premiumPending ? `pending, to be paid by ${formatDate(f.dueDate)}` : `paid on ${formatDate(f.payDate)}`}.`}</div>
+      <div class="form-section">${isEs ? 'Reconocimiento del Empleado' : 'Employee Acknowledgment'}</div>
+      <div class="form-box">${isEs
+        ? 'Certifico que lo anterior describe con precisión lo ocurrido el día indicado, incluida la hora adicional de pago adeudada por este período de comida perdido o retrasado.'
+        : 'I certify that the above accurately describes what happened on the date noted, including the additional hour of pay owed for this missed or delayed meal period.'}</div>
+      <div class="form-section">${isEs ? 'Firma Electrónica del Empleado' : 'Employee Electronic Signature'}</div>
+      <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
+        <canvas id="mp-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
+      </div>
+      <button type="button" class="gh no-print" id="mp-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      <div class="form-sig" style="grid-template-columns:1fr">
+        <div style="border-right:none">${isEs ? 'Firma del Supervisor o RH / Fecha' : 'Supervisor or HR Signature / Date'}: _______________________________________</div>
+      </div>
+      <div class="form-fine">${isEs
+        ? 'Este registro documenta el período de comida y la prima adeudada; no crea ni modifica ninguna tasa de pago regular. Firmar arriba, imprimir como PDF y archivar según el proceso de RH.'
+        : 'This record documents the meal period and the premium owed; it does not create or change any regular pay rate. Sign above, print to PDF, and file per HR process.'}</div>
+    </div>
+    <button class="gh no-print" id="mp-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
+  `;
+  document.getElementById('mp-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  setUpSignaturePad('mp-sig-pad', 'mp-sig-clear');
+}
+
+async function saveMealPenalty(lang) {
+  const f = readMealPenaltyForm();
+  if (!f) return;
+  try {
+    if (f.premiumPending) {
+      if (!f.assigneeId) { showToast('Pick who the payroll follow-up should go to.', 'error'); return; }
+      const assignee = staff.find((s) => s.id === f.assigneeId);
+      await addDoc(collection(db, 'tasks'), {
+        assigned_to: f.assigneeId,
+        due_date: f.dueDate,
+        instructions: `Add 1 hour meal period premium — ${f.emp.first_name} ${f.emp.last_name} (${formatDate(f.date)})`,
+        recurring: 'none',
+        status: 'open',
+        entered_by: profile.uid,
+        entered_at: serverTimestamp(),
+      });
+      await addDoc(collection(db, 'activity'), {
+        module: 'documents', item: `Missed meal period recorded — ${f.emp.first_name} ${f.emp.last_name} (${formatDate(f.date)}) — premium pay task assigned to ${assignee?.name || f.assigneeId}`,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast('Saved — premium pay task created.');
+    } else {
+      await addDoc(collection(db, 'activity'), {
+        module: 'documents', item: `Missed meal period recorded — ${f.emp.first_name} ${f.emp.last_name} (${formatDate(f.date)}) — premium already paid ${formatDate(f.payDate)}`,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast('Saved to activity.');
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+}
+
+async function saveJobDescription(role, lang) {
+  try {
+    await setDoc(doc(collection(db, 'training_documents')), {
+      role_key: role.key, lang, title: jdField(role, 'title', lang),
+      meta: role[`meta_${lang}`] || {},
+      purpose: jdField(role, 'purpose', lang),
+      responsibilities: role[`responsibilities_${lang}`]?.length ? role[`responsibilities_${lang}`] : role.responsibilities_en,
+      equipment_intro: jdField(role, 'equipment_intro', lang),
+      equipment: role[`equipment_${lang}`]?.length ? role[`equipment_${lang}`] : role.equipment_en,
+      qualifications: role[`qualifications_${lang}`]?.length ? role[`qualifications_${lang}`] : role.qualifications_en,
+      safety_sensitive: role[`safety_sensitive_${lang}`] || [],
+      physical_demands: role[`physical_demands_${lang}`] || [],
+      ada_note: jdField(role, 'ada_note', lang),
+      acknowledgment: jdField(role, 'acknowledgment', lang),
+      footer: jdField(role, 'footer', lang),
+      category: 'job_description', content_type: 'jobdesc',
+      entered_by: profile.uid, uploaded_at: serverTimestamp(),
+    });
+    showToast('Saved — view it any time in Documents.');
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+}
+
 await loadEmployees();
 await loadManagerIds();
 await loadTerminations();
+await loadStaff();
 
 // A nav item can jump straight into a specific generator (used for the
 // Terminations tab) instead of always landing on the tile menu.

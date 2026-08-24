@@ -27,7 +27,7 @@ export async function login(email, password, rememberMe = false) {
 
 export async function logout() {
   await signOut(auth);
-  window.location.href = '/index.html';
+  window.location.href = '/HR-Center/index.html';
 }
 
 export async function requestPasswordReset(email) {
@@ -66,7 +66,7 @@ export async function getCurrentUserProfile() {
 export async function requireAuth() {
   const profile = await getCurrentUserProfile();
   if (!profile || !profile.role) {
-    window.location.href = '/index.html';
+    window.location.href = '/HR-Center/index.html';
     return null;
   }
   return profile;
@@ -75,7 +75,7 @@ export async function requireAuth() {
 export async function redirectIfAuthenticated() {
   const user = await getCurrentUser();
   if (user) {
-    window.location.href = '/dashboard.html';
+    window.location.href = '/HR-Center/dashboard.html';
   }
 }
 
