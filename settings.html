@@ -53,6 +53,25 @@
           <tbody id="managers-rows"></tbody>
         </table>
         <div class="legend"><span>Checked employees appear in the "Reports to" list on offer/increase/promotion letters, which auto-fills their title onto the letter from here. Title is the same "Job title" field as on that employee's roster record — editing it here updates it there too.</span></div>
+
+        <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+          <div class="s" style="margin-bottom:8px;font-weight:600">Add a new manager</div>
+          <p class="dim" style="margin-bottom:10px;font-size:12.5px">Not on the list above because they're not in the roster yet — Employees keeps the one master list, so this adds a real employee record (active, not onboarding) and checks them as a manager in one step.</p>
+          <div class="frow">
+            <div class="field"><label class="f-lab" for="new-mgr-id">Employee ID</label><input class="f-in" id="new-mgr-id" placeholder="e.g. SWL-1041"></div>
+            <div class="field"><label class="f-lab" for="new-mgr-first">First name</label><input class="f-in" id="new-mgr-first"></div>
+          </div>
+          <div class="frow">
+            <div class="field"><label class="f-lab" for="new-mgr-last">Last name</label><input class="f-in" id="new-mgr-last"></div>
+            <div class="field"><label class="f-lab" for="new-mgr-division">Division</label><input class="f-in" id="new-mgr-division" list="division-options" autocomplete="off"></div>
+          </div>
+          <div class="frow">
+            <div class="field"><label class="f-lab" for="new-mgr-title">Title</label><input class="f-in" id="new-mgr-title"></div>
+            <div class="field"><label class="f-lab" for="new-mgr-hire">Hire date</label><input class="f-in" id="new-mgr-hire" type="date"></div>
+          </div>
+          <datalist id="division-options"></datalist>
+          <button class="gh solid" id="add-manager-btn" type="button">Add &amp; mark as manager</button>
+        </div>
       </div>
 
       <div class="card">
@@ -179,6 +198,8 @@ async function loadManagers() {
     .filter((e) => e.status !== 'terminated')
     .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
   managerIds = new Set(mgrSnap.exists() ? (mgrSnap.data().employee_ids || []) : []);
+  const divisions = [...new Set(allEmployees.map((e) => e.division).filter(Boolean))].sort();
+  document.getElementById('division-options').innerHTML = divisions.map((d) => `<option value="${d}">`).join('');
   renderManagers();
 }
 
@@ -228,6 +249,50 @@ function renderManagers() {
   });
 }
 document.getElementById('managers-search').addEventListener('input', renderManagers);
+
+document.getElementById('add-manager-btn').addEventListener('click', async () => {
+  const id = document.getElementById('new-mgr-id').value.trim();
+  const first = document.getElementById('new-mgr-first').value.trim();
+  const last = document.getElementById('new-mgr-last').value.trim();
+  const division = document.getElementById('new-mgr-division').value.trim();
+  const title = document.getElementById('new-mgr-title').value.trim();
+  const hireDate = document.getElementById('new-mgr-hire').value;
+
+  if (!id || !first || !last || !division || !hireDate) {
+    showToast('Employee ID, name, division, and hire date are all required.', 'error');
+    return;
+  }
+  if (allEmployees.some((e) => e.id === id)) {
+    showToast(`Employee ID ${id} is already in use.`, 'error');
+    return;
+  }
+
+  try {
+    await setDoc(doc(db, 'employees', id), {
+      first_name: first,
+      last_name: last,
+      division,
+      position: title,
+      hire_date: hireDate,
+      status: 'active',
+      entered_by: profile.uid,
+      entered_at: serverTimestamp(),
+      updated_at: serverTimestamp(),
+    });
+    managerIds.add(id);
+    await setDoc(doc(db, 'settings', 'managers'), {
+      employee_ids: [...managerIds], entered_by: profile.uid, updated_at: serverTimestamp(),
+    });
+    ['new-mgr-id', 'new-mgr-first', 'new-mgr-last', 'new-mgr-division', 'new-mgr-title', 'new-mgr-hire'].forEach((fid) => {
+      document.getElementById(fid).value = '';
+    });
+    showToast('Manager added.');
+    await loadManagers();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not add — ' + err.message, 'error');
+  }
+});
 
 async function loadStaff() {
   const snap = await getDocs(collection(db, 'users'));
