@@ -407,6 +407,90 @@ function renderRefusalHtml(d) {
   `;
 }
 
+// Mirrors docgen.html's renderMealWaiver2Sheet — same statement text
+// (kept as a duplicate on purpose, same as everywhere else in this file).
+const MW2_OPPORTUNITY_EN = [
+  'I was informed that I am eligible for a second meal period on this workday',
+  'I was given a reasonable opportunity to take my second meal period',
+  'I understand I may choose to take or waive this meal period voluntarily',
+];
+const MW2_OPPORTUNITY_ES = [
+  'Se me informó que tengo derecho a un segundo período de comida en este día de trabajo',
+  'Se me dio una oportunidad razonable de tomar mi segundo período de comida',
+  'Entiendo que puedo elegir tomar o renunciar a este período de comida voluntariamente',
+];
+const MW2_CONDITIONS_EN = [
+  'This waiver is completely voluntary and is not a condition of employment',
+  'I am making this decision without pressure, coercion, or instruction from any supervisor or manager',
+  'I was provided a meaningful opportunity to take my meal period but chose to waive it',
+  'I understand I may revoke this waiver at any time before the meal period would begin',
+  'My total hours worked on this day are not expected to exceed 12 hours',
+];
+const MW2_CONDITIONS_ES = [
+  'Esta renuncia es completamente voluntaria y no es una condición de empleo',
+  'Estoy tomando esta decisión sin presión, coacción ni instrucción de ningún supervisor o gerente',
+  'Se me dio una oportunidad real de tomar mi período de comida, pero elegí renunciar a ella',
+  'Entiendo que puedo revocar esta renuncia en cualquier momento antes de que comience el período de comida',
+  'No se espera que mis horas totales trabajadas en este día excedan 12 horas',
+];
+const MW2_SUPERVISOR_EN = [
+  'The employee was informed of their right to a second meal period',
+  'The employee was provided a meaningful opportunity to take the meal period',
+  'No pressure, coercion, or requirement was applied to waive the meal period',
+  'This waiver was signed before or during the applicable work period',
+  'Operational needs did not prevent the employee from being offered a meal period opportunity',
+];
+const MW2_SUPERVISOR_ES = [
+  'Se informó al empleado de su derecho a un segundo período de comida',
+  'Se le dio al empleado una oportunidad real de tomar el período de comida',
+  'No se aplicó presión, coacción ni requisito alguno para renunciar al período de comida',
+  'Esta renuncia se firmó antes o durante el período de trabajo aplicable',
+  'Las necesidades operativas no impidieron que se le ofreciera al empleado la oportunidad del período de comida',
+];
+
+function renderMealWaiver2Html(d) {
+  const isEs = d.lang === 'es';
+  const opportunity = isEs ? MW2_OPPORTUNITY_ES : MW2_OPPORTUNITY_EN;
+  const conditions = isEs ? MW2_CONDITIONS_ES : MW2_CONDITIONS_EN;
+  const supervisorPts = isEs ? MW2_SUPERVISOR_ES : MW2_SUPERVISOR_EN;
+  const checks = d.checks || {};
+  return `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">Meal Period Waiver Agreement — Second Meal Period</h1>
+      <div class="form-section">Employee Information</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Employee Name</b>${escapeHtmlAttr(d.emp_name)}</div>
+        <div class="form-cell"><b>Employee ID</b>${escapeHtmlAttr(d.emp_id)}</div>
+        <div class="form-cell"><b>Branch</b>${escapeHtmlAttr(d.branch)}</div>
+        <div class="form-cell"><b>Date of Work</b>${formatDate(d.date)}</div>
+        <div class="form-cell"><b>Scheduled Hours</b>${escapeHtmlAttr(d.hours)}</div>
+      </div>
+      <div class="form-section">First Meal Period Confirmation</div>
+      <div class="form-box">${d.first_taken ? 'Yes — the first meal period was confirmed taken uninterrupted.' : 'No — the first meal period was not taken as required.'}</div>
+      <div class="form-section">Opportunity Confirmation</div>
+      <div class="form-box">
+        ${opportunity.map((s, i) => `<p style="margin:0 0 8px">${checks[`opportunity-${i}`] ? '☑' : '☐'} ${escapeHtmlAttr(s)}</p>`).join('')}
+      </div>
+      <div class="form-section">Voluntary Second Meal Period Decision</div>
+      <div class="form-box">${d.waiving ? 'The employee voluntarily waives their second 30-minute meal period for this specific workday.' : 'The employee takes their second 30-minute meal period.'}</div>
+      ${d.waiving ? `
+      <div class="form-section">Conditions of Waiver</div>
+      <div class="form-box">
+        ${conditions.map((s, i) => `<p style="margin:0 0 8px">${checks[`condition-${i}`] ? '☑' : '☐'} ${escapeHtmlAttr(s)}</p>`).join('')}
+      </div>
+      ` : ''}
+      <div class="form-section">Employee Electronic Signature</div>
+      ${d.signature_data_url ? `<img src="${d.signature_data_url}" alt="Employee signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not signed.</div>'}
+      <div class="form-section">Supervisor Attestation</div>
+      <div class="form-box">
+        ${supervisorPts.map((s, i) => `<p style="margin:0 0 8px">${checks[`supervisor-${i}`] ? '☑' : '☐'} ${escapeHtmlAttr(s)}</p>`).join('')}
+      </div>
+      <div class="form-fine">A second meal period may only be waived by mutual consent when total hours worked do not exceed 12 and the first meal period was not waived (Labor Code §512).</div>
+    </div>
+  `;
+}
+
 function openView(d) {
   const sheet = document.getElementById('view-sheet');
   const isSop = d.content_type === 'sop';
@@ -414,6 +498,7 @@ function openView(d) {
   const isTimecard = d.content_type === 'timecard';
   const isMealPenalty = d.content_type === 'mealpenalty';
   const isRefusal = d.content_type === 'refusal';
+  const isMealWaiver2 = d.content_type === 'mealwaiver2';
   sheet.className = isSop ? 'sop-doc' : isJobDesc ? 'jd-doc' : 'form-doc';
   sheet.innerHTML = isSop
     ? renderSopHtml(d)
@@ -425,6 +510,8 @@ function openView(d) {
     ? renderMealPenaltyHtml(d)
     : isRefusal
     ? renderRefusalHtml(d)
+    : isMealWaiver2
+    ? renderMealWaiver2Html(d)
     : `<div class="form-doc-inner"><div class="form-title">${escapeHtmlAttr(d.title)}</div>${renderBodyHtml(d.body)}</div>`;
   document.getElementById('view-overlay').hidden = false;
 }
@@ -556,7 +643,7 @@ function render() {
   document.getElementById('docs-summary').textContent = `${visible.length} of ${docs.length}`;
   document.getElementById('doc-rows').innerHTML = visible.length ? visible.map((d) => `
     <tr>
-      <td>${d.content_type === 'text' || d.content_type === 'sop' || d.content_type === 'jobdesc' || d.content_type === 'timecard' || d.content_type === 'mealpenalty' || d.content_type === 'refusal'
+      <td>${d.content_type === 'text' || d.content_type === 'sop' || d.content_type === 'jobdesc' || d.content_type === 'timecard' || d.content_type === 'mealpenalty' || d.content_type === 'refusal' || d.content_type === 'mealwaiver2'
         ? `<a href="#" class="view-doc-link" data-id="${d.id}">${escapeHtmlAttr(d.title)}</a>`
         : `<a href="${d.file_url}" target="_blank" rel="noopener">${escapeHtmlAttr(d.title)}</a>`
       }${d.policy_doc_id ? ' <span class="pill ok">In Policy Compliance</span>' : ''}</td>
