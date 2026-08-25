@@ -491,52 +491,6 @@ function renderMealWaiver2Html(d) {
   `;
 }
 
-// Mirrors docgen.html's renderNearMissSheet — matches the real SWL Form
-// 7.3 layout.
-function renderNearMissHtml(d) {
-  const checks = d.checks || {};
-  return `
-    <div class="form-doc-inner">
-      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
-      <h1 class="form-title">7.3 Near-Miss Incident Report</h1>
-      <div class="form-grid c2">
-        <div class="form-cell"><b>Location</b>${escapeHtmlAttr(d.location) || '—'}</div>
-        <div class="form-cell"><b>Department</b>${escapeHtmlAttr(d.department) || '—'}</div>
-        <div class="form-cell"><b>Person Reporting</b>${escapeHtmlAttr(d.emp_name)}</div>
-        <div class="form-cell"><b>Date</b>${formatDate(d.date)}</div>
-        <div class="form-cell"><b>Time Incident Occurred</b>${escapeHtmlAttr(d.time) || '—'}</div>
-      </div>
-      <div class="form-section">Name(s) of Person(s) Who Witnessed Incident</div>
-      <div class="form-box">${escapeHtmlAttr(d.witnesses) || '—'}</div>
-      <div class="form-section">Describe</div>
-      <div class="form-checks">
-        <label>${d.describe === 'unsafe_act' ? '☑' : '☐'} Unsafe act</label>
-        <label>${d.describe === 'unsafe_condition' ? '☑' : '☐'} Unsafe condition</label>
-      </div>
-      <div class="form-box">${escapeHtmlAttr(d.description) || '—'}</div>
-      <div class="form-section">Action Taken</div>
-      <div class="form-box">${escapeHtmlAttr(d.action) || '—'}</div>
-      <div class="form-grid c2">
-        <div class="form-cell"><b>Above Report Prepared By</b>${escapeHtmlAttr(d.prepared_by) || '—'}</div>
-        <div class="form-cell"><b>Date</b>${formatDate(d.prepared_date)}</div>
-      </div>
-      <div class="form-section">Follow-Up Report and Plan of Action</div>
-      <div class="form-box">
-        <p style="margin:0 0 8px">${checks.discussed_staff ? '☑' : '☐'} Discussed with staff involved${d.discussed_staff_who ? ` — ${escapeHtmlAttr(d.discussed_staff_who)}` : ''}</p>
-        <p style="margin:0 0 8px">${checks.discussed_meeting ? '☑' : '☐'} Discussed at departmental meeting</p>
-        <p style="margin:0 0 8px">${checks.reviewed_procedures ? '☑' : '☐'} Reviewed procedures with individual</p>
-        <p style="margin:0">${checks.other ? '☑' : '☐'} Other${d.other_detail ? ` — ${escapeHtmlAttr(d.other_detail)}` : ''}</p>
-      </div>
-      <div class="form-section">Comments</div>
-      <div class="form-box">${escapeHtmlAttr(d.comments) || '—'}</div>
-      <div class="form-section">Signature of Manager</div>
-      ${d.manager_signature_data_url ? `<img src="${d.manager_signature_data_url}" alt="Manager signature" style="max-height:80px;border-bottom:1px solid #333">` : '<div class="dim">Not signed.</div>'}
-      <div class="form-section">Signature of Employee</div>
-      ${d.signature_data_url ? `<img src="${d.signature_data_url}" alt="Employee signature" style="max-height:80px;border-bottom:1px solid #333">` : '<div class="dim">Not signed.</div>'}
-    </div>
-  `;
-}
-
 function openView(d) {
   const sheet = document.getElementById('view-sheet');
   const isSop = d.content_type === 'sop';
@@ -545,7 +499,6 @@ function openView(d) {
   const isMealPenalty = d.content_type === 'mealpenalty';
   const isRefusal = d.content_type === 'refusal';
   const isMealWaiver2 = d.content_type === 'mealwaiver2';
-  const isNearMiss = d.content_type === 'nearmiss';
   sheet.className = isSop ? 'sop-doc' : isJobDesc ? 'jd-doc' : 'form-doc';
   sheet.innerHTML = isSop
     ? renderSopHtml(d)
@@ -559,8 +512,6 @@ function openView(d) {
     ? renderRefusalHtml(d)
     : isMealWaiver2
     ? renderMealWaiver2Html(d)
-    : isNearMiss
-    ? renderNearMissHtml(d)
     : `<div class="form-doc-inner"><div class="form-title">${escapeHtmlAttr(d.title)}</div>${renderBodyHtml(d.body)}</div>`;
   document.getElementById('view-overlay').hidden = false;
 }
@@ -692,7 +643,7 @@ function render() {
   document.getElementById('docs-summary').textContent = `${visible.length} of ${docs.length}`;
   document.getElementById('doc-rows').innerHTML = visible.length ? visible.map((d) => `
     <tr>
-      <td>${d.content_type === 'text' || d.content_type === 'sop' || d.content_type === 'jobdesc' || d.content_type === 'timecard' || d.content_type === 'mealpenalty' || d.content_type === 'refusal' || d.content_type === 'mealwaiver2' || d.content_type === 'nearmiss'
+      <td>${d.content_type === 'text' || d.content_type === 'sop' || d.content_type === 'jobdesc' || d.content_type === 'timecard' || d.content_type === 'mealpenalty' || d.content_type === 'refusal' || d.content_type === 'mealwaiver2'
         ? `<a href="#" class="view-doc-link" data-id="${d.id}">${escapeHtmlAttr(d.title)}</a>`
         : `<a href="${d.file_url}" target="_blank" rel="noopener">${escapeHtmlAttr(d.title)}</a>`
       }${d.policy_doc_id ? ' <span class="pill ok">In Policy Compliance</span>' : ''}</td>
