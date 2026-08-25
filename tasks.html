@@ -287,7 +287,7 @@ function renderCalendar() {
       const style = t.status === 'complete'
         ? 'text-decoration:line-through;color:var(--faint)'
         : overdue ? 'color:var(--alertTx);font-weight:600' : 'color:var(--text)';
-      return `<div class="cal-task" data-id="${t.id}" style="${style};cursor:pointer;font-size:11px;padding:2px 4px;margin-top:2px;border-left:2px solid ${t.status === 'complete' ? 'var(--faint)' : overdue ? 'var(--alertTx)' : 'var(--accent)'}" title="${escapeAttr(staffName(t.assigned_to))} — click to ${t.status === 'complete' ? 'reopen' : t.linked_doc_id ? 'open the document' : 'complete'}">${escapeAttr(t.instructions).slice(0, 40)}${t.instructions.length > 40 ? '…' : ''}</div>`;
+      return `<div class="cal-task" data-id="${t.id}" style="${style};cursor:pointer;font-size:11px;padding:2px 4px;margin-top:2px;border-left:2px solid ${t.status === 'complete' ? 'var(--faint)' : overdue ? 'var(--alertTx)' : 'var(--accent)'}" title="${escapeAttr(staffName(t.assigned_to))} — click to ${t.linked_doc_id ? 'open the document' : t.status === 'complete' ? 'reopen' : 'complete'}">${escapeAttr(t.instructions).slice(0, 40)}${t.instructions.length > 40 ? '…' : ''}</div>`;
     }).join('');
     cells.push(`
       <div style="background:var(--raise);border:1px solid var(--line);min-height:88px;padding:5px 6px;${isToday ? 'box-shadow:inset 0 0 0 2px var(--accent)' : ''}">
@@ -316,7 +316,11 @@ function escapeAttr(str) {
 async function toggleCalTask(id) {
   const t = tasks.find((x) => x.id === id);
   if (!t) return;
-  if (t.status !== 'complete' && t.linked_doc_id) {
+  // A document-linked task is never toggled directly from the calendar —
+  // that's how an already-signed one used to get accidentally reopened.
+  // Always go to the document instead; docgen.html sorts out whether it
+  // still needs a signature or is already done (and fixes the task if so).
+  if (t.linked_doc_id) {
     window.location.href = `docgen.html?open=${t.linked_doc_type}&doc=${t.linked_doc_id}&task=${t.id}`;
     return;
   }

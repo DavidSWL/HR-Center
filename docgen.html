@@ -2238,8 +2238,27 @@ async function loadPendingSignatureDoc(type, id) {
     const snap = await getDoc(doc(db, 'training_documents', id));
     if (!snap.exists()) { showToast('That saved document could not be found.', 'error'); return; }
     const d = snap.data();
+    const taskId = new URLSearchParams(window.location.search).get('task') || null;
+
+    // This document is already signed — the task pointing here is only
+    // "open" because of a stray click (e.g. the Tasks calendar chip), not
+    // because a signature is actually still needed. Fix the task quietly
+    // instead of making someone re-sign, and go straight to the saved copy.
+    if (d.status === 'signed') {
+      if (taskId) {
+        try {
+          await updateDoc(doc(db, 'tasks', taskId), {
+            status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid,
+          });
+        } catch (err) { console.error('Could not auto-complete task', err); }
+      }
+      showToast('Already signed — opening the saved copy.');
+      window.location.href = `documents.html?doc=${id}`;
+      return;
+    }
+
     pendingSigDocId = id;
-    pendingSigTaskId = new URLSearchParams(window.location.search).get('task') || null;
+    pendingSigTaskId = taskId;
     if (type === 'timecard') {
       setEmpField('tc-emp', d.emp_id);
       document.getElementById('tc-date').value = d.date;
