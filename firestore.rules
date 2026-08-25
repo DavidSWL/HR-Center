@@ -144,6 +144,17 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Named applicant tracker — pre-screening through orientation. No
+    // resume/application file content, pay expectations, or SSN/DOB
+    // fields belong here, same as everywhere else in this system.
+    match /applicants/{applicantId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data)
+        && stamped(request.resource.data);
+      allow update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if isHrUser();
+    }
+
     // ---- discipline & notes ----------------------------------------------
     match /disciplinary_actions/{actionId} {
       allow read: if isHrUser();

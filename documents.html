@@ -604,6 +604,15 @@ document.getElementById('search').addEventListener('input', render);
 document.getElementById('category-filter').addEventListener('change', render);
 
 await loadDocs();
+
+// Deep link — e.g. from a Tasks calendar chip on an already-signed
+// document — jumps straight to that document's view instead of making
+// HR find it in the list again.
+const linkedDocId = new URLSearchParams(window.location.search).get('doc');
+if (linkedDocId) {
+  const linked = docs.find((d) => d.id === linkedDocId);
+  if (linked) openView(linked);
+}
 </script>
 </body>
 </html>
