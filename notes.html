@@ -34,8 +34,10 @@
           <form id="note-form">
             <div class="frow">
               <div class="field">
-                <label class="f-lab" for="emp-select">Employee</label>
-                <select class="f-in" id="emp-select" required></select>
+                <label class="f-lab" for="emp-select-search">Employee</label>
+                <input class="f-in" id="emp-select-search" list="emp-select-opts" placeholder="Type a name…" autocomplete="off">
+                <datalist id="emp-select-opts"></datalist>
+                <input type="hidden" id="emp-select">
               </div>
               <div class="field">
                 <label class="f-lab" for="note-type">Type</label>
@@ -109,15 +111,39 @@ function empName(id) {
   return e ? `${e.first_name} ${e.last_name}` : id;
 }
 
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+// Type-ahead employee picker — a text input (with a datalist for
+// narrowing by name as you type) paired with a hidden input holding the
+// resolved employee id, so the submit handler reads `emp-select`'s value
+// exactly like it would a plain <select>'s value.
+function wireEmpSearch(id, list) {
+  const search = document.getElementById(`${id}-search`);
+  const hidden = document.getElementById(id);
+  if (!search || !hidden) return;
+  const resolve = () => {
+    const m = search.value.match(/\(([^()]+)\)\s*$/);
+    const match = m && list.find((e) => e.id === m[1]);
+    hidden.value = match ? match.id : '';
+  };
+  search.addEventListener('input', resolve);
+  search.addEventListener('change', resolve);
+}
+
 async function loadEmployees() {
   const snap = await getDocs(collection(db, 'employees'));
   employees = snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
     .filter((e) => e.status !== 'terminated')
-    .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''));
-  document.getElementById('emp-select').innerHTML = employees
-    .map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name} (${e.id})</option>`)
+    .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
+  document.getElementById('emp-select-opts').innerHTML = employees
+    .map((e) => `<option value="${escapeHtml(`${e.first_name} ${e.last_name} (${e.id})`)}">`)
     .join('');
+  wireEmpSearch('emp-select', employees);
 }
 
 async function loadNotes() {
@@ -154,6 +180,9 @@ document.getElementById('note-form').addEventListener('submit', async (e) => {
   saveBtn.disabled = true;
   saveBtn.textContent = 'Saving…';
 
+  const empId = document.getElementById('emp-select').value;
+  if (!empId) { showToast('Select an employee.', 'error'); saveBtn.disabled = false; saveBtn.textContent = 'Save note'; return; }
+
   try {
     const noteRef = doc(collection(db, 'notes_to_file'));
     let attachmentUrl = null, attachmentPath = null;
@@ -167,7 +196,7 @@ document.getElementById('note-form').addEventListener('submit', async (e) => {
     }
 
     await setDoc(noteRef, {
-      emp_id: document.getElementById('emp-select').value,
+      emp_id: empId,
       type: document.getElementById('note-type').value,
       body: document.getElementById('note-body').value.trim(),
       attachment_path: attachmentPath,

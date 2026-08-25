@@ -166,12 +166,16 @@
         </div>
         <div class="frow">
           <div class="field">
-            <label class="f-lab" for="complainant-select">Complainant</label>
-            <select class="f-in" id="complainant-select" required></select>
+            <label class="f-lab" for="complainant-select-search">Complainant</label>
+            <input class="f-in" id="complainant-select-search" list="complainant-select-opts" placeholder="Type a name…" autocomplete="off">
+            <datalist id="complainant-select-opts"></datalist>
+            <input type="hidden" id="complainant-select">
           </div>
           <div class="field">
-            <label class="f-lab" for="accused-select">Person the complaint is about</label>
-            <select class="f-in" id="accused-select" required></select>
+            <label class="f-lab" for="accused-select-search">Person the complaint is about</label>
+            <input class="f-in" id="accused-select-search" list="accused-select-opts" placeholder="Type a name…" autocomplete="off">
+            <datalist id="accused-select-opts"></datalist>
+            <input type="hidden" id="accused-select">
           </div>
         </div>
         <div id="intake-questions"></div>
@@ -267,15 +271,40 @@ function questionsFor(role, type) {
   return INTAKE_QUESTIONS[type] || INTAKE_QUESTIONS.other; // complainant's own interview
 }
 
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+// Type-ahead employee picker — a text input (with a datalist for
+// narrowing by name as you type) paired with a hidden input holding the
+// resolved employee id, so callers read `${id}`'s value exactly like
+// they would a plain <select>'s value.
+function wireEmpSearch(id, list) {
+  const search = document.getElementById(`${id}-search`);
+  const hidden = document.getElementById(id);
+  if (!search || !hidden) return;
+  const resolve = () => {
+    const m = search.value.match(/\(([^()]+)\)\s*$/);
+    const match = m && list.find((e) => e.id === m[1]);
+    hidden.value = match ? match.id : '';
+  };
+  search.addEventListener('input', resolve);
+  search.addEventListener('change', resolve);
+}
+
 async function loadEmployees() {
   const snap = await getDocs(collection(db, 'employees'));
   employees = snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
     .filter((e) => e.status !== 'terminated')
-    .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''));
-  const options = employees.map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name}</option>`).join('');
-  document.getElementById('complainant-select').innerHTML = options;
-  document.getElementById('accused-select').innerHTML = options;
+    .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
+  const opts = employees.map((e) => `<option value="${escapeHtml(`${e.first_name} ${e.last_name} (${e.id})`)}">`).join('');
+  document.getElementById('complainant-select-opts').innerHTML = opts;
+  document.getElementById('accused-select-opts').innerHTML = opts;
+  wireEmpSearch('complainant-select', employees);
+  wireEmpSearch('accused-select', employees);
 }
 
 async function loadStaff() {
@@ -367,6 +396,10 @@ document.getElementById('new-case-form').addEventListener('submit', async (e) =>
   const type = document.getElementById('case-type').value;
   const complainantId = document.getElementById('complainant-select').value;
   const accusedId = document.getElementById('accused-select').value;
+  if (!complainantId || !accusedId) {
+    showToast('Select both people.', 'error');
+    return;
+  }
   if (complainantId === accusedId) {
     showToast('Complainant and accused can’t be the same person.', 'error');
     return;

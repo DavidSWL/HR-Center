@@ -79,8 +79,10 @@
         <form id="action-form">
           <div class="card-body">
             <div class="field">
-              <label class="f-lab" for="emp-select">Employee</label>
-              <select class="f-in" id="emp-select" required></select>
+              <label class="f-lab" for="emp-select-search">Employee</label>
+              <input class="f-in" id="emp-select-search" list="emp-select-opts" placeholder="Type a name…" autocomplete="off">
+              <datalist id="emp-select-opts"></datalist>
+              <input type="hidden" id="emp-select">
             </div>
             <div id="sequence-hint" class="login-error" style="background:var(--hover);color:var(--muted);border-color:var(--line)" hidden></div>
             <div class="frow">
@@ -187,14 +189,35 @@ let actions = [];
 
 function empById(id) { return employees.find((e) => e.id === id); }
 
+// Type-ahead employee picker — a text input (with a datalist for
+// narrowing by name as you type) paired with a hidden input holding the
+// resolved employee id. Re-dispatches "change" on the hidden input so
+// the existing sequence-hint listener on it keeps working.
+function wireEmpSearch(id, list) {
+  const search = document.getElementById(`${id}-search`);
+  const hidden = document.getElementById(id);
+  if (!search || !hidden) return;
+  const resolve = () => {
+    const m = search.value.match(/\(([^()]+)\)\s*$/);
+    const match = m && list.find((e) => e.id === m[1]);
+    const newVal = match ? match.id : '';
+    const changed = hidden.value !== newVal;
+    hidden.value = newVal;
+    if (changed) hidden.dispatchEvent(new Event('change'));
+  };
+  search.addEventListener('input', resolve);
+  search.addEventListener('change', resolve);
+}
+
 async function loadEmployees() {
   const snap = await getDocs(collection(db, 'employees'));
   employees = snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
     .filter((e) => e.status !== 'terminated')
-    .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''));
-  document.getElementById('emp-select').innerHTML = employees
-    .map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name} (${e.id})</option>`).join('');
+    .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
+  document.getElementById('emp-select-opts').innerHTML = employees
+    .map((e) => `<option value="${escapeHtml(`${e.first_name} ${e.last_name} (${e.id})`)}">`).join('');
+  wireEmpSearch('emp-select', employees);
 
   const divisions = [...new Set(employees.map((e) => e.division).filter(Boolean))].sort();
   document.getElementById('division-filter').innerHTML =
@@ -339,6 +362,7 @@ document.getElementById('action-form').addEventListener('submit', async (e) => {
   try {
     const empId = document.getElementById('emp-select').value;
     const emp = empById(empId);
+    if (!emp) { showToast('Select an employee.', 'error'); saveBtn.disabled = false; return; }
     const actionRef = doc(collection(db, 'disciplinary_actions'));
 
     let fileUrl = null, filePath = null;

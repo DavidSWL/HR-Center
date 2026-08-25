@@ -287,12 +287,13 @@ select.f-in{
 .toast.error{background:var(--alert)}
 .toast[hidden]{display:none}
 
-/* Employee relations review notification — only fires for David, only
-   when a case is actually waiting on him. */
-@keyframes er-flash{0%,100%{background:rgba(179,38,30,0)}50%{background:rgba(179,38,30,.22)}}
-.nv.er-flash{animation:er-flash 1.6s ease-in-out 3}
-@keyframes er-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
-.b.er-pulse{animation:er-pulse 1s ease-in-out 4}
+/* Nav notification flash — used by both the Employee relations review
+   badge (fires only for David, only when a case is waiting on him) and
+   the Tasks badge (fires per-user when something of theirs is overdue). */
+@keyframes nav-flash{0%,100%{background:rgba(179,38,30,0)}50%{background:rgba(179,38,30,.22)}}
+.nv.nav-flash{animation:nav-flash 1.6s ease-in-out 3}
+@keyframes badge-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
+.b.badge-pulse{animation:badge-pulse 1s ease-in-out 4}
 
 @media (max-width:900px){
   .app{grid-template-columns:1fr}

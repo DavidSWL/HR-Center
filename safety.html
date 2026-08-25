@@ -92,8 +92,10 @@
         </div>
         <div class="frow">
           <div class="field">
-            <label class="f-lab" for="emp-select">Employee</label>
-            <select class="f-in" id="emp-select"></select>
+            <label class="f-lab" for="emp-select-search">Employee</label>
+            <input class="f-in" id="emp-select-search" list="emp-select-opts" placeholder="Type a name… (leave blank for Unassigned)" autocomplete="off">
+            <datalist id="emp-select-opts"></datalist>
+            <input type="hidden" id="emp-select">
           </div>
           <div class="field">
             <label class="f-lab" for="supervisor">Supervisor</label>
@@ -263,12 +265,52 @@ let incidents = [];
 
 function empById(id) { return employees.find((e) => e.id === id); }
 
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+// Type-ahead employee picker — a text input (with a datalist for
+// narrowing by name as you type) paired with a hidden input holding the
+// resolved employee id. An empty/unresolved value is a valid state here
+// (Unassigned — an incident doesn't have to name one employee), and
+// re-dispatches "change" on the hidden input so the existing
+// autofillSupervisor listener on it keeps working.
+function wireEmpSearch(id, list) {
+  const search = document.getElementById(`${id}-search`);
+  const hidden = document.getElementById(id);
+  if (!search || !hidden) return;
+  const resolve = () => {
+    const m = search.value.match(/\(([^()]+)\)\s*$/);
+    const match = m && list.find((e) => e.id === m[1]);
+    const newVal = match ? match.id : '';
+    const changed = hidden.value !== newVal;
+    hidden.value = newVal;
+    if (changed) hidden.dispatchEvent(new Event('change'));
+  };
+  search.addEventListener('input', resolve);
+  search.addEventListener('change', resolve);
+}
+
+// Sets the type-ahead employee field programmatically (loading a saved
+// incident) — updates both the visible search text and the hidden id.
+function setEmpField(id, empId, list) {
+  const emp = list.find((e) => e.id === empId);
+  const search = document.getElementById(`${id}-search`);
+  const hidden = document.getElementById(id);
+  if (!search || !hidden) return;
+  search.value = emp ? `${emp.first_name} ${emp.last_name} (${emp.id})` : '';
+  hidden.value = emp ? emp.id : '';
+}
+
 async function loadEmployees() {
   const snap = await getDocs(collection(db, 'employees'));
   employees = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => e.status !== 'terminated');
-  document.getElementById('emp-select').innerHTML = '<option value="">Unassigned</option>' + employees
-    .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''))
-    .map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name}</option>`).join('');
+  const sorted = employees.slice().sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
+  document.getElementById('emp-select-opts').innerHTML = sorted
+    .map((e) => `<option value="${escapeHtml(`${e.first_name} ${e.last_name} (${e.id})`)}">`).join('');
+  wireEmpSearch('emp-select', employees);
 }
 
 let departmentList = [];
@@ -467,7 +509,7 @@ function openEdit(id) {
   document.getElementById('modal-title').textContent = `Incident — ${formatDate(inc.date)}`;
   document.getElementById('inc-date').value = inc.date || '';
   document.getElementById('inc-time').value = inc.time || '';
-  document.getElementById('emp-select').value = inc.emp_id || '';
+  setEmpField('emp-select', inc.emp_id || '', employees);
   ensureOption(document.getElementById('supervisor'), inc.supervisor || '');
   document.getElementById('supervisor').value = inc.supervisor || '';
   ensureOption(document.getElementById('department'), inc.department || '');

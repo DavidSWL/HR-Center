@@ -133,12 +133,16 @@
         </div>
         <div class="frow">
           <div class="field">
-            <label class="f-lab" for="manager">Reports to (solid line)</label>
-            <select class="f-in" id="manager"><option value="">None</option></select>
+            <label class="f-lab" for="manager-search">Reports to (solid line)</label>
+            <input class="f-in" id="manager-search" list="manager-opts" placeholder="Type a name… (leave blank for None)" autocomplete="off">
+            <datalist id="manager-opts"></datalist>
+            <input type="hidden" id="manager">
           </div>
           <div class="field">
-            <label class="f-lab" for="dotted-line">Dotted line</label>
-            <select class="f-in" id="dotted-line"><option value="">None</option></select>
+            <label class="f-lab" for="dotted-line-search">Dotted line</label>
+            <input class="f-in" id="dotted-line-search" list="dotted-line-opts" placeholder="Type a name… (leave blank for None)" autocomplete="off">
+            <datalist id="dotted-line-opts"></datalist>
+            <input type="hidden" id="dotted-line">
           </div>
         </div>
         <div class="frow">
@@ -254,6 +258,52 @@ document.getElementById('header-date').textContent =
 let allEmployees = [];
 let managerIds = new Set();
 let editingId = null;
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+// Type-ahead employee picker — wires a text input (with a datalist for
+// narrowing by name as you type) to a hidden input holding the resolved
+// employee id, so callers read `${id}`'s value exactly like they would a
+// plain <select>'s value. `list` is passed by reference and can be
+// mutated in place later (see populateManagerSelects) without needing
+// to re-wire the listener.
+function wireEmpSearch(id, list) {
+  const search = document.getElementById(`${id}-search`);
+  const hidden = document.getElementById(id);
+  if (!search || !hidden) return;
+  const resolve = () => {
+    const m = search.value.match(/\(([^()]+)\)\s*$/);
+    const match = m && list.find((e) => e.id === m[1]);
+    const newVal = match ? match.id : '';
+    const changed = hidden.value !== newVal;
+    hidden.value = newVal;
+    if (changed) hidden.dispatchEvent(new Event('change'));
+  };
+  search.addEventListener('input', resolve);
+  search.addEventListener('change', resolve);
+}
+
+// Sets a type-ahead employee field programmatically — updates both the
+// visible search text and the hidden resolved id.
+function setEmpField(id, empId, list) {
+  const emp = list.find((e) => e.id === empId);
+  const search = document.getElementById(`${id}-search`);
+  const hidden = document.getElementById(id);
+  if (!search || !hidden) return;
+  search.value = emp ? `${emp.first_name} ${emp.last_name} (${emp.id})` : '';
+  hidden.value = emp ? emp.id : '';
+}
+
+// The pool both manager pickers search — mutated in place by
+// populateManagerSelects() rather than reassigned, so the listeners
+// wired once below always see the current filtered list.
+const managerPickerPool = [];
+wireEmpSearch('manager', managerPickerPool);
+wireEmpSearch('dotted-line', managerPickerPool);
 
 const rowsEl = document.getElementById('rows');
 const emptyState = document.getElementById('empty-state');
@@ -398,11 +448,12 @@ async function loadManagerIds() {
 function populateManagerSelects(excludeId, keepIds = []) {
   const pool = allEmployees.filter((e) => e.id !== excludeId && e.status !== 'terminated');
   const managers = pool.filter((e) => managerIds.has(e.id) || keepIds.includes(e.id));
-  const options = '<option value="">None</option>' + managers
-    .map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name} — ${e.position || e.division || ''}</option>`)
-    .join('');
-  document.getElementById('manager').innerHTML = options;
-  document.getElementById('dotted-line').innerHTML = options;
+  managerPickerPool.length = 0;
+  managerPickerPool.push(...managers);
+  const opts = managers.slice().sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''))
+    .map((e) => `<option value="${escapeHtml(`${e.first_name} ${e.last_name} (${e.id})`)}">`).join('');
+  document.getElementById('manager-opts').innerHTML = opts;
+  document.getElementById('dotted-line-opts').innerHTML = opts;
 }
 
 function openAdd() {
@@ -452,8 +503,8 @@ function openEdit(id) {
   document.getElementById('division').value = emp.division || '';
   document.getElementById('emp-location').value = emp.location || '';
   document.getElementById('position').value = emp.position || '';
-  document.getElementById('manager').value = emp.manager_emp_id || '';
-  document.getElementById('dotted-line').value = emp.dotted_line_emp_id || '';
+  setEmpField('manager', emp.manager_emp_id || '', managerPickerPool);
+  setEmpField('dotted-line', emp.dotted_line_emp_id || '', managerPickerPool);
   document.getElementById('hire-date').value = emp.hire_date || '';
   document.getElementById('phone').value = emp.phone || '';
   document.getElementById('emergency-name').value = emp.emergency_contact_name || '';

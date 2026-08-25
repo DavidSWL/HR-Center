@@ -147,17 +147,17 @@ function render() {
     return `
       <tr>
         <td class="mono" style="${overdue ? 'color:var(--alertTx);font-weight:700' : ''}">${formatDate(t.due_date)}${overdue ? ' · overdue' : ''}</td>
-        <td>${staffName(t.assigned_to)}</td>
+        <td>${t.status === 'complete'
+          ? staffName(t.assigned_to)
+          : `<select class="inp assignee-select" data-id="${t.id}" style="height:32px;font-size:12.5px">${staff.map((s) => `<option value="${s.id}"${s.id === t.assigned_to ? ' selected' : ''}>${s.name}</option>`).join('')}</select>`}</td>
         <td>${t.status === 'complete' ? `<span style="text-decoration:line-through;color:var(--faint)">${t.instructions}</span>` : t.instructions}</td>
         <td class="dim">${t.recurring && t.recurring !== 'none' ? t.recurring : '—'}</td>
         <td style="text-align:right;white-space:nowrap">
           ${t.status === 'complete'
             ? '<span class="pill ok">Done</span>'
             : t.linked_doc_id
-            ? `<button class="gh solid open-doc-btn" data-id="${t.id}" data-doc="${t.linked_doc_id}" data-type="${t.linked_doc_type}" type="button">Open document</button>
-               <button class="gh reassign-btn" data-id="${t.id}" type="button">Reassign</button>`
-            : `<button class="gh complete-btn" data-id="${t.id}" type="button">Complete</button>
-               <button class="gh reassign-btn" data-id="${t.id}" type="button">Reassign</button>`}
+            ? `<button class="gh solid open-doc-btn" data-id="${t.id}" data-doc="${t.linked_doc_id}" data-type="${t.linked_doc_type}" type="button">Open document</button>`
+            : `<button class="gh complete-btn" data-id="${t.id}" type="button">Complete</button>`}
         </td>
       </tr>
     `;
@@ -166,8 +166,8 @@ function render() {
   document.querySelectorAll('.complete-btn').forEach((btn) => {
     btn.addEventListener('click', () => completeTask(btn.dataset.id));
   });
-  document.querySelectorAll('.reassign-btn').forEach((btn) => {
-    btn.addEventListener('click', () => reassignTask(btn.dataset.id));
+  document.querySelectorAll('.assignee-select').forEach((sel) => {
+    sel.addEventListener('change', () => reassignTask(sel.dataset.id, sel.value));
   });
   document.querySelectorAll('.open-doc-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -197,15 +197,9 @@ async function completeTask(id) {
   }
 }
 
-async function reassignTask(id) {
+async function reassignTask(id, newUid) {
   const task = tasks.find((t) => t.id === id);
-  const names = staff.map((s) => `${s.name} (${s.id})`).join('\n');
-  const newUid = prompt(`Reassign to which user ID?\n\n${names}`, task.assigned_to);
-  if (!newUid || newUid === task.assigned_to) return;
-  if (!staff.some((s) => s.id === newUid)) {
-    showToast('Not a recognized user ID.', 'error');
-    return;
-  }
+  if (!task || !newUid || newUid === task.assigned_to) return;
   try {
     await addDoc(collection(db, 'tasks', id, 'reassignments'), {
       from: task.assigned_to,
