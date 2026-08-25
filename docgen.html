@@ -176,6 +176,7 @@ const GENERATORS = [
   { key: 'mealwaiver2', title: 'Second Meal Period Waiver', desc: 'For emergency-hours days past 10 hours — matches the SWL waiver form, English or Spanish, saves to Documents', category: 'Pay & time' },
 
   { key: 'refusal', title: 'Medical Treatment Refusal', desc: 'Matches the SWL acknowledgment form — English or Spanish, saves to Documents', category: 'Safety' },
+  { key: 'nearmiss', title: 'Near-Miss Incident Report', desc: 'Matches the SWL Form 7.3 — unsafe act/condition, witnesses, follow-up plan, saves to Documents', category: 'Safety' },
 
   { key: 'sop', title: 'SOP', desc: 'Standard Operating Procedure — matches the real SWL SOP format, saves to Documents', category: 'Reference library' },
   { key: 'jobdesc', title: 'Job description', desc: 'Matches the real SWL Job Description format — English or Spanish, saves to Documents', category: 'Reference library' },
@@ -338,6 +339,7 @@ function renderCurrent() {
   if (currentKey === 'timecard') renderTimecard(lang);
   if (currentKey === 'mealpenalty') renderMealPenalty(lang);
   if (currentKey === 'mealwaiver2') renderMealWaiver2(lang);
+  if (currentKey === 'nearmiss') renderNearMiss();
 }
 
 // ---- PIP ----
@@ -1961,6 +1963,174 @@ function renderRefusalSheet(lang) {
       }
     });
   };
+}
+
+// ---- Near-Miss Incident Report — matches the real SWL Form 7.3 exactly
+// (English only, per the source form). Distinct from the full injury
+// Incident Log in safety.html — this is the lighter unsafe-act/unsafe-
+// condition report, with its own witnesses/follow-up-plan fields, not
+// the OSHA-recordability tracking safety.html already owns. Same
+// interactive-checkboxes + signature + save-to-Documents pattern as
+// Medical Treatment Refusal. ----
+
+function renderNearMiss() {
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <div class="frow">
+          <div class="field"><label class="f-lab">Location</label><input class="f-in" id="nm-location"></div>
+          <div class="field"><label class="f-lab">Department</label><input class="f-in" id="nm-department"></div>
+        </div>
+        <div class="frow">
+          ${empSearchFieldHtml('nm-emp', '<label class="f-lab">Person reporting</label>')}
+          <div class="field"><label class="f-lab">Date</label><input class="f-in" id="nm-date" type="date"></div>
+        </div>
+        <div class="field"><label class="f-lab">Time incident occurred (if known)</label><input class="f-in" id="nm-time" placeholder="e.g. 9:50am"></div>
+        <div class="field"><label class="f-lab">Name(s) of person(s) who witnessed incident</label><textarea class="f-in" id="nm-witnesses" rows="2" style="resize:vertical"></textarea></div>
+        <div class="field"><label class="f-lab">Describe</label>
+          <select class="f-in" id="nm-describe"><option value="unsafe_act">Unsafe act</option><option value="unsafe_condition">Unsafe condition</option></select>
+        </div>
+        <div class="field"><label class="f-lab">Description</label><textarea class="f-in" id="nm-description" rows="3" style="resize:vertical"></textarea></div>
+        <div class="field"><label class="f-lab">Action taken</label><textarea class="f-in" id="nm-action" rows="2" style="resize:vertical"></textarea></div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Report prepared by</label><input class="f-in" id="nm-prepared-by" value="${escapeHtml(profile.name || '')}"></div>
+          <div class="field"><label class="f-lab">Prepared date</label><input class="f-in" id="nm-prepared-date" type="date"></div>
+        </div>
+        <div class="field"><label class="f-lab">Follow-up: discussed with staff involved — who</label><input class="f-in" id="nm-discussed-staff-who"></div>
+        <div class="field"><label class="f-lab">Follow-up: other — describe</label><input class="f-in" id="nm-other-detail"></div>
+        <div class="field"><label class="f-lab">Comments</label><textarea class="f-in" id="nm-comments" rows="2" style="resize:vertical"></textarea></div>
+        <button class="gh solid" id="nm-generate-btn" type="button">Generate</button>
+      </div>
+    </div>
+    <div class="form-doc" id="nm-sheet" hidden></div>
+  `;
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('nm-date').value = today;
+  document.getElementById('nm-prepared-date').value = today;
+  wireEmpSearch('nm-emp');
+  document.getElementById('nm-generate-btn').addEventListener('click', () => renderNearMissSheet());
+}
+
+function readNearMissForm() {
+  const emp = employees.find((e) => e.id === document.getElementById('nm-emp').value);
+  if (!emp) { showToast('Select who is reporting this.', 'error'); return null; }
+  return {
+    emp,
+    location: document.getElementById('nm-location').value.trim(),
+    department: document.getElementById('nm-department').value.trim(),
+    date: document.getElementById('nm-date').value,
+    time: document.getElementById('nm-time').value.trim(),
+    witnesses: document.getElementById('nm-witnesses').value.trim(),
+    describe: document.getElementById('nm-describe').value,
+    description: document.getElementById('nm-description').value.trim(),
+    action: document.getElementById('nm-action').value.trim(),
+    preparedBy: document.getElementById('nm-prepared-by').value.trim(),
+    preparedDate: document.getElementById('nm-prepared-date').value,
+    discussedStaffWho: document.getElementById('nm-discussed-staff-who').value.trim(),
+    otherDetail: document.getElementById('nm-other-detail').value.trim(),
+    comments: document.getElementById('nm-comments').value.trim(),
+  };
+}
+
+function renderNearMissSheet() {
+  const f = readNearMissForm();
+  if (!f) return;
+  const sheet = document.getElementById('nm-sheet');
+  sheet.hidden = false;
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  sheet.innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">7.3 Near-Miss Incident Report</h1>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Location</b>${escapeHtml(f.location) || '—'}</div>
+        <div class="form-cell"><b>Department</b>${escapeHtml(f.department) || '—'}</div>
+        <div class="form-cell"><b>Person Reporting</b>${f.emp.first_name} ${f.emp.last_name}</div>
+        <div class="form-cell"><b>Date</b>${formatDate(f.date)}</div>
+        <div class="form-cell"><b>Time Incident Occurred</b>${escapeHtml(f.time) || '—'}</div>
+      </div>
+      <div class="form-section">Name(s) of Person(s) Who Witnessed Incident</div>
+      <div class="form-box">${escapeHtml(f.witnesses) || '—'}</div>
+      <div class="form-section">Describe</div>
+      <div class="form-checks">
+        <label>${f.describe === 'unsafe_act' ? '☑' : '☐'} Unsafe act</label>
+        <label>${f.describe === 'unsafe_condition' ? '☑' : '☐'} Unsafe condition</label>
+      </div>
+      <div class="form-box">${escapeHtml(f.description) || '—'}</div>
+      <div class="form-section">Action Taken</div>
+      <div class="form-box">${escapeHtml(f.action) || '—'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Above Report Prepared By</b>${escapeHtml(f.preparedBy) || '—'}</div>
+        <div class="form-cell"><b>Date</b>${formatDate(f.preparedDate)}</div>
+      </div>
+      <div class="form-section">Follow-Up Report and Plan of Action</div>
+      <div class="form-box">
+        <p style="margin:0 0 8px"><label><input type="checkbox" class="nm-check no-print" data-key="discussed_staff"><span class="print-only">☐</span> Discussed with staff involved</label>${f.discussedStaffWho ? ` — ${escapeHtml(f.discussedStaffWho)}` : ''}</p>
+        <p style="margin:0 0 8px"><label><input type="checkbox" class="nm-check no-print" data-key="discussed_meeting"><span class="print-only">☐</span> Discussed at departmental meeting</label></p>
+        <p style="margin:0 0 8px"><label><input type="checkbox" class="nm-check no-print" data-key="reviewed_procedures"><span class="print-only">☐</span> Reviewed procedures with individual</label></p>
+        <p style="margin:0"><label><input type="checkbox" class="nm-check no-print" data-key="other"><span class="print-only">☐</span> Other</label>${f.otherDetail ? ` — ${escapeHtml(f.otherDetail)}` : ''}</p>
+      </div>
+      <div class="form-section">Comments</div>
+      <div class="form-box">${escapeHtml(f.comments) || '—'}</div>
+      <div class="form-page-break">
+      <div class="form-section">Signature of Manager</div>
+      <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
+        <canvas id="nm-mgr-sig-pad" style="width:100%;height:90px;display:block;cursor:crosshair;touch-action:none"></canvas>
+      </div>
+      <button type="button" class="gh no-print" id="nm-mgr-sig-clear" style="margin-bottom:10px">Clear signature</button>
+      <div class="form-section">Signature of Employee</div>
+      <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
+        <canvas id="nm-emp-sig-pad" style="width:100%;height:90px;display:block;cursor:crosshair;touch-action:none"></canvas>
+      </div>
+      <button type="button" class="gh no-print" id="nm-emp-sig-clear" style="margin-bottom:10px">Clear signature</button>
+      <div class="form-sig" style="grid-template-columns:1fr">
+        <div style="border-right:none">Additional Signature (if applicable) / Date: _______________________________________</div>
+      </div>
+      <button type="button" class="gh solid no-print" id="nm-save-btn" style="margin-top:10px">Save</button>
+      </div>
+    </div>
+    <button class="gh no-print" id="nm-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
+  `;
+  document.getElementById('nm-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  document.querySelectorAll('.nm-check').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      cb.closest('label').querySelector('.print-only').textContent = cb.checked ? '☑' : '☐';
+    });
+  });
+  setUpSignaturePad('nm-mgr-sig-pad', 'nm-mgr-sig-clear');
+  setUpSignaturePad('nm-emp-sig-pad', 'nm-emp-sig-clear');
+  document.getElementById('nm-save-btn').addEventListener('click', async () => {
+    const checks = {};
+    document.querySelectorAll('.nm-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
+    const mgrState = sigPads['nm-mgr-sig-pad'];
+    const empState = sigPads['nm-emp-sig-pad'];
+    try {
+      await setDoc(doc(collection(db, 'training_documents')), {
+        content_type: 'nearmiss', category: 'safety',
+        title: `Near-Miss Incident Report — ${f.emp.first_name} ${f.emp.last_name} (${formatDate(f.date)})`,
+        emp_id: f.emp.id, emp_name: `${f.emp.first_name} ${f.emp.last_name}`,
+        location: f.location, department: f.department, date: f.date, time: f.time,
+        witnesses: f.witnesses, describe: f.describe, description: f.description, action: f.action,
+        prepared_by: f.preparedBy, prepared_date: f.preparedDate,
+        checks,
+        discussed_staff_who: f.discussedStaffWho,
+        other_detail: f.otherDetail,
+        comments: f.comments,
+        manager_signature_data_url: mgrState && mgrState.hasStroke ? document.getElementById('nm-mgr-sig-pad').toDataURL('image/png') : null,
+        signature_data_url: empState && empState.hasStroke ? document.getElementById('nm-emp-sig-pad').toDataURL('image/png') : null,
+        signed_by: profile.uid, signed_at: serverTimestamp(),
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      await addDoc(collection(db, 'activity'), {
+        module: 'documents', item: `Near-Miss Incident Report saved — ${f.emp.first_name} ${f.emp.last_name}`,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast('Saved — view it any time in Documents.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
 }
 
 // ---- SOP — matches the real SWL Standard Operating Procedure format:
