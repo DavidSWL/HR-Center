@@ -173,8 +173,9 @@ const GENERATORS = [
 
   { key: 'timecard', title: 'Time card adjustment', desc: 'Employee-signed record of an Aspire punch correction — print, sign, file', category: 'Pay & time' },
   { key: 'mealpenalty', title: 'Missed meal period', desc: 'Documents a missed/delayed break, the CA meal premium owed, and whether a late lunch was still given', category: 'Pay & time' },
+  { key: 'mealwaiver2', title: 'Second Meal Period Waiver', desc: 'For emergency-hours days past 10 hours — matches the SWL waiver form, English or Spanish, saves to Documents', category: 'Pay & time' },
 
-  { key: 'refusal', title: 'Medical Treatment Refusal', desc: 'Matches the SWL acknowledgment form — English or Spanish', category: 'Safety' },
+  { key: 'refusal', title: 'Medical Treatment Refusal', desc: 'Matches the SWL acknowledgment form — English or Spanish, saves to Documents', category: 'Safety' },
 
   { key: 'sop', title: 'SOP', desc: 'Standard Operating Procedure — matches the real SWL SOP format, saves to Documents', category: 'Reference library' },
   { key: 'jobdesc', title: 'Job description', desc: 'Matches the real SWL Job Description format — English or Spanish, saves to Documents', category: 'Reference library' },
@@ -210,7 +211,22 @@ document.getElementById('back-btn').addEventListener('click', () => {
   document.getElementById('page-title').textContent = 'Document generator';
 });
 document.getElementById('print-btn').addEventListener('click', () => window.print());
-document.getElementById('lang-select').addEventListener('change', () => renderCurrent());
+
+// When a document has already been filled in (and maybe signed) and HR
+// switches the language dropdown, this re-renders just the already-
+// generated sheet in the new language using the same entered data,
+// instead of rebuilding the blank form from scratch. Each render*Sheet
+// function below sets this right after it draws — to a zero-arg-minus-
+// lang function that redraws itself — and clears it isn't relevant once
+// a fresh generator is opened. Nothing here re-translates free-text
+// fields (like a typed-in reason) — only the form's own labels and
+// boilerplate, which were already written bilingually.
+let sheetRerender = null;
+document.getElementById('lang-select').addEventListener('change', () => {
+  const lang = document.getElementById('lang-select').value;
+  if (sheetRerender) sheetRerender(lang);
+  else renderCurrent();
+});
 
 let employees = [];       // active only — for "who can this happen to" selects
 let allEmployeesEver = []; // includes terminated — for name lookups on old records
@@ -297,6 +313,7 @@ function openGenerator(key) {
   currentKey = key;
   pendingSigDocId = null;
   pendingSigTaskId = null;
+  sheetRerender = null;
   document.getElementById('menu-view').hidden = true;
   document.getElementById('gen-view').hidden = false;
   document.getElementById('page-title').textContent = GENERATORS.find((g) => g.key === key).title;
@@ -304,7 +321,7 @@ function openGenerator(key) {
   // exactly as supplied — those forms are English-only, so the language
   // toggle only applies to PIP, Onboarding, and the letters (which manage
   // English/Spanish through their own letter-type list instead).
-  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty') ? '' : 'none';
+  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty' || key === 'mealwaiver2') ? '' : 'none';
   renderCurrent();
 }
 
@@ -320,6 +337,7 @@ function renderCurrent() {
   if (currentKey === 'jobdesc') renderJobDescription(lang);
   if (currentKey === 'timecard') renderTimecard(lang);
   if (currentKey === 'mealpenalty') renderMealPenalty(lang);
+  if (currentKey === 'mealwaiver2') renderMealWaiver2(lang);
 }
 
 // ---- PIP ----
@@ -390,7 +408,7 @@ function renderPip(lang) {
         entered_by: profile.uid, entered_at: serverTimestamp(),
       });
       showToast('PIP filed. 4 check-in tasks created.');
-      renderPipSheet(lang, emp, { start, final, gaps, expect, support, checkIns });
+      renderPipSheet(lang, emp, { start, final, gaps, expect, support, checkIns, pipId: pipRef.id });
     } catch (err) {
       console.error(err);
       showToast('Could not save — ' + err.message, 'error');
@@ -424,13 +442,34 @@ function renderPipSheet(lang, emp, p) {
       <table><tbody>
         ${p.checkIns.map((d, i) => `<tr><td>${isEs ? 'Revisión' : 'Check-in'} ${i + 1}</td><td>${formatDate(d)}</td><td>Manager: ______</td><td>Employee: ______</td></tr>`).join('')}
       </table>
-      <div class="sig-line" style="display:inline-block;width:45%">${isEs ? 'Firma del empleado' : 'Employee signature'} / ${isEs ? 'Fecha' : 'Date'}</div>
-      <div class="sig-line" style="display:inline-block;width:45%;margin-left:5%">${isEs ? 'Firma del gerente' : 'Manager signature'} / ${isEs ? 'Fecha' : 'Date'}</div>
+      <h4>${isEs ? 'Firma Electrónica del Empleado' : 'Employee Electronic Signature'}</h4>
+      <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
+        <canvas id="pip-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
+      </div>
+      <button type="button" class="gh no-print" id="pip-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      <button type="button" class="gh solid no-print" id="pip-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
+      <div class="sig-line" style="margin-top:10px">${isEs ? 'Firma del gerente' : 'Manager signature'} / ${isEs ? 'Fecha' : 'Date'}: _______________________________________</div>
       <div class="doc-fineprint">${isEs
         ? 'El acuse de recibo de este plan no constituye acuerdo con su contenido, solo confirma que fue entregado y explicado.'
         : 'Acknowledgment of this plan does not indicate agreement with its content, only that it was delivered and explained.'}</div>
     </div>
   `;
+  setUpSignaturePad('pip-sig-pad', 'pip-sig-clear');
+  document.getElementById('pip-sig-save').addEventListener('click', async () => {
+    const state = sigPads['pip-sig-pad'];
+    if (!state || !state.hasStroke) { showToast('Get a signature first — the pad is empty.', 'error'); return; }
+    try {
+      await updateDoc(doc(db, 'pips', p.pipId), {
+        signature_data_url: document.getElementById('pip-sig-pad').toDataURL('image/png'),
+        signed_at: serverTimestamp(), signed_by: profile.uid,
+      });
+      showToast('Signature saved.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
+  sheetRerender = (l) => withPreservedSignature('pip-sig-pad', () => renderPipSheet(l, emp, p));
 }
 
 // ---- 30/60/90 review — matches "30 / 60 / 90 Day New Hire Review" exactly ----
@@ -640,9 +679,14 @@ function renderReviewSheet(emp, milestone, data) {
 
       <div class="form-page-break">
       <div class="form-fine" style="margin-top:14px;border:1px solid #999">This review is a coaching and communication tool. It does not create a contract of employment, and nothing in this document alters the at-will nature of employment. Either the employee or the Company may end employment at any time, with or without cause or notice.</div>
+      <div class="form-section">Employee Electronic Signature</div>
+      <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
+        <canvas id="rev-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
+      </div>
+      <button type="button" class="gh no-print" id="rev-sig-clear" style="margin-bottom:10px">Clear signature</button>
+      <button type="button" class="gh solid no-print" id="rev-sig-save" style="margin-bottom:10px;margin-left:8px">Signed — save</button>
       <div class="form-sig" style="grid-template-columns:1fr;margin-top:0">
-        <div style="border-right:none">Employee Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
-        <div style="border-right:none;border-top:none">Manager Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
+        <div style="border-right:none">Manager Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
         <div style="border-right:none;border-top:none">HR Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
       </div>
       </div>
@@ -650,6 +694,21 @@ function renderReviewSheet(emp, milestone, data) {
     <button class="gh no-print" id="rev-back-btn" type="button" style="margin-top:14px">&larr; Back to document generator</button>
   `;
   document.getElementById('rev-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  setUpSignaturePad('rev-sig-pad', 'rev-sig-clear');
+  document.getElementById('rev-sig-save').addEventListener('click', async () => {
+    const state = sigPads['rev-sig-pad'];
+    if (!state || !state.hasStroke) { showToast('Get a signature first — the pad is empty.', 'error'); return; }
+    try {
+      await setDoc(doc(db, 'employees', emp.id, 'reviews', String(milestone)), {
+        signature_data_url: document.getElementById('rev-sig-pad').toDataURL('image/png'),
+        signed_at: serverTimestamp(), signed_by: profile.uid,
+      }, { merge: true });
+      showToast('Signature saved.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
 }
 
 // ---- Termination — matches the SWL termination form exactly. Final-pay
@@ -1018,10 +1077,32 @@ function renderTerminationSheet(r, finalPay = {}) {
         <div class="form-cell"><b>Date Delivered</b>${formatDate(r.date_delivered)}</div>
       </div>
       <div class="form-checks">${['In Person', 'Certified Mail', 'Email w/Pay Stub Notice'].map(m => `<label>${m === r.notice_delivery_method ? '☑' : '☐'} ${m}</label>`).join('')}</div>
-      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">Employee Acknowledgement</b>I acknowledge receipt of this termination notice and final pay information.<br><br>Employee Signature: __________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
+      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">Employee Acknowledgement</b>I acknowledge receipt of this termination notice and final pay information.</div>
+      <div class="form-section">Employee Electronic Signature</div>
+      <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
+        <canvas id="term-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
+      </div>
+      <button type="button" class="gh no-print" id="term-sig-clear" style="margin-bottom:10px">Clear signature</button>
+      <button type="button" class="gh solid no-print" id="term-sig-save" style="margin-bottom:10px;margin-left:8px">Signed — save</button>
       <div class="form-atwill"><b>At-will Employment Reminder:</b> Employment with the company is at-will. Nothing in this document alters that status or creates a contract of employment.</div>
     </div>
   `;
+  setUpSignaturePad('term-sig-pad', 'term-sig-clear');
+  document.getElementById('term-sig-save').addEventListener('click', async () => {
+    if (!r.id) { showToast('Register this termination first, then reopen it from the list to save a signature.', 'error'); return; }
+    const state = sigPads['term-sig-pad'];
+    if (!state || !state.hasStroke) { showToast('Get a signature first — the pad is empty.', 'error'); return; }
+    try {
+      await updateDoc(doc(db, 'terminations', r.id), {
+        signature_data_url: document.getElementById('term-sig-pad').toDataURL('image/png'),
+        signed_at: serverTimestamp(), signed_by: profile.uid,
+      });
+      showToast('Signature saved.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
 }
 
 // ---- Termination import — reads the "Terminations" sheet of the roster
@@ -1352,8 +1433,11 @@ function acceptanceBlock(agreementLabel, sigLabel, dateLabel) {
   return `
   <div class="acceptance-block">
     <p class="agreement-label">${escapeHtml(agreementLabel)}</p>
-    <div class="accept-line"><span class="blank"></span><span class="blank short"></span></div>
-    <div class="accept-label-line"><span class="lbl">${escapeHtml(sigLabel)}</span><span class="lbl short">${escapeHtml(dateLabel)}</span></div>
+    <div class="accept-line">
+      <canvas id="ltr-sig-pad" style="flex:1;height:0.85in;display:block;border-bottom:1px solid #333;cursor:crosshair;touch-action:none"></canvas>
+      <span class="blank short"></span>
+    </div>
+    <div class="accept-label-line"><span class="lbl">${escapeHtml(sigLabel)} <button type="button" class="gh no-print" id="ltr-sig-clear" style="font-size:9px;padding:2px 6px;margin-left:8px">Clear</button></span><span class="lbl short">${escapeHtml(dateLabel)}</span></div>
   </div>`;
 }
 function formatMoney(n) { return (Number(n) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' }); }
@@ -1596,6 +1680,7 @@ function generateLetterSheet() {
   sheet.hidden = false;
   sheet.innerHTML = builders[type](ctx);
   sheet.scrollIntoView({ behavior: 'smooth' });
+  setUpSignaturePad('ltr-sig-pad', 'ltr-sig-clear');
   showToast('Letter generated.');
 }
 
@@ -1695,6 +1780,7 @@ async function renderOnboarding(lang) {
   }
 
   document.getElementById('onb-load-btn').addEventListener('click', () => loadChecklist());
+  sheetRerender = () => loadChecklist();
 
   // Deep link from the New Hire board's "Paperwork" column — jump
   // straight to that employee's checklist instead of making HR pick
@@ -1800,13 +1886,17 @@ function renderRefusalSheet(lang) {
       <div class="form-box">${escapeHtml(description) || '—'}</div>
       <div class="form-section">${isEs ? 'Reconocimiento del Empleado — lea cada declaración y ponga sus iniciales' : 'Employee Acknowledgment — read each statement and initial'}</div>
       <div class="form-box">
-        ${statements.map((s) => `<p style="margin:0 0 10px">☐ ${s} ${isEs ? 'Iniciales' : 'Initials'}: ____</p>`).join('')}
+        ${statements.map((s, i) => `<p style="margin:0 0 10px"><label><input type="checkbox" class="ref-check no-print" data-key="statement-${i}"><span class="print-only">☐</span> ${s}</label> ${isEs ? 'Iniciales' : 'Initials'}: ____</p>`).join('')}
       </div>
       <div class="form-section">${isEs ? 'Firmas' : 'Signatures'}</div>
+      <div class="form-box">${isEs ? 'Firma Electrónica del Empleado' : 'Employee Electronic Signature'}</div>
+      <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
+        <canvas id="ref-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
+      </div>
+      <button type="button" class="gh no-print" id="ref-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
       <div class="form-sig" style="grid-template-columns:1fr">
-        <div style="border-right:none">${isEs ? 'Firma del Empleado / Fecha' : 'Employee Signature / Date'}: _______________________________________</div>
-        <div style="border-right:none;border-top:none">${isEs ? 'Firma del Supervisor o Representante de RH / Fecha' : 'Supervisor or HR Representative Signature / Date'}: _______________________________________</div>
-        <div style="border-right:none;border-top:none">☐ ${isEs ? 'El empleado se negó a firmar. Las declaraciones anteriores fueron leídas al empleado en un idioma que entiende, en presencia del testigo indicado abajo.' : 'Employee declined to sign. The statements above were read to the employee in a language they understand, in the presence of the witness below.'}</div>
+        <div style="border-right:none">${isEs ? 'Firma del Supervisor o Representante de RH / Fecha' : 'Supervisor or HR Representative Signature / Date'}: _______________________________________</div>
+        <div style="border-right:none;border-top:none"><label><input type="checkbox" class="ref-check no-print" data-key="declined_to_sign"><span class="print-only">☐</span> ${isEs ? 'El empleado se negó a firmar. Las declaraciones anteriores fueron leídas al empleado en un idioma que entiende, en presencia del testigo indicado abajo.' : 'Employee declined to sign. The statements above were read to the employee in a language they understand, in the presence of the witness below.'}</label></div>
         <div style="border-right:none;border-top:none">${isEs ? 'Firma del Testigo / Fecha' : 'Witness Signature / Date'}: _______________________________________</div>
         <div style="border-right:none;border-top:none">${isEs ? 'Nombre del Testigo / Puesto' : 'Witness Printed Name / Title'}: _______________________________________</div>
       </div>
@@ -1817,17 +1907,60 @@ function renderRefusalSheet(lang) {
         <div class="form-cell"><b>${isEs ? 'Seguimiento 2 (si continúa) — fecha/hora, resultado' : 'Follow-Up 2 (if ongoing) — date/time, outcome'}</b>&nbsp;</div>
       </div>
       <div class="form-checks">
-        <label>☐ ${isEs ? 'El empleado después pidió tratamiento — fecha enviado a la clínica: ______________' : 'Employee later requested treatment — date sent to clinic: ______________'}</label>
-        <label>☐ ${isEs ? 'El empleado reporta recuperación completa - no necesita tratamiento. Fecha: ______________' : 'Employee reports fully recovered — no treatment needed. Date: ______________'}</label>
+        <label><input type="checkbox" class="ref-check no-print" data-key="requested_treatment_later"><span class="print-only">☐</span> ${isEs ? 'El empleado después pidió tratamiento — fecha enviado a la clínica: ______________' : 'Employee later requested treatment — date sent to clinic: ______________'}</label>
+        <label><input type="checkbox" class="ref-check no-print" data-key="fully_recovered"><span class="print-only">☐</span> ${isEs ? 'El empleado reporta recuperación completa - no necesita tratamiento. Fecha: ______________' : 'Employee reports fully recovered — no treatment needed. Date: ______________'}</label>
       </div>
       <div class="form-fine">${isEs
         ? 'Este formulario documenta únicamente la decisión voluntaria del empleado. No es una renuncia ni liberación de ningún tipo. Conservar con el reporte del incidente.'
         : 'This form documents the employee’s voluntary decision only. It is not a release or waiver of any kind. Retain with the incident report.'}</div>
+      <button type="button" class="gh solid no-print" id="ref-sig-save" style="margin-top:10px">${isEs ? 'Guardar' : 'Save'}</button>
       </div>
     </div>
     <button class="gh no-print" id="ref-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
   `;
   document.getElementById('ref-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  document.querySelectorAll('.ref-check').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      cb.closest('label').querySelector('.print-only').textContent = cb.checked ? '☑' : '☐';
+    });
+  });
+  setUpSignaturePad('ref-sig-pad', 'ref-sig-clear');
+  document.getElementById('ref-sig-save').addEventListener('click', async () => {
+    const checks = {};
+    document.querySelectorAll('.ref-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
+    const state = sigPads['ref-sig-pad'];
+    try {
+      await setDoc(doc(collection(db, 'training_documents')), {
+        content_type: 'refusal', category: 'safety',
+        title: `Medical Treatment Refusal — ${emp.first_name} ${emp.last_name} (${formatDate(date)})`,
+        emp_id: emp.id, emp_name: `${emp.first_name} ${emp.last_name}`,
+        date, incident_datetime: incidentDateTime, supervisor, location, description,
+        checks, lang,
+        signature_data_url: state && state.hasStroke ? document.getElementById('ref-sig-pad').toDataURL('image/png') : null,
+        signed_by: profile.uid, signed_at: serverTimestamp(),
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      await addDoc(collection(db, 'activity'), {
+        module: 'documents', item: `Medical Treatment Refusal saved — ${emp.first_name} ${emp.last_name}`,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast('Saved — view it any time in Documents.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
+  sheetRerender = (l) => {
+    const checks = {};
+    document.querySelectorAll('.ref-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
+    withPreservedSignature('ref-sig-pad', () => renderRefusalSheet(l));
+    document.querySelectorAll('.ref-check').forEach((cb) => {
+      if (checks[cb.dataset.key]) {
+        cb.checked = true;
+        cb.closest('label').querySelector('.print-only').textContent = '☑';
+      }
+    });
+  };
 }
 
 // ---- SOP — matches the real SWL Standard Operating Procedure format:
@@ -2033,6 +2166,7 @@ function renderJobDescription(lang) {
     if (role) renderJobDescriptionSheet(role, document.getElementById('lang-select').value);
   };
   document.getElementById('jd-load-btn').addEventListener('click', load);
+  sheetRerender = load;
   load();
 }
 
@@ -2329,6 +2463,29 @@ async function finalizeSignedDocument(canvasId, docData) {
 // stepping on each other's state.
 const sigPads = {};
 
+// Runs renderFn() (which redraws a sheet, recreating its signature
+// canvas from scratch — used when switching the language on an
+// already-generated document) without losing an in-progress, not-yet-
+// saved signature: captures whatever's drawn on canvasId first, then
+// paints it back onto the freshly-created canvas of the same id.
+function withPreservedSignature(canvasId, renderFn) {
+  const oldCanvas = document.getElementById(canvasId);
+  const oldState = sigPads[canvasId];
+  const dataUrl = (oldCanvas && oldState && oldState.hasStroke) ? oldCanvas.toDataURL('image/png') : null;
+  renderFn();
+  if (!dataUrl) return;
+  const newCanvas = document.getElementById(canvasId);
+  const newState = sigPads[canvasId];
+  if (!newCanvas || !newState) return;
+  const rect = newCanvas.getBoundingClientRect();
+  const img = new Image();
+  img.onload = () => {
+    newState.ctx.drawImage(img, 0, 0, rect.width, rect.height);
+    newState.hasStroke = true;
+  };
+  img.src = dataUrl;
+}
+
 function setUpSignaturePad(canvasId, clearBtnId) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
@@ -2445,6 +2602,7 @@ function renderTimecardSheet(lang) {
     date, rows,
   }));
   setUpSignaturePad('tc-sig-pad', 'tc-sig-clear');
+  sheetRerender = (l) => withPreservedSignature('tc-sig-pad', () => renderTimecardSheet(l));
 }
 
 // ---- Missed meal period — documents a meal break that couldn't be taken
@@ -2653,6 +2811,7 @@ function renderMealPenaltySheet(lang) {
     premium_assignee_id: f.assigneeId, premium_due_date: f.dueDate,
   }));
   setUpSignaturePad('mp-sig-pad', 'mp-sig-clear');
+  sheetRerender = (l) => withPreservedSignature('mp-sig-pad', () => renderMealPenaltySheet(l));
 }
 
 async function saveMealPenalty(lang) {
@@ -2687,6 +2846,209 @@ async function saveMealPenalty(lang) {
     console.error(err);
     showToast('Could not save — ' + err.message, 'error');
   }
+}
+
+// ---- Second Meal Period Waiver — matches the real SWL bilingual waiver
+// form exactly (Labor Code 512, second meal period past the 10th hour of
+// an emergency-hours day). Same interactive-checkboxes + signature +
+// save-to-Documents pattern as Medical Treatment Refusal. ----
+
+const MW2_OPPORTUNITY_EN = [
+  'I was informed that I am eligible for a second meal period on this workday',
+  'I was given a reasonable opportunity to take my second meal period',
+  'I understand I may choose to take or waive this meal period voluntarily',
+];
+const MW2_OPPORTUNITY_ES = [
+  'Se me informó que tengo derecho a un segundo período de comida en este día de trabajo',
+  'Se me dio una oportunidad razonable de tomar mi segundo período de comida',
+  'Entiendo que puedo elegir tomar o renunciar a este período de comida voluntariamente',
+];
+const MW2_CONDITIONS_EN = [
+  'This waiver is completely voluntary and is not a condition of employment',
+  'I am making this decision without pressure, coercion, or instruction from any supervisor or manager',
+  'I was provided a meaningful opportunity to take my meal period but chose to waive it',
+  'I understand I may revoke this waiver at any time before the meal period would begin',
+  'My total hours worked on this day are not expected to exceed 12 hours',
+];
+const MW2_CONDITIONS_ES = [
+  'Esta renuncia es completamente voluntaria y no es una condición de empleo',
+  'Estoy tomando esta decisión sin presión, coacción ni instrucción de ningún supervisor o gerente',
+  'Se me dio una oportunidad real de tomar mi período de comida, pero elegí renunciar a ella',
+  'Entiendo que puedo revocar esta renuncia en cualquier momento antes de que comience el período de comida',
+  'No se espera que mis horas totales trabajadas en este día excedan 12 horas',
+];
+const MW2_SUPERVISOR_EN = [
+  'The employee was informed of their right to a second meal period',
+  'The employee was provided a meaningful opportunity to take the meal period',
+  'No pressure, coercion, or requirement was applied to waive the meal period',
+  'This waiver was signed before or during the applicable work period',
+  'Operational needs did not prevent the employee from being offered a meal period opportunity',
+];
+const MW2_SUPERVISOR_ES = [
+  'Se informó al empleado de su derecho a un segundo período de comida',
+  'Se le dio al empleado una oportunidad real de tomar el período de comida',
+  'No se aplicó presión, coacción ni requisito alguno para renunciar al período de comida',
+  'Esta renuncia se firmó antes o durante el período de trabajo aplicable',
+  'Las necesidades operativas no impidieron que se le ofreciera al empleado la oportunidad del período de comida',
+];
+
+function renderMealWaiver2(lang) {
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <div class="frow">
+          ${empSearchFieldHtml('mw2-emp', '<label class="f-lab">Employee</label>')}
+          <div class="field"><label class="f-lab">Branch</label>
+            <select class="f-in" id="mw2-branch"><option value="">Select…</option>${Object.entries(LOCATIONS).map(([k, l]) => `<option value="${k}">${l.label}</option>`).join('')}</select>
+          </div>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Date of work</label><input class="f-in" id="mw2-date" type="date"></div>
+          <div class="field"><label class="f-lab">Scheduled hours</label><input class="f-in" id="mw2-hours" placeholder="e.g. 5:00am – 4:00pm"></div>
+        </div>
+        <div class="field"><label class="f-lab">Was the employee's first meal period taken as required (uninterrupted, before the 5th hour)?</label>
+          <select class="f-in" id="mw2-first-taken"><option value="yes">Yes</option><option value="no">No</option></select>
+        </div>
+        <div class="field"><label class="f-lab">Employee's voluntary decision on the second meal period</label>
+          <select class="f-in" id="mw2-decision"><option value="take">Take the second 30-minute meal period</option><option value="waive">Waive the second 30-minute meal period</option></select>
+        </div>
+        <button class="gh solid" id="mw2-generate-btn" type="button">Generate</button>
+      </div>
+    </div>
+    <div class="form-doc" id="mw2-sheet" hidden></div>
+  `;
+  document.getElementById('mw2-date').value = new Date().toISOString().slice(0, 10);
+  wireEmpSearch('mw2-emp');
+  document.getElementById('mw2-generate-btn').addEventListener('click', () => renderMealWaiver2Sheet(lang));
+}
+
+function readMealWaiver2Form() {
+  const emp = employees.find((e) => e.id === document.getElementById('mw2-emp').value);
+  if (!emp) { showToast('Select an employee.', 'error'); return null; }
+  const branchKey = document.getElementById('mw2-branch').value;
+  return {
+    emp, branch: branchKey ? LOCATIONS[branchKey].label : '',
+    date: document.getElementById('mw2-date').value,
+    hours: document.getElementById('mw2-hours').value.trim(),
+    firstTaken: document.getElementById('mw2-first-taken').value === 'yes',
+    waiving: document.getElementById('mw2-decision').value === 'waive',
+  };
+}
+
+function renderMealWaiver2Sheet(lang) {
+  const isEs = lang === 'es';
+  const f = readMealWaiver2Form();
+  if (!f) return;
+  const opportunity = isEs ? MW2_OPPORTUNITY_ES : MW2_OPPORTUNITY_EN;
+  const conditions = isEs ? MW2_CONDITIONS_ES : MW2_CONDITIONS_EN;
+  const supervisorPts = isEs ? MW2_SUPERVISOR_ES : MW2_SUPERVISOR_EN;
+
+  const sheet = document.getElementById('mw2-sheet');
+  sheet.hidden = false;
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  sheet.innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">${isEs ? 'Acuerdo de Renuncia al Período de Comida — Segundo Período de Comida' : 'Meal Period Waiver Agreement — Second Meal Period'}</h1>
+      <div class="form-section">${isEs ? 'Información del Empleado' : 'Employee Information'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Nombre del Empleado' : 'Employee Name'}</b>${f.emp.first_name} ${f.emp.last_name}</div>
+        <div class="form-cell"><b>${isEs ? 'ID del Empleado' : 'Employee ID'}</b>${f.emp.id}</div>
+        <div class="form-cell"><b>${isEs ? 'Puesto' : 'Job Title'}</b>${f.emp.position || ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Sucursal' : 'Branch'}</b>${escapeHtml(f.branch)}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha de Trabajo' : 'Date of Work'}</b>${formatDate(f.date)}</div>
+        <div class="form-cell"><b>${isEs ? 'Horas Programadas' : 'Scheduled Hours'}</b>${escapeHtml(f.hours)}</div>
+      </div>
+      <div class="form-section">${isEs ? 'Reconocimiento de Derechos al Período de Comida' : 'Acknowledgment of Meal Period Rights'}</div>
+      <div class="form-box">${isEs
+        ? 'Tengo derecho a un segundo período de comida no pagado y libre de deberes de al menos 30 minutos cuando trabajo más de 10 horas en un día de trabajo, conforme al Código Laboral de California §512.'
+        : 'I am entitled to a second unpaid, duty-free meal period of at least 30 minutes when I work more than 10 hours in a workday, per California Labor Code §512.'}</div>
+      <div class="form-section">${isEs ? 'Confirmación del Primer Período de Comida' : 'First Meal Period Confirmation'}</div>
+      <div class="form-box">${f.firstTaken
+        ? (isEs ? 'Sí — se confirmó que el primer período de comida se tomó de forma ininterrumpida.' : 'Yes — the first meal period was confirmed taken uninterrupted.')
+        : (isEs ? 'No — el primer período de comida no se tomó según lo requerido.' : 'No — the first meal period was not taken as required.')}</div>
+      <div class="form-section">${isEs ? 'Confirmación de Oportunidad' : 'Opportunity Confirmation'}</div>
+      <div class="form-box">
+        ${opportunity.map((s, i) => `<p style="margin:0 0 8px"><label><input type="checkbox" class="mw2-check no-print" data-key="opportunity-${i}"><span class="print-only">☐</span> ${s}</label></p>`).join('')}
+      </div>
+      <div class="form-section">${isEs ? 'Decisión Voluntaria sobre el Segundo Período de Comida' : 'Voluntary Second Meal Period Decision'}</div>
+      <div class="form-box">${f.waiving
+        ? (isEs ? 'El empleado renuncia voluntariamente a su segundo período de comida de 30 minutos para este día de trabajo específico.' : 'The employee voluntarily waives their second 30-minute meal period for this specific workday.')
+        : (isEs ? 'El empleado toma su segundo período de comida de 30 minutos.' : 'The employee takes their second 30-minute meal period.')}</div>
+      ${f.waiving ? `
+      <div class="form-section">${isEs ? 'Condiciones de la Renuncia' : 'Conditions of Waiver'}</div>
+      <div class="form-box">
+        ${conditions.map((s, i) => `<p style="margin:0 0 8px"><label><input type="checkbox" class="mw2-check no-print" data-key="condition-${i}"><span class="print-only">☐</span> ${s}</label></p>`).join('')}
+      </div>
+      ` : ''}
+      <div class="form-section">${isEs ? 'Certificación del Empleado' : 'Employee Certification'}</div>
+      <div class="form-box">${isEs
+        ? 'Reconozco que entiendo mis derechos conforme a la ley de California y que estoy tomando voluntariamente esta decisión respecto a mi segundo período de comida para este día de trabajo específico.'
+        : 'I acknowledge that I understand my rights under California law and that I am voluntarily making this decision regarding my second meal period for this specific workday.'}</div>
+      <div class="form-section">${isEs ? 'Firma Electrónica del Empleado' : 'Employee Electronic Signature'}</div>
+      <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
+        <canvas id="mw2-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
+      </div>
+      <button type="button" class="gh no-print" id="mw2-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      <div class="form-page-break">
+      <div class="form-section">${isEs ? 'Certificación del Supervisor' : 'Supervisor Attestation'}</div>
+      <div class="form-box">
+        ${supervisorPts.map((s, i) => `<p style="margin:0 0 8px"><label><input type="checkbox" class="mw2-check no-print" data-key="supervisor-${i}"><span class="print-only">☐</span> ${s}</label></p>`).join('')}
+      </div>
+      <div class="form-sig" style="grid-template-columns:1fr">
+        <div style="border-right:none">${isEs ? 'Firma del Supervisor / Fecha' : 'Supervisor Signature / Date'}: _______________________________________</div>
+      </div>
+      <div class="form-fine">${isEs
+        ? 'Un segundo período de comida solo puede renunciarse por consentimiento mutuo cuando las horas totales no exceden 12 y el primer período de comida no fue renunciado (Código Laboral §512). Un período de comida perdido o no conforme requiere una hora adicional de pago a la tarifa regular (Código Laboral §226.7). Conserve el formulario completo en el expediente del empleado y envíe una copia a Recursos Humanos.'
+        : 'A second meal period may only be waived by mutual consent when total hours worked do not exceed 12 and the first meal period was not waived (Labor Code §512). A missed or non-compliant meal period requires one additional hour of pay at the regular rate (Labor Code §226.7). Retain the completed form in the employee file and forward a copy to HR.'}</div>
+      <button type="button" class="gh solid no-print" id="mw2-sig-save" style="margin-top:10px">${isEs ? 'Guardar' : 'Save'}</button>
+      </div>
+    </div>
+    <button class="gh no-print" id="mw2-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
+  `;
+  document.getElementById('mw2-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  document.querySelectorAll('.mw2-check').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      cb.closest('label').querySelector('.print-only').textContent = cb.checked ? '☑' : '☐';
+    });
+  });
+  setUpSignaturePad('mw2-sig-pad', 'mw2-sig-clear');
+  document.getElementById('mw2-sig-save').addEventListener('click', async () => {
+    const checks = {};
+    document.querySelectorAll('.mw2-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
+    const state = sigPads['mw2-sig-pad'];
+    try {
+      await setDoc(doc(collection(db, 'training_documents')), {
+        content_type: 'mealwaiver2', category: 'pay_time',
+        title: `Second Meal Period Waiver — ${f.emp.first_name} ${f.emp.last_name} (${formatDate(f.date)})`,
+        emp_id: f.emp.id, emp_name: `${f.emp.first_name} ${f.emp.last_name}`,
+        branch: f.branch, date: f.date, hours: f.hours,
+        first_taken: f.firstTaken, waiving: f.waiving, checks, lang,
+        signature_data_url: state && state.hasStroke ? document.getElementById('mw2-sig-pad').toDataURL('image/png') : null,
+        signed_by: profile.uid, signed_at: serverTimestamp(),
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      await addDoc(collection(db, 'activity'), {
+        module: 'documents', item: `Second Meal Period Waiver saved — ${f.emp.first_name} ${f.emp.last_name}`,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast('Saved — view it any time in Documents.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
+  sheetRerender = (l) => {
+    const checks = {};
+    document.querySelectorAll('.mw2-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
+    withPreservedSignature('mw2-sig-pad', () => renderMealWaiver2Sheet(l));
+    document.querySelectorAll('.mw2-check').forEach((cb) => {
+      if (checks[cb.dataset.key]) {
+        cb.checked = true;
+        cb.closest('label').querySelector('.print-only').textContent = '☑';
+      }
+    });
+  };
 }
 
 async function saveJobDescription(role, lang) {
