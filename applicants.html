@@ -10,16 +10,12 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 <style>
-.tally-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--line)}
-.tally-btn{background:var(--raise);border:0;padding:22px 18px;cursor:pointer;text-align:left;display:flex;flex-direction:column;gap:6px;width:100%}
-.tally-btn:hover{background:var(--hover)}
-.tally-btn .lab{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
-.tally-btn .num{font-family:var(--display);font-size:40px;line-height:1;color:var(--text);font-variant-numeric:tabular-nums}
-.tally-btn.rej .num{color:var(--alertTx)}
-.tally-btn .plus{font-family:var(--mono);font-size:11px;color:var(--accentTx);align-self:flex-end}
-.tally-foot{display:flex;justify-content:space-between;align-items:center;padding:8px 18px 18px}
-.undo-btn{background:none;border:0;color:var(--faint);font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;padding:2px 0}
-.undo-btn:hover{color:var(--alertTx)}
+.app-row.grayed{opacity:.5}
+.app-row.grayed td{color:var(--faint)}
+.app-row td{vertical-align:middle}
+.app-cb{width:17px;height:17px;cursor:pointer}
+.app-cb:disabled{cursor:not-allowed}
+.app-name-cell{font-weight:600}
 </style>
 </head>
 <body>
@@ -42,56 +38,56 @@
     <section class="view">
 
       <div class="card" style="margin-bottom:16px">
-        <div class="card-h"><h3 id="today-label">Today</h3><span>Tap to log one — no names, ever</span></div>
-        <div class="tally-grid">
-          <div>
-            <button type="button" class="tally-btn" id="btn-in-person">
-              <span class="lab">Application — in person</span>
-              <span class="num" id="num-in-person">0</span>
-              <span class="plus">+ tap to add</span>
-            </button>
+        <div class="card-h"><h3>New applicant</h3><span>Name and how they applied — everything else is tracked below</span></div>
+        <div class="card-body">
+          <div class="frow">
+            <div class="field">
+              <label class="f-lab" for="new-app-name">Name</label>
+              <input class="f-in" id="new-app-name" placeholder="First and last name">
+            </div>
+            <div class="field">
+              <label class="f-lab" for="new-app-source">How they applied</label>
+              <select class="f-in" id="new-app-source">
+                <option value="walk_in">Walk-in</option>
+                <option value="referral">Referral</option>
+                <option value="past_employee">Past employee</option>
+                <option value="indeed">Indeed</option>
+              </select>
+            </div>
           </div>
-          <div>
-            <button type="button" class="tally-btn" id="btn-online">
-              <span class="lab">Application — online</span>
-              <span class="num" id="num-online">0</span>
-              <span class="plus">+ tap to add</span>
-            </button>
-          </div>
-          <div>
-            <button type="button" class="tally-btn rej" id="btn-rejected-qualifications">
-              <span class="lab">Rejected — qualifications</span>
-              <span class="num" id="num-rejected-qualifications">0</span>
-              <span class="plus">+ tap to add</span>
-            </button>
-          </div>
-          <div>
-            <button type="button" class="tally-btn rej" id="btn-rejected-references">
-              <span class="lab">Rejected — references</span>
-              <span class="num" id="num-rejected-references">0</span>
-              <span class="plus">+ tap to add</span>
-            </button>
-          </div>
-        </div>
-        <div class="tally-foot">
-          <span class="dim" style="font-size:11.5px">Tapped the wrong one? Undo takes back your last tap.</span>
-          <button type="button" class="undo-btn" id="undo-btn" disabled>Undo last tap</button>
-        </div>
-      </div>
-
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-h"><h3>This week</h3><span id="week-range">—</span></div>
-        <div class="big" id="week-stats">
-          <div><div class="v">—</div><div class="k">Loading…</div></div>
+          <button class="gh solid" id="add-applicant-btn" type="button">Add applicant</button>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-h"><h3>Recent days</h3><span id="recent-summary">—</span></div>
+        <div class="card-h"><h3>Applicant tracker</h3><span id="tracker-summary">—</span></div>
+        <div class="tools">
+          <input class="inp" id="search" placeholder="Search name" style="min-width:190px">
+          <select class="inp" id="status-filter">
+            <option value="">Everyone</option>
+            <option value="active">Active pipeline</option>
+            <option value="not_passed">Did not pass interview</option>
+            <option value="oriented">Orientation completed</option>
+          </select>
+        </div>
+        <div style="overflow-x:auto">
         <table>
-          <thead><tr><th>Date</th><th>In person</th><th>Online</th><th>Rejected — qual.</th><th>Rejected — ref.</th></tr></thead>
-          <tbody id="recent-rows"></tbody>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>How applied</th>
+              <th>Applied</th>
+              <th>Pre-screen</th>
+              <th>1st round interview</th>
+              <th>Physical / drug exam</th>
+              <th>Orientation booked</th>
+              <th>Orientation done</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
         </table>
+        </div>
       </div>
     </section>
   </div>
@@ -102,7 +98,7 @@ import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
 import { db } from './firebaseconfig.js';
 import {
-  doc, getDoc, getDocs, collection, setDoc, increment, serverTimestamp,
+  collection, doc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
@@ -112,126 +108,137 @@ initShell('applicants', profile);
 document.getElementById('header-date').textContent =
   new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
 
-const FIELDS = ['in_person', 'online', 'rejected_qualifications', 'rejected_references'];
-const todayStr = new Date().toISOString().slice(0, 10);
-document.getElementById('today-label').textContent =
-  'Today — ' + new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+const SOURCE_LABELS = { walk_in: 'Walk-in', referral: 'Referral', past_employee: 'Past employee', indeed: 'Indeed' };
 
-let lastTapField = null; // for undo — only ever un-does this session's own last tap
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
 
-async function loadToday() {
-  const snap = await getDoc(doc(db, 'applicant_counts', todayStr));
-  const data = snap.exists() ? snap.data() : {};
-  FIELDS.forEach((f) => {
-    document.getElementById('num-' + f.replace(/_/g, '-')).textContent = data[f] || 0;
+let applicants = [];
+
+async function loadApplicants() {
+  const snap = await getDocs(collection(db, 'applicants'));
+  applicants = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.entered_at?.seconds || 0) - (a.entered_at?.seconds || 0));
+  render();
+}
+
+function render() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const statusFilter = document.getElementById('status-filter').value;
+
+  const visible = applicants.filter((a) => {
+    if (q && !(a.name || '').toLowerCase().includes(q)) return false;
+    if (statusFilter === 'active' && a.interview_status === 'not_passed') return false;
+    if (statusFilter === 'not_passed' && a.interview_status !== 'not_passed') return false;
+    if (statusFilter === 'oriented' && !a.orientation_completed) return false;
+    return true;
   });
-}
 
-async function tap(field) {
-  const btn = document.getElementById('btn-' + field.replace(/_/g, '-'));
-  btn.disabled = true;
-  try {
-    await setDoc(doc(db, 'applicant_counts', todayStr), {
-      date: todayStr,
-      [field]: increment(1),
-      entered_by: profile.uid,
-      updated_at: serverTimestamp(),
-    }, { merge: true });
-    const numEl = document.getElementById('num-' + field.replace(/_/g, '-'));
-    numEl.textContent = String(parseInt(numEl.textContent, 10) + 1);
-    lastTapField = field;
-    document.getElementById('undo-btn').disabled = false;
-    await loadWeekAndRecent();
-  } catch (err) {
-    console.error(err);
-    showToast('Could not save — ' + err.message, 'error');
-  } finally {
-    btn.disabled = false;
-  }
-}
+  const activeCount = applicants.filter((a) => a.interview_status !== 'not_passed').length;
+  document.getElementById('tracker-summary').textContent = `${visible.length} of ${applicants.length} — ${activeCount} active`;
 
-document.getElementById('undo-btn').addEventListener('click', async () => {
-  if (!lastTapField) return;
-  const field = lastTapField;
-  lastTapField = null;
-  document.getElementById('undo-btn').disabled = true;
-  try {
-    await setDoc(doc(db, 'applicant_counts', todayStr), {
-      [field]: increment(-1),
-      entered_by: profile.uid,
-      updated_at: serverTimestamp(),
-    }, { merge: true });
-    const numEl = document.getElementById('num-' + field.replace(/_/g, '-'));
-    numEl.textContent = String(Math.max(0, parseInt(numEl.textContent, 10) - 1));
-    showToast('Undone.');
-    await loadWeekAndRecent();
-  } catch (err) {
-    console.error(err);
-    showToast('Could not undo — ' + err.message, 'error');
-  }
-});
-
-FIELDS.forEach((f) => {
-  document.getElementById('btn-' + f.replace(/_/g, '-')).addEventListener('click', () => tap(f));
-});
-
-function mondayOf(d) {
-  const date = new Date(d);
-  const day = date.getDay(); // 0 = Sun
-  const diff = day === 0 ? -6 : 1 - day;
-  date.setDate(date.getDate() + diff);
-  return date;
-}
-
-async function loadWeekAndRecent() {
-  // Pull the last 10 days' docs directly by ID — simpler and cheaper than
-  // a range query for a handful of daily documents.
-  const dates = [];
-  for (let i = 0; i < 10; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    dates.push(d.toISOString().slice(0, 10));
-  }
-  const snaps = await Promise.all(dates.map((d) => getDoc(doc(db, 'applicant_counts', d))));
-  const byDate = {};
-  dates.forEach((d, i) => { byDate[d] = snaps[i].exists() ? snaps[i].data() : null; });
-
-  const monday = mondayOf(new Date()).toISOString().slice(0, 10);
-  document.getElementById('week-range').textContent = `${formatDate(monday)} – ${formatDate(todayStr)}`;
-
-  const weekTotals = { in_person: 0, online: 0, rejected_qualifications: 0, rejected_references: 0 };
-  Object.entries(byDate).forEach(([d, rec]) => {
-    if (!rec || d < monday) return;
-    FIELDS.forEach((f) => { weekTotals[f] += rec[f] || 0; });
-  });
-  const totalApps = weekTotals.in_person + weekTotals.online;
-  const totalRejected = weekTotals.rejected_qualifications + weekTotals.rejected_references;
-
-  document.getElementById('week-stats').innerHTML = `
-    <div><div class="v n">${totalApps}</div><div class="k">Applications<small style="display:block;font-weight:400;color:var(--faint);font-size:11px;margin-top:2px">${weekTotals.in_person} in person, ${weekTotals.online} online</small></div></div>
-    <div><div class="v hot">${weekTotals.rejected_qualifications}</div><div class="k">Rejected — qualifications</div></div>
-    <div><div class="v hot">${weekTotals.rejected_references}</div><div class="k">Rejected — references</div></div>
-    <div><div class="v n">${Math.max(0, totalApps - totalRejected)}</div><div class="k">Still open</div></div>
-  `;
-
-  const recentDates = dates.filter((d) => byDate[d]);
-  document.getElementById('recent-summary').textContent = `${recentDates.length} of last 10 days logged`;
-  document.getElementById('recent-rows').innerHTML = dates.map((d) => {
-    const rec = byDate[d] || {};
+  document.getElementById('rows').innerHTML = visible.length ? visible.map((a) => {
+    const grayed = a.interview_status === 'not_passed';
     return `
-      <tr>
-        <td class="mono ${d === todayStr ? '' : 'dim'}">${formatDate(d)}${d === todayStr ? ' · today' : ''}</td>
-        <td class="mono">${rec.in_person || 0}</td>
-        <td class="mono">${rec.online || 0}</td>
-        <td class="mono">${rec.rejected_qualifications || 0}</td>
-        <td class="mono">${rec.rejected_references || 0}</td>
+      <tr class="app-row${grayed ? ' grayed' : ''}" data-id="${a.id}">
+        <td class="app-name-cell">${escapeHtml(a.name)}</td>
+        <td class="dim">${SOURCE_LABELS[a.source] || a.source}</td>
+        <td class="mono dim">${formatDate(a.applied_date)}</td>
+        <td style="text-align:center"><input type="checkbox" class="app-cb prescreen-cb" data-id="${a.id}" ${a.prescreen_passed ? 'checked' : ''}></td>
+        <td>
+          <select class="inp interview-select" data-id="${a.id}" style="height:32px;font-size:12.5px">
+            <option value="pending" ${a.interview_status === 'pending' || !a.interview_status ? 'selected' : ''}>Pending</option>
+            <option value="passed" ${a.interview_status === 'passed' ? 'selected' : ''}>Passed</option>
+            <option value="not_passed" ${a.interview_status === 'not_passed' ? 'selected' : ''}>Did not pass</option>
+          </select>
+        </td>
+        <td style="text-align:center"><input type="checkbox" class="app-cb physical-cb" data-id="${a.id}" ${a.physical_passed ? 'checked' : ''} ${grayed ? 'disabled' : ''}></td>
+        <td><input class="inp orientation-date-in" data-id="${a.id}" type="date" value="${a.orientation_booked_date || ''}" style="height:32px" ${grayed ? 'disabled' : ''}></td>
+        <td style="text-align:center"><input type="checkbox" class="app-cb orientation-cb" data-id="${a.id}" ${a.orientation_completed ? 'checked' : ''} ${grayed ? 'disabled' : ''}></td>
+        <td style="text-align:right;white-space:nowrap"><button class="gh remove-btn" data-id="${a.id}" type="button">Remove</button></td>
       </tr>
     `;
-  }).join('');
+  }).join('') : '<tr><td colspan="9" class="dim">No applicants match.</td></tr>';
+
+  document.querySelectorAll('.prescreen-cb').forEach((cb) => {
+    cb.addEventListener('change', () => updateApplicant(cb.dataset.id, { prescreen_passed: cb.checked }));
+  });
+  document.querySelectorAll('.interview-select').forEach((sel) => {
+    sel.addEventListener('change', () => updateApplicant(sel.dataset.id, { interview_status: sel.value }));
+  });
+  document.querySelectorAll('.physical-cb').forEach((cb) => {
+    cb.addEventListener('change', () => updateApplicant(cb.dataset.id, { physical_passed: cb.checked }));
+  });
+  document.querySelectorAll('.orientation-date-in').forEach((inp) => {
+    inp.addEventListener('change', () => updateApplicant(inp.dataset.id, { orientation_booked_date: inp.value }));
+  });
+  document.querySelectorAll('.orientation-cb').forEach((cb) => {
+    cb.addEventListener('change', () => updateApplicant(cb.dataset.id, { orientation_completed: cb.checked }));
+  });
+  document.querySelectorAll('.remove-btn').forEach((btn) => {
+    btn.addEventListener('click', () => removeApplicant(btn.dataset.id));
+  });
 }
 
-await loadToday();
-await loadWeekAndRecent();
+async function updateApplicant(id, fields) {
+  try {
+    await updateDoc(doc(db, 'applicants', id), { ...fields, entered_by: profile.uid, updated_at: serverTimestamp() });
+    const a = applicants.find((x) => x.id === id);
+    if (a) Object.assign(a, fields);
+    render();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not update — ' + err.message, 'error');
+    await loadApplicants();
+  }
+}
+
+async function removeApplicant(id) {
+  const a = applicants.find((x) => x.id === id);
+  if (!a || !confirm(`Remove ${a.name} from the tracker? This can't be undone.`)) return;
+  try {
+    await deleteDoc(doc(db, 'applicants', id));
+    showToast('Removed.');
+    await loadApplicants();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not remove — ' + err.message, 'error');
+  }
+}
+
+document.getElementById('add-applicant-btn').addEventListener('click', async () => {
+  const name = document.getElementById('new-app-name').value.trim();
+  if (!name) { showToast('Enter a name.', 'error'); return; }
+  const source = document.getElementById('new-app-source').value;
+  try {
+    await setDoc(doc(collection(db, 'applicants')), {
+      name, source,
+      applied_date: new Date().toISOString().slice(0, 10),
+      prescreen_passed: false,
+      interview_status: 'pending',
+      physical_passed: false,
+      orientation_booked_date: '',
+      orientation_completed: false,
+      entered_by: profile.uid,
+      entered_at: serverTimestamp(),
+    });
+    document.getElementById('new-app-name').value = '';
+    showToast('Applicant added.');
+    await loadApplicants();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not add — ' + err.message, 'error');
+  }
+});
+
+document.getElementById('search').addEventListener('input', render);
+document.getElementById('status-filter').addEventListener('change', render);
+
+await loadApplicants();
 </script>
 </body>
 </html>
