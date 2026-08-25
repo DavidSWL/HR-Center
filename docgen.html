@@ -174,7 +174,7 @@ const GENERATORS = [
   { key: 'timecard', title: 'Time card adjustment', desc: 'Employee-signed record of an Aspire punch correction — print, sign, file', category: 'Pay & time' },
   { key: 'mealpenalty', title: 'Missed meal period', desc: 'Documents a missed/delayed break, the CA meal premium owed, and whether a late lunch was still given', category: 'Pay & time' },
 
-  { key: 'refusal', title: 'Medical Treatment Refusal', desc: 'Matches the SWL acknowledgment form — English or Spanish', category: 'Safety' },
+  { key: 'refusal', title: 'Medical Treatment Refusal', desc: 'Matches the SWL acknowledgment form — English or Spanish, saves to Documents', category: 'Safety' },
 
   { key: 'sop', title: 'SOP', desc: 'Standard Operating Procedure — matches the real SWL SOP format, saves to Documents', category: 'Reference library' },
   { key: 'jobdesc', title: 'Job description', desc: 'Matches the real SWL Job Description format — English or Spanish, saves to Documents', category: 'Reference library' },
@@ -390,7 +390,7 @@ function renderPip(lang) {
         entered_by: profile.uid, entered_at: serverTimestamp(),
       });
       showToast('PIP filed. 4 check-in tasks created.');
-      renderPipSheet(lang, emp, { start, final, gaps, expect, support, checkIns });
+      renderPipSheet(lang, emp, { start, final, gaps, expect, support, checkIns, pipId: pipRef.id });
     } catch (err) {
       console.error(err);
       showToast('Could not save — ' + err.message, 'error');
@@ -424,13 +424,33 @@ function renderPipSheet(lang, emp, p) {
       <table><tbody>
         ${p.checkIns.map((d, i) => `<tr><td>${isEs ? 'Revisión' : 'Check-in'} ${i + 1}</td><td>${formatDate(d)}</td><td>Manager: ______</td><td>Employee: ______</td></tr>`).join('')}
       </table>
-      <div class="sig-line" style="display:inline-block;width:45%">${isEs ? 'Firma del empleado' : 'Employee signature'} / ${isEs ? 'Fecha' : 'Date'}</div>
-      <div class="sig-line" style="display:inline-block;width:45%;margin-left:5%">${isEs ? 'Firma del gerente' : 'Manager signature'} / ${isEs ? 'Fecha' : 'Date'}</div>
+      <h4>${isEs ? 'Firma Electrónica del Empleado' : 'Employee Electronic Signature'}</h4>
+      <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
+        <canvas id="pip-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
+      </div>
+      <button type="button" class="gh no-print" id="pip-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      <button type="button" class="gh solid no-print" id="pip-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
+      <div class="sig-line" style="margin-top:10px">${isEs ? 'Firma del gerente' : 'Manager signature'} / ${isEs ? 'Fecha' : 'Date'}: _______________________________________</div>
       <div class="doc-fineprint">${isEs
         ? 'El acuse de recibo de este plan no constituye acuerdo con su contenido, solo confirma que fue entregado y explicado.'
         : 'Acknowledgment of this plan does not indicate agreement with its content, only that it was delivered and explained.'}</div>
     </div>
   `;
+  setUpSignaturePad('pip-sig-pad', 'pip-sig-clear');
+  document.getElementById('pip-sig-save').addEventListener('click', async () => {
+    const state = sigPads['pip-sig-pad'];
+    if (!state || !state.hasStroke) { showToast('Get a signature first — the pad is empty.', 'error'); return; }
+    try {
+      await updateDoc(doc(db, 'pips', p.pipId), {
+        signature_data_url: document.getElementById('pip-sig-pad').toDataURL('image/png'),
+        signed_at: serverTimestamp(), signed_by: profile.uid,
+      });
+      showToast('Signature saved.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
 }
 
 // ---- 30/60/90 review — matches "30 / 60 / 90 Day New Hire Review" exactly ----
@@ -640,9 +660,14 @@ function renderReviewSheet(emp, milestone, data) {
 
       <div class="form-page-break">
       <div class="form-fine" style="margin-top:14px;border:1px solid #999">This review is a coaching and communication tool. It does not create a contract of employment, and nothing in this document alters the at-will nature of employment. Either the employee or the Company may end employment at any time, with or without cause or notice.</div>
+      <div class="form-section">Employee Electronic Signature</div>
+      <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
+        <canvas id="rev-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
+      </div>
+      <button type="button" class="gh no-print" id="rev-sig-clear" style="margin-bottom:10px">Clear signature</button>
+      <button type="button" class="gh solid no-print" id="rev-sig-save" style="margin-bottom:10px;margin-left:8px">Signed — save</button>
       <div class="form-sig" style="grid-template-columns:1fr;margin-top:0">
-        <div style="border-right:none">Employee Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
-        <div style="border-right:none;border-top:none">Manager Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
+        <div style="border-right:none">Manager Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
         <div style="border-right:none;border-top:none">HR Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
       </div>
       </div>
@@ -650,6 +675,21 @@ function renderReviewSheet(emp, milestone, data) {
     <button class="gh no-print" id="rev-back-btn" type="button" style="margin-top:14px">&larr; Back to document generator</button>
   `;
   document.getElementById('rev-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  setUpSignaturePad('rev-sig-pad', 'rev-sig-clear');
+  document.getElementById('rev-sig-save').addEventListener('click', async () => {
+    const state = sigPads['rev-sig-pad'];
+    if (!state || !state.hasStroke) { showToast('Get a signature first — the pad is empty.', 'error'); return; }
+    try {
+      await setDoc(doc(db, 'employees', emp.id, 'reviews', String(milestone)), {
+        signature_data_url: document.getElementById('rev-sig-pad').toDataURL('image/png'),
+        signed_at: serverTimestamp(), signed_by: profile.uid,
+      }, { merge: true });
+      showToast('Signature saved.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
 }
 
 // ---- Termination — matches the SWL termination form exactly. Final-pay
@@ -1018,10 +1058,32 @@ function renderTerminationSheet(r, finalPay = {}) {
         <div class="form-cell"><b>Date Delivered</b>${formatDate(r.date_delivered)}</div>
       </div>
       <div class="form-checks">${['In Person', 'Certified Mail', 'Email w/Pay Stub Notice'].map(m => `<label>${m === r.notice_delivery_method ? '☑' : '☐'} ${m}</label>`).join('')}</div>
-      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">Employee Acknowledgement</b>I acknowledge receipt of this termination notice and final pay information.<br><br>Employee Signature: __________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
+      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">Employee Acknowledgement</b>I acknowledge receipt of this termination notice and final pay information.</div>
+      <div class="form-section">Employee Electronic Signature</div>
+      <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
+        <canvas id="term-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
+      </div>
+      <button type="button" class="gh no-print" id="term-sig-clear" style="margin-bottom:10px">Clear signature</button>
+      <button type="button" class="gh solid no-print" id="term-sig-save" style="margin-bottom:10px;margin-left:8px">Signed — save</button>
       <div class="form-atwill"><b>At-will Employment Reminder:</b> Employment with the company is at-will. Nothing in this document alters that status or creates a contract of employment.</div>
     </div>
   `;
+  setUpSignaturePad('term-sig-pad', 'term-sig-clear');
+  document.getElementById('term-sig-save').addEventListener('click', async () => {
+    if (!r.id) { showToast('Register this termination first, then reopen it from the list to save a signature.', 'error'); return; }
+    const state = sigPads['term-sig-pad'];
+    if (!state || !state.hasStroke) { showToast('Get a signature first — the pad is empty.', 'error'); return; }
+    try {
+      await updateDoc(doc(db, 'terminations', r.id), {
+        signature_data_url: document.getElementById('term-sig-pad').toDataURL('image/png'),
+        signed_at: serverTimestamp(), signed_by: profile.uid,
+      });
+      showToast('Signature saved.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
 }
 
 // ---- Termination import — reads the "Terminations" sheet of the roster
@@ -1352,8 +1414,11 @@ function acceptanceBlock(agreementLabel, sigLabel, dateLabel) {
   return `
   <div class="acceptance-block">
     <p class="agreement-label">${escapeHtml(agreementLabel)}</p>
-    <div class="accept-line"><span class="blank"></span><span class="blank short"></span></div>
-    <div class="accept-label-line"><span class="lbl">${escapeHtml(sigLabel)}</span><span class="lbl short">${escapeHtml(dateLabel)}</span></div>
+    <div class="accept-line">
+      <canvas id="ltr-sig-pad" style="flex:1;height:0.85in;display:block;border-bottom:1px solid #333;cursor:crosshair;touch-action:none"></canvas>
+      <span class="blank short"></span>
+    </div>
+    <div class="accept-label-line"><span class="lbl">${escapeHtml(sigLabel)} <button type="button" class="gh no-print" id="ltr-sig-clear" style="font-size:9px;padding:2px 6px;margin-left:8px">Clear</button></span><span class="lbl short">${escapeHtml(dateLabel)}</span></div>
   </div>`;
 }
 function formatMoney(n) { return (Number(n) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' }); }
@@ -1596,6 +1661,7 @@ function generateLetterSheet() {
   sheet.hidden = false;
   sheet.innerHTML = builders[type](ctx);
   sheet.scrollIntoView({ behavior: 'smooth' });
+  setUpSignaturePad('ltr-sig-pad', 'ltr-sig-clear');
   showToast('Letter generated.');
 }
 
@@ -1800,13 +1866,17 @@ function renderRefusalSheet(lang) {
       <div class="form-box">${escapeHtml(description) || '—'}</div>
       <div class="form-section">${isEs ? 'Reconocimiento del Empleado — lea cada declaración y ponga sus iniciales' : 'Employee Acknowledgment — read each statement and initial'}</div>
       <div class="form-box">
-        ${statements.map((s) => `<p style="margin:0 0 10px">☐ ${s} ${isEs ? 'Iniciales' : 'Initials'}: ____</p>`).join('')}
+        ${statements.map((s, i) => `<p style="margin:0 0 10px"><label><input type="checkbox" class="ref-check no-print" data-key="statement-${i}"><span class="print-only">☐</span> ${s}</label> ${isEs ? 'Iniciales' : 'Initials'}: ____</p>`).join('')}
       </div>
       <div class="form-section">${isEs ? 'Firmas' : 'Signatures'}</div>
+      <div class="form-box">${isEs ? 'Firma Electrónica del Empleado' : 'Employee Electronic Signature'}</div>
+      <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
+        <canvas id="ref-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
+      </div>
+      <button type="button" class="gh no-print" id="ref-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
       <div class="form-sig" style="grid-template-columns:1fr">
-        <div style="border-right:none">${isEs ? 'Firma del Empleado / Fecha' : 'Employee Signature / Date'}: _______________________________________</div>
-        <div style="border-right:none;border-top:none">${isEs ? 'Firma del Supervisor o Representante de RH / Fecha' : 'Supervisor or HR Representative Signature / Date'}: _______________________________________</div>
-        <div style="border-right:none;border-top:none">☐ ${isEs ? 'El empleado se negó a firmar. Las declaraciones anteriores fueron leídas al empleado en un idioma que entiende, en presencia del testigo indicado abajo.' : 'Employee declined to sign. The statements above were read to the employee in a language they understand, in the presence of the witness below.'}</div>
+        <div style="border-right:none">${isEs ? 'Firma del Supervisor o Representante de RH / Fecha' : 'Supervisor or HR Representative Signature / Date'}: _______________________________________</div>
+        <div style="border-right:none;border-top:none"><label><input type="checkbox" class="ref-check no-print" data-key="declined_to_sign"><span class="print-only">☐</span> ${isEs ? 'El empleado se negó a firmar. Las declaraciones anteriores fueron leídas al empleado en un idioma que entiende, en presencia del testigo indicado abajo.' : 'Employee declined to sign. The statements above were read to the employee in a language they understand, in the presence of the witness below.'}</label></div>
         <div style="border-right:none;border-top:none">${isEs ? 'Firma del Testigo / Fecha' : 'Witness Signature / Date'}: _______________________________________</div>
         <div style="border-right:none;border-top:none">${isEs ? 'Nombre del Testigo / Puesto' : 'Witness Printed Name / Title'}: _______________________________________</div>
       </div>
@@ -1817,17 +1887,49 @@ function renderRefusalSheet(lang) {
         <div class="form-cell"><b>${isEs ? 'Seguimiento 2 (si continúa) — fecha/hora, resultado' : 'Follow-Up 2 (if ongoing) — date/time, outcome'}</b>&nbsp;</div>
       </div>
       <div class="form-checks">
-        <label>☐ ${isEs ? 'El empleado después pidió tratamiento — fecha enviado a la clínica: ______________' : 'Employee later requested treatment — date sent to clinic: ______________'}</label>
-        <label>☐ ${isEs ? 'El empleado reporta recuperación completa - no necesita tratamiento. Fecha: ______________' : 'Employee reports fully recovered — no treatment needed. Date: ______________'}</label>
+        <label><input type="checkbox" class="ref-check no-print" data-key="requested_treatment_later"><span class="print-only">☐</span> ${isEs ? 'El empleado después pidió tratamiento — fecha enviado a la clínica: ______________' : 'Employee later requested treatment — date sent to clinic: ______________'}</label>
+        <label><input type="checkbox" class="ref-check no-print" data-key="fully_recovered"><span class="print-only">☐</span> ${isEs ? 'El empleado reporta recuperación completa - no necesita tratamiento. Fecha: ______________' : 'Employee reports fully recovered — no treatment needed. Date: ______________'}</label>
       </div>
       <div class="form-fine">${isEs
         ? 'Este formulario documenta únicamente la decisión voluntaria del empleado. No es una renuncia ni liberación de ningún tipo. Conservar con el reporte del incidente.'
         : 'This form documents the employee’s voluntary decision only. It is not a release or waiver of any kind. Retain with the incident report.'}</div>
+      <button type="button" class="gh solid no-print" id="ref-sig-save" style="margin-top:10px">${isEs ? 'Guardar' : 'Save'}</button>
       </div>
     </div>
     <button class="gh no-print" id="ref-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
   `;
   document.getElementById('ref-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  document.querySelectorAll('.ref-check').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      cb.closest('label').querySelector('.print-only').textContent = cb.checked ? '☑' : '☐';
+    });
+  });
+  setUpSignaturePad('ref-sig-pad', 'ref-sig-clear');
+  document.getElementById('ref-sig-save').addEventListener('click', async () => {
+    const checks = {};
+    document.querySelectorAll('.ref-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
+    const state = sigPads['ref-sig-pad'];
+    try {
+      await setDoc(doc(collection(db, 'training_documents')), {
+        content_type: 'refusal', category: 'safety',
+        title: `Medical Treatment Refusal — ${emp.first_name} ${emp.last_name} (${formatDate(date)})`,
+        emp_id: emp.id, emp_name: `${emp.first_name} ${emp.last_name}`,
+        date, incident_datetime: incidentDateTime, supervisor, location, description,
+        checks, lang,
+        signature_data_url: state && state.hasStroke ? document.getElementById('ref-sig-pad').toDataURL('image/png') : null,
+        signed_by: profile.uid, signed_at: serverTimestamp(),
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      await addDoc(collection(db, 'activity'), {
+        module: 'documents', item: `Medical Treatment Refusal saved — ${emp.first_name} ${emp.last_name}`,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast('Saved — view it any time in Documents.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
 }
 
 // ---- SOP — matches the real SWL Standard Operating Procedure format:

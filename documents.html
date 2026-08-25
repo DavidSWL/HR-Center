@@ -88,6 +88,7 @@
             <option value="job_description">Job descriptions</option>
             <option value="sop">SOPs</option>
             <option value="pay_time">Pay &amp; time</option>
+            <option value="safety">Safety</option>
             <option value="form_template">Forms / templates</option>
             <option value="policy">Policies</option>
             <option value="handbook">Handbooks</option>
@@ -136,7 +137,7 @@ document.getElementById('header-date').textContent =
 const CATEGORY_LABELS = {
   job_description: 'Job description', sop: 'SOP', form_template: 'Form / template',
   other: 'Other reference', policy: 'Policy', handbook: 'Handbook', notice: 'Notice',
-  pay_time: 'Pay & time',
+  pay_time: 'Pay & time', safety: 'Safety',
 };
 const POLICY_CATEGORIES = new Set(['policy', 'handbook', 'notice']);
 
@@ -356,12 +357,63 @@ function renderMealPenaltyHtml(d) {
   `;
 }
 
+// Mirrors docgen.html's renderRefusalSheet — same statement text (kept
+// as a duplicate on purpose, same as everywhere else in this file) so
+// the read-only view shows exactly what the employee acknowledged.
+const REFUSAL_STATEMENTS_EN = [
+  'I reported this injury/illness to my supervisor, and SouthWest Landscape offered to send me for medical treatment at the company’s designated clinic (or after-hours care) at no cost to me.',
+  'I am choosing to decline medical treatment at this time. This is my own voluntary decision.',
+  'I understand that I may change my mind and request medical treatment at any time, and that I should notify my supervisor or HR immediately if my symptoms continue, return, or get worse.',
+  'I understand that declining treatment today does NOT waive, limit, or affect my rights under California workers’ compensation law in any way.',
+  'I understand that HR or my supervisor will follow up with me within 24-48 hours to check on my condition.',
+];
+const REFUSAL_STATEMENTS_ES = [
+  'Reporté esta lesión/enfermedad a mi supervisor, y SouthWest Landscape me ofreció enviarme a recibir tratamiento médico en la clínica designada por la compañía (o atención fuera de horario) sin costo para mí.',
+  'Estoy decidiendo rechazar el tratamiento médico en este momento. Esta es mi propia decisión voluntaria.',
+  'Entiendo que puedo cambiar de opinión y pedir tratamiento médico en cualquier momento, y que debo avisar a mi supervisor o a Recursos Humanos inmediatamente si mis síntomas continúan, regresan, o empeoran.',
+  'Entiendo que rechazar el tratamiento hoy NO renuncia, limita, ni afecta mis derechos bajo la ley de compensación de trabajadores de California de ninguna manera.',
+  'Entiendo que Recursos Humanos o mi supervisor me contactará dentro de 24-48 horas para preguntar sobre mi condición.',
+];
+
+function renderRefusalHtml(d) {
+  const isEs = d.lang === 'es';
+  const statements = isEs ? REFUSAL_STATEMENTS_ES : REFUSAL_STATEMENTS_EN;
+  const checks = d.checks || {};
+  return `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">Medical Treatment Refusal Acknowledgment</h1>
+      <div class="form-section">Employee Information</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Employee Name</b>${escapeHtmlAttr(d.emp_name)}</div>
+        <div class="form-cell"><b>Date</b>${formatDate(d.date)}</div>
+        <div class="form-cell"><b>Supervisor / Foreman</b>${escapeHtmlAttr(d.supervisor)}</div>
+        <div class="form-cell"><b>Date/Time of Incident</b>${escapeHtmlAttr(d.incident_datetime)}</div>
+        <div class="form-cell" style="grid-column:1/-1"><b>Location / Job Site</b>${escapeHtmlAttr(d.location)}</div>
+      </div>
+      <div class="form-section">Description of Injury or Symptoms</div>
+      <div class="form-box">${escapeHtmlAttr(d.description) || '—'}</div>
+      <div class="form-section">Employee Acknowledgment</div>
+      <div class="form-box">
+        ${statements.map((s, i) => `<p style="margin:0 0 10px">${checks[`statement-${i}`] ? '☑' : '☐'} ${escapeHtmlAttr(s)}</p>`).join('')}
+      </div>
+      <div class="form-section">Employee Electronic Signature</div>
+      ${d.signature_data_url ? `<img src="${d.signature_data_url}" alt="Employee signature" style="max-height:90px;border-bottom:1px solid #333">` : `<div class="dim">${checks.declined_to_sign ? 'Employee declined to sign.' : 'Not signed.'}</div>`}
+      <div class="form-fine" style="margin-top:10px">
+        Follow-up: ${checks.requested_treatment_later ? 'Employee later requested treatment. ' : ''}${checks.fully_recovered ? 'Employee reports fully recovered.' : ''}${!checks.requested_treatment_later && !checks.fully_recovered ? 'No follow-up logged yet.' : ''}
+      </div>
+      <div class="form-fine">This form documents the employee's voluntary decision only. It is not a release or waiver of any kind.</div>
+    </div>
+  `;
+}
+
 function openView(d) {
   const sheet = document.getElementById('view-sheet');
   const isSop = d.content_type === 'sop';
   const isJobDesc = d.content_type === 'jobdesc';
   const isTimecard = d.content_type === 'timecard';
   const isMealPenalty = d.content_type === 'mealpenalty';
+  const isRefusal = d.content_type === 'refusal';
   sheet.className = isSop ? 'sop-doc' : isJobDesc ? 'jd-doc' : 'form-doc';
   sheet.innerHTML = isSop
     ? renderSopHtml(d)
@@ -371,6 +423,8 @@ function openView(d) {
     ? renderTimecardHtml(d)
     : isMealPenalty
     ? renderMealPenaltyHtml(d)
+    : isRefusal
+    ? renderRefusalHtml(d)
     : `<div class="form-doc-inner"><div class="form-title">${escapeHtmlAttr(d.title)}</div>${renderBodyHtml(d.body)}</div>`;
   document.getElementById('view-overlay').hidden = false;
 }
@@ -502,7 +556,7 @@ function render() {
   document.getElementById('docs-summary').textContent = `${visible.length} of ${docs.length}`;
   document.getElementById('doc-rows').innerHTML = visible.length ? visible.map((d) => `
     <tr>
-      <td>${d.content_type === 'text' || d.content_type === 'sop' || d.content_type === 'jobdesc' || d.content_type === 'timecard' || d.content_type === 'mealpenalty'
+      <td>${d.content_type === 'text' || d.content_type === 'sop' || d.content_type === 'jobdesc' || d.content_type === 'timecard' || d.content_type === 'mealpenalty' || d.content_type === 'refusal'
         ? `<a href="#" class="view-doc-link" data-id="${d.id}">${escapeHtmlAttr(d.title)}</a>`
         : `<a href="${d.file_url}" target="_blank" rel="noopener">${escapeHtmlAttr(d.title)}</a>`
       }${d.policy_doc_id ? ' <span class="pill ok">In Policy Compliance</span>' : ''}</td>
