@@ -9,6 +9,19 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
+<style>
+@media print {
+  .side, .bar, .no-print { display:none !important; }
+  .print-only { display:inline !important; }
+  .app { display:block; }
+  .view { padding:0; }
+  .form-doc { border:none !important; box-shadow:none !important; }
+  #view-overlay { position:static !important; background:none !important; display:block !important; }
+  #view-overlay .modal { width:auto !important; max-width:none !important; box-shadow:none !important; border:none !important; margin:0 !important; }
+  #view-overlay .modal-body { padding:0 !important; overflow:visible !important; max-height:none !important; }
+  @page { size:letter; margin:0.5in; }
+}
+</style>
 </head>
 <body>
 
@@ -40,6 +53,7 @@
         </div>
         <div class="tools">
           <button class="gh solid" id="add-btn" type="button">Log incident</button>
+          <span class="dim" style="font-size:11px;align-self:center">Opens Document Generator — includes Form 7.3 fields and signatures</span>
           <button class="gh" id="import-btn" type="button">Import incidents</button>
           <input class="inp" id="search" placeholder="Search employee, location, division" style="min-width:220px">
           <select class="inp" id="type-filter">
@@ -199,6 +213,7 @@
         </div>
       </div>
       <div class="modal-actions">
+        <button type="button" class="gh" id="view-report-btn">View formatted report</button>
         <button type="button" class="gh" id="cancel-btn">Cancel</button>
         <button type="submit" class="gh solid" id="save-btn">Save</button>
       </div>
@@ -239,6 +254,19 @@
     <div class="modal-actions">
       <button type="button" class="gh" id="import-cancel">Cancel</button>
       <button type="button" class="gh solid" id="import-confirm-btn" hidden>Import valid rows</button>
+    </div>
+  </div>
+</div>
+
+<!-- view formatted incident report -->
+<div class="modal-overlay" id="view-overlay" hidden>
+  <div class="modal" style="width:850px">
+    <div class="modal-h no-print"><h3>Incident Report</h3><button class="modal-close" id="view-close" type="button">&times;</button></div>
+    <div class="modal-body">
+      <div class="acts no-print" style="margin-bottom:12px">
+        <button class="gh solid" id="view-print-btn" type="button">Print</button>
+      </div>
+      <div class="form-doc" id="view-sheet"></div>
     </div>
   </div>
 </div>
@@ -489,18 +517,11 @@ function exportCsv() {
 }
 
 const overlay = document.getElementById('modal-overlay');
+// Logging a brand-new incident now happens in Document Generator (it
+// merges in the Form 7.3 fields and signatures) — this modal is only
+// ever opened via openEdit() below, so editingIncidentId is always set
+// by the time the form is submitted.
 let editingIncidentId = null;
-
-function openAdd() {
-  editingIncidentId = null;
-  document.getElementById('modal-title').textContent = 'Log incident';
-  document.getElementById('incident-form').reset();
-  document.getElementById('inc-date').value = new Date().toISOString().slice(0, 10);
-  document.getElementById('injury-fields').hidden = true;
-  document.getElementById('refusal-field').hidden = true;
-  document.getElementById('refusal-file-status').textContent = '';
-  overlay.hidden = false;
-}
 
 function openEdit(id) {
   const inc = incidents.find((x) => x.id === id);
@@ -538,7 +559,84 @@ function openEdit(id) {
   overlay.hidden = false;
 }
 
-document.getElementById('add-btn').addEventListener('click', openAdd);
+// Read-only branded view of a saved incident — mirrors docgen.html's
+// renderIncidentReportSheet (kept as a duplicate on purpose, same as
+// every other formatted-document view in this app), showing the Form
+// 7.3 fields and captured signatures alongside the OSHA tracking fields.
+function renderIncidentReportHtml(inc) {
+  const emp = empById(inc.emp_id);
+  const checks = inc.followup_checks || {};
+  return `
+    <div class="form-doc-inner">
+      <h1 class="form-title">Incident Report</h1>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Date</b>${formatDate(inc.date)}</div>
+        <div class="form-cell"><b>Time</b>${escapeHtml(inc.time) || '—'}</div>
+        <div class="form-cell"><b>Employee Involved</b>${emp ? `${emp.first_name} ${emp.last_name}` : (inc.privacy_case ? 'Privacy case' : 'Unassigned')}</div>
+        <div class="form-cell"><b>Supervisor</b>${escapeHtml(inc.supervisor) || '—'}</div>
+        <div class="form-cell"><b>Department</b>${escapeHtml(inc.department) || '—'}</div>
+        <div class="form-cell"><b>Location / Client Site</b>${escapeHtml(inc.location) || '—'}</div>
+      </div>
+      <div class="form-section">Incident Type</div>
+      <div class="form-box">${escapeHtml(inc.incident_type)}</div>
+      <div class="form-section">What Happened</div>
+      <div class="form-box">${escapeHtml(inc.what_happened) || '—'}</div>
+      ${inc.incident_type === 'Injury' ? `
+      <div class="form-section">Injury Details</div>
+      <div class="form-grid c3">
+        <div class="form-cell"><b>Injury Type</b>${escapeHtml(inc.injury_type) || '—'}</div>
+        <div class="form-cell"><b>Body Part</b>${escapeHtml(inc.body_part) || '—'}</div>
+        <div class="form-cell"><b>Treatment Level</b>${escapeHtml(inc.treatment_level) || '—'}</div>
+        <div class="form-cell"><b>Days Away</b>${inc.days_away || 0}</div>
+        <div class="form-cell"><b>Restricted Days</b>${inc.restricted_days || 0}</div>
+        <div class="form-cell"><b>Recordable</b>${inc.recordable ? 'Yes' : 'No'}</div>
+      </div>
+      ` : ''}
+      <div class="form-section">Name(s) of Person(s) Who Witnessed Incident</div>
+      <div class="form-box">${escapeHtml(inc.witnesses) || '—'}</div>
+      ${inc.describe ? `
+      <div class="form-section">Describe</div>
+      <div class="form-checks">
+        <label>${inc.describe === 'unsafe_act' ? '☑' : '☐'} Unsafe act</label>
+        <label>${inc.describe === 'unsafe_condition' ? '☑' : '☐'} Unsafe condition</label>
+      </div>
+      ` : ''}
+      <div class="form-section">Immediate Action Taken</div>
+      <div class="form-box">${escapeHtml(inc.immediate_action) || '—'}</div>
+      <div class="form-section">Root Cause &amp; Corrective Action</div>
+      <div class="form-box">${escapeHtml(inc.root_cause) || '—'}${inc.corrective_action ? `<br><br><b>Corrective action:</b> ${escapeHtml(inc.corrective_action)}` : ''}</div>
+      <div class="form-section">Follow-Up Report and Plan of Action</div>
+      <div class="form-box">
+        <p style="margin:0 0 8px">${checks.discussed_staff ? '☑' : '☐'} Discussed with staff involved${inc.discussed_staff_who ? ` — ${escapeHtml(inc.discussed_staff_who)}` : ''}</p>
+        <p style="margin:0 0 8px">${checks.discussed_meeting ? '☑' : '☐'} Discussed at departmental meeting</p>
+        <p style="margin:0 0 8px">${checks.reviewed_procedures ? '☑' : '☐'} Reviewed procedures with individual</p>
+        <p style="margin:0">${checks.other ? '☑' : '☐'} Other${inc.other_detail ? ` — ${escapeHtml(inc.other_detail)}` : ''}</p>
+      </div>
+      <div class="form-section">Comments</div>
+      <div class="form-box">${escapeHtml(inc.comments) || '—'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Above Report Prepared By</b>${escapeHtml(inc.prepared_by) || '—'}</div>
+        <div class="form-cell"><b>Date</b>${formatDate(inc.prepared_date)}</div>
+      </div>
+      <div class="form-section">Signature of Manager</div>
+      ${inc.manager_signature_data_url ? `<img src="${inc.manager_signature_data_url}" alt="Manager signature" style="max-height:80px;border-bottom:1px solid #333">` : '<div class="dim">Not signed.</div>'}
+      <div class="form-section">Signature of Employee</div>
+      ${inc.employee_signature_data_url ? `<img src="${inc.employee_signature_data_url}" alt="Employee signature" style="max-height:80px;border-bottom:1px solid #333">` : '<div class="dim">Not signed.</div>'}
+    </div>
+  `;
+}
+document.getElementById('view-report-btn').addEventListener('click', () => {
+  const inc = incidents.find((x) => x.id === editingIncidentId);
+  if (!inc) return;
+  document.getElementById('view-sheet').innerHTML = renderIncidentReportHtml(inc);
+  document.getElementById('view-overlay').hidden = false;
+});
+document.getElementById('view-close').addEventListener('click', () => { document.getElementById('view-overlay').hidden = true; });
+document.getElementById('view-print-btn').addEventListener('click', () => window.print());
+
+document.getElementById('add-btn').addEventListener('click', () => {
+  window.location.href = 'docgen.html?open=incidentreport';
+});
 document.getElementById('emp-select').addEventListener('change', (e) => autofillSupervisor(e.target.value));
 document.getElementById('modal-close').addEventListener('click', () => { overlay.hidden = true; });
 document.getElementById('cancel-btn').addEventListener('click', () => { overlay.hidden = true; });
@@ -585,17 +683,17 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
   saveBtn.disabled = true;
 
   try {
+    if (!editingIncidentId) { showToast('Log new incidents from Document Generator.', 'error'); return; }
     const empId = document.getElementById('emp-select').value;
     const emp = empById(empId);
     const isInjury = document.getElementById('inc-type').value === 'Injury';
     const correctiveOwner = document.getElementById('corrective-owner').value;
     const correctiveDue = document.getElementById('corrective-due').value;
-    const incidentId = editingIncidentId || doc(collection(db, 'incidents')).id;
 
     let refusalUrl = null, refusalPath = null;
     const refusalFile = document.getElementById('refusal-file').files[0];
     if (isInjury && document.getElementById('treatment-level').value === 'refused' && refusalFile) {
-      refusalPath = `incidents/${incidentId}/${refusalFile.name}`;
+      refusalPath = `incidents/${editingIncidentId}/${refusalFile.name}`;
       const storageRef = ref(storage, refusalPath);
       await uploadBytes(storageRef, refusalFile);
       refusalUrl = await getDownloadURL(storageRef);
@@ -627,7 +725,7 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
       entered_by: profile.uid,
     };
 
-    const existingIncident = editingIncidentId ? incidents.find((x) => x.id === editingIncidentId) : null;
+    const existingIncident = incidents.find((x) => x.id === editingIncidentId);
     if (refusalUrl) {
       incidentData.refusal_form_url = refusalUrl;
       incidentData.refusal_form_path = refusalPath;
@@ -639,31 +737,9 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
       incidentData.refusal_form_path = null;
     }
 
-    if (editingIncidentId) {
-      await updateDoc(doc(db, 'incidents', editingIncidentId), incidentData);
-      overlay.hidden = true;
-      showToast('Incident updated.');
-    } else {
-      const batch = writeBatch(db);
-      const incidentRef = doc(db, 'incidents', incidentId);
-      batch.set(incidentRef, { ...incidentData, entered_at: serverTimestamp() });
-
-      // A corrective action shouldn't exist without someone owning it.
-      if (correctiveOwner && correctiveDue) {
-        batch.set(doc(collection(db, 'tasks')), {
-          assigned_to: correctiveOwner,
-          due_date: correctiveDue,
-          instructions: `Corrective action — ${document.getElementById('corrective-action').value.trim()} (${document.getElementById('inc-type').value}, ${emp ? emp.first_name + ' ' + emp.last_name : 'unassigned'})`,
-          recurring: 'none',
-          status: 'open',
-          entered_by: profile.uid,
-          entered_at: serverTimestamp(),
-        });
-      }
-      await batch.commit();
-      overlay.hidden = true;
-      showToast('Incident logged.' + (correctiveOwner ? ' Corrective action task created.' : ''));
-    }
+    await updateDoc(doc(db, 'incidents', editingIncidentId), incidentData);
+    overlay.hidden = true;
+    showToast('Incident updated.');
     await loadIncidents();
   } catch (err) {
     console.error(err);

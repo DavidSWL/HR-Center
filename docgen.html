@@ -125,12 +125,13 @@
 <script type="module">
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate, readSpreadsheetSheets, objectsFromRows } from './app.js';
-import { db } from './firebaseconfig.js';
+import { db, storage } from './firebaseconfig.js';
 import { LOGO_DATA_URL, LOCATIONS, SCHEDULE_PRESETS, HR_SIGNER, ONBOARDING_CHECKLIST } from './letterhead-assets.js';
 import { JOB_DESCRIPTIONS } from './jobdescriptionsdata.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
@@ -176,6 +177,7 @@ const GENERATORS = [
   { key: 'mealwaiver2', title: 'Second Meal Period Waiver', desc: 'For emergency-hours days past 10 hours — matches the SWL waiver form, English or Spanish, saves to Documents', category: 'Pay & time' },
 
   { key: 'refusal', title: 'Medical Treatment Refusal', desc: 'Matches the SWL acknowledgment form — English or Spanish, saves to Documents', category: 'Safety' },
+  { key: 'incidentreport', title: 'Incident Report', desc: 'Log a new incident — injury/near miss/property damage/vehicle accident, matches SWL Form 7.3, signed by manager and employee', category: 'Safety' },
 
   { key: 'sop', title: 'SOP', desc: 'Standard Operating Procedure — matches the real SWL SOP format, saves to Documents', category: 'Reference library' },
   { key: 'jobdesc', title: 'Job description', desc: 'Matches the real SWL Job Description format — English or Spanish, saves to Documents', category: 'Reference library' },
@@ -248,6 +250,12 @@ async function loadManagerIds() {
 async function loadStaff() {
   const snap = await getDocs(collection(db, 'users'));
   staff = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+let departmentList = [];
+async function loadDepartmentList() {
+  const snap = await getDoc(doc(db, 'settings', 'departments'));
+  departmentList = snap.exists() ? (snap.data().values || []).filter((v) => v.active !== false).map((v) => v.label) : [];
 }
 
 function empSelectOptions(list = employees) {
@@ -338,6 +346,7 @@ function renderCurrent() {
   if (currentKey === 'timecard') renderTimecard(lang);
   if (currentKey === 'mealpenalty') renderMealPenalty(lang);
   if (currentKey === 'mealwaiver2') renderMealWaiver2(lang);
+  if (currentKey === 'incidentreport') renderIncidentReport();
 }
 
 // ---- PIP ----
@@ -1963,6 +1972,323 @@ function renderRefusalSheet(lang) {
   };
 }
 
+// ---- Incident Report — the single place a new incident gets logged.
+// Merges what used to be two separate things: the full OSHA-tracking
+// fields that used to only live in Safety's own "Log incident" form
+// (injury type/body part/treatment level/days away/recordable/cost/
+// corrective action + task), and the real SWL Form 7.3 fields (witnesses,
+// unsafe act/condition, immediate action taken, follow-up plan,
+// signatures). Writes ONE record to the same `incidents` collection
+// Safety's list, corrective-action tasks, and Form 300 export already
+// read — nothing else has to change to see these. Safety keeps editing
+// existing incidents, the list, CSV import, and reporting; its own "Log
+// incident" button now just opens this generator instead of its old
+// separate form. ----
+
+function renderIncidentReport() {
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <div class="frow">
+          <div class="field"><label class="f-lab">Date</label><input class="f-in" id="ir-date" type="date"></div>
+          <div class="field"><label class="f-lab">Time</label><input class="f-in" id="ir-time" type="time"></div>
+        </div>
+        <div class="frow">
+          ${empSearchFieldHtml('ir-emp', '<label class="f-lab">Employee involved</label>')}
+          <div class="field"><label class="f-lab">Supervisor</label>
+            <select class="f-in" id="ir-supervisor"><option value="">Select supervisor</option>${employees.filter((e) => managerIds.has(e.id)).map((e) => `<option value="${e.first_name} ${e.last_name}">${e.first_name} ${e.last_name}</option>`).join('')}</select>
+          </div>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Department</label>
+            <select class="f-in" id="ir-department"><option value="">Optional</option>${departmentList.map((d) => `<option value="${d}">${d}</option>`).join('')}</select>
+          </div>
+          <div class="field"><label class="f-lab">Location / client site</label><input class="f-in" id="ir-location"></div>
+        </div>
+        <div class="field"><label class="f-lab">Incident type</label>
+          <select class="f-in" id="ir-type"><option>Injury</option><option>Near miss</option><option>Property damage</option><option>Vehicle accident</option></select>
+        </div>
+        <div class="field"><label class="f-lab">What happened</label><textarea class="f-in" id="ir-what-happened" rows="3" style="resize:vertical"></textarea></div>
+
+        <div id="ir-injury-fields" hidden>
+          <div class="frow">
+            <div class="field"><label class="f-lab">Injury type</label><input class="f-in" id="ir-injury-type" placeholder="e.g. Laceration"></div>
+            <div class="field"><label class="f-lab">Body part</label><input class="f-in" id="ir-body-part"></div>
+          </div>
+          <div class="field"><label class="f-lab">Treatment level</label>
+            <select class="f-in" id="ir-treatment-level">
+              <option value="none">None needed</option>
+              <option value="first_aid">First aid</option>
+              <option value="clinic">Clinic</option>
+              <option value="er">Emergency room</option>
+              <option value="hospitalization">Hospitalization</option>
+              <option value="refused">Employee refused treatment</option>
+            </select>
+          </div>
+          <div class="field" id="ir-refusal-field" hidden>
+            <label class="f-lab" for="ir-refusal-file">Medical Treatment Refusal form (signed copy)</label>
+            <input class="f-in" id="ir-refusal-file" type="file" accept="application/pdf,image/*">
+          </div>
+          <div class="frow">
+            <div class="field"><label class="f-lab">Days away</label><input class="f-in" id="ir-days-away" type="number" min="0" value="0"></div>
+            <div class="field"><label class="f-lab">Restricted days</label><input class="f-in" id="ir-restricted-days" type="number" min="0" value="0"></div>
+          </div>
+          <div id="ir-recordable-hint" class="login-error" style="background:var(--hover);color:var(--muted);border-color:var(--line)" hidden></div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:14px"><input type="checkbox" id="ir-recordable"> Recordable (Cal/OSHA Form 300)</label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:14px"><input type="checkbox" id="ir-privacy-case"> Privacy case — withhold name from Form 300 export</label>
+        </div>
+
+        <div class="field"><label class="f-lab">Name(s) of person(s) who witnessed incident</label><textarea class="f-in" id="ir-witnesses" rows="2" style="resize:vertical"></textarea></div>
+        <div class="field"><label class="f-lab">Describe (if applicable)</label>
+          <select class="f-in" id="ir-describe"><option value="">N/A</option><option value="unsafe_act">Unsafe act</option><option value="unsafe_condition">Unsafe condition</option></select>
+        </div>
+        <div class="field"><label class="f-lab">Immediate action taken</label><textarea class="f-in" id="ir-immediate-action" rows="2" style="resize:vertical" placeholder="e.g. Reported to supervisor and sent to company clinic"></textarea></div>
+
+        <div class="frow">
+          <div class="field"><label class="f-lab">Cost ($)</label><input class="f-in" id="ir-cost" type="number" min="0" step="0.01" placeholder="Leave blank if not yet reviewed"></div>
+          <div class="field"><label class="f-lab">Root cause</label><input class="f-in" id="ir-root-cause"></div>
+        </div>
+        <div class="field"><label class="f-lab">Corrective action (systemic fix, if any)</label><textarea class="f-in" id="ir-corrective-action" rows="2" style="resize:vertical"></textarea></div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Corrective action owner</label><select class="f-in" id="ir-corrective-owner"><option value="">No corrective action</option>${staff.map((s) => `<option value="${s.id}">${s.name}</option>`).join('')}</select></div>
+          <div class="field"><label class="f-lab">Due date</label><input class="f-in" id="ir-corrective-due" type="date"></div>
+        </div>
+
+        <div class="field"><label class="f-lab">Follow-up: discussed with staff involved — who</label><input class="f-in" id="ir-discussed-staff-who"></div>
+        <div class="field"><label class="f-lab">Follow-up: other — describe</label><input class="f-in" id="ir-other-detail"></div>
+        <div class="field"><label class="f-lab">Comments</label><textarea class="f-in" id="ir-comments" rows="2" style="resize:vertical"></textarea></div>
+        <button class="gh solid" id="ir-generate-btn" type="button">Generate</button>
+      </div>
+    </div>
+    <div class="form-doc" id="ir-sheet" hidden></div>
+  `;
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('ir-date').value = today;
+  wireEmpSearch('ir-emp');
+
+  document.getElementById('ir-emp').addEventListener('change', (e) => {
+    const emp = employees.find((x) => x.id === e.target.value);
+    if (!emp || !emp.manager_emp_id) return;
+    const mgr = employees.find((x) => x.id === emp.manager_emp_id);
+    if (!mgr) return;
+    const sel = document.getElementById('ir-supervisor');
+    const name = `${mgr.first_name} ${mgr.last_name}`;
+    if (![...sel.options].some((o) => o.value === name)) {
+      const opt = document.createElement('option'); opt.value = name; opt.textContent = name; sel.appendChild(opt);
+    }
+    sel.value = name;
+  });
+  document.getElementById('ir-type').addEventListener('change', (e) => {
+    document.getElementById('ir-injury-fields').hidden = e.target.value !== 'Injury';
+  });
+  document.getElementById('ir-treatment-level').addEventListener('change', (e) => {
+    document.getElementById('ir-refusal-field').hidden = e.target.value !== 'refused';
+  });
+  function updateRecordableHint() {
+    const level = document.getElementById('ir-treatment-level').value;
+    const daysAway = parseInt(document.getElementById('ir-days-away').value || '0', 10);
+    const restrictedDays = parseInt(document.getElementById('ir-restricted-days').value || '0', 10);
+    const hint = document.getElementById('ir-recordable-hint');
+    const checkbox = document.getElementById('ir-recordable');
+    if (daysAway > 0 || restrictedDays > 0) {
+      checkbox.checked = true; hint.hidden = false;
+      hint.textContent = 'Days away or restricted days were entered — this is recordable regardless of treatment level.';
+    } else if (level === 'clinic' || level === 'er' || level === 'hospitalization') {
+      checkbox.checked = true; hint.hidden = false;
+      hint.textContent = 'Clinic/ER/hospitalization treatment is likely recordable — pre-checked, but review before saving.';
+    } else if (level === 'first_aid') {
+      checkbox.checked = false; hint.hidden = false;
+      hint.textContent = 'First aid only is usually not recordable — unless days away or restricted work apply.';
+    } else {
+      hint.hidden = true;
+    }
+  }
+  ['ir-treatment-level', 'ir-days-away', 'ir-restricted-days'].forEach((id) => {
+    document.getElementById(id).addEventListener('input', updateRecordableHint);
+    document.getElementById(id).addEventListener('change', updateRecordableHint);
+  });
+  document.getElementById('ir-generate-btn').addEventListener('click', () => renderIncidentReportSheet());
+}
+
+function readIncidentReportForm() {
+  const empId = document.getElementById('ir-emp').value;
+  const emp = employees.find((e) => e.id === empId) || null; // an incident doesn't have to name one employee
+  const isInjury = document.getElementById('ir-type').value === 'Injury';
+  return {
+    emp,
+    date: document.getElementById('ir-date').value,
+    time: document.getElementById('ir-time').value,
+    supervisor: document.getElementById('ir-supervisor').value.trim(),
+    department: document.getElementById('ir-department').value.trim(),
+    location: document.getElementById('ir-location').value.trim(),
+    incidentType: document.getElementById('ir-type').value,
+    whatHappened: document.getElementById('ir-what-happened').value.trim(),
+    isInjury,
+    injuryType: isInjury ? document.getElementById('ir-injury-type').value.trim() : '',
+    bodyPart: isInjury ? document.getElementById('ir-body-part').value.trim() : '',
+    treatmentLevel: isInjury ? document.getElementById('ir-treatment-level').value : '',
+    daysAway: isInjury ? parseInt(document.getElementById('ir-days-away').value || '0', 10) : 0,
+    restrictedDays: isInjury ? parseInt(document.getElementById('ir-restricted-days').value || '0', 10) : 0,
+    recordable: isInjury ? document.getElementById('ir-recordable').checked : false,
+    privacyCase: isInjury ? document.getElementById('ir-privacy-case').checked : false,
+    witnesses: document.getElementById('ir-witnesses').value.trim(),
+    describe: document.getElementById('ir-describe').value,
+    immediateAction: document.getElementById('ir-immediate-action').value.trim(),
+    cost: document.getElementById('ir-cost').value === '' ? null : parseFloat(document.getElementById('ir-cost').value),
+    rootCause: document.getElementById('ir-root-cause').value.trim(),
+    correctiveAction: document.getElementById('ir-corrective-action').value.trim(),
+    correctiveOwner: document.getElementById('ir-corrective-owner').value,
+    correctiveDue: document.getElementById('ir-corrective-due').value,
+    discussedStaffWho: document.getElementById('ir-discussed-staff-who').value.trim(),
+    otherDetail: document.getElementById('ir-other-detail').value.trim(),
+    comments: document.getElementById('ir-comments').value.trim(),
+  };
+}
+
+function renderIncidentReportSheet() {
+  const f = readIncidentReportForm();
+  const sheet = document.getElementById('ir-sheet');
+  sheet.hidden = false;
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  sheet.innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">Incident Report</h1>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Date</b>${formatDate(f.date)}</div>
+        <div class="form-cell"><b>Time</b>${escapeHtml(f.time) || '—'}</div>
+        <div class="form-cell"><b>Employee Involved</b>${f.emp ? `${f.emp.first_name} ${f.emp.last_name}` : 'Unassigned'}</div>
+        <div class="form-cell"><b>Supervisor</b>${escapeHtml(f.supervisor) || '—'}</div>
+        <div class="form-cell"><b>Department</b>${escapeHtml(f.department) || '—'}</div>
+        <div class="form-cell"><b>Location / Client Site</b>${escapeHtml(f.location) || '—'}</div>
+      </div>
+      <div class="form-section">Incident Type</div>
+      <div class="form-box">${escapeHtml(f.incidentType)}</div>
+      <div class="form-section">What Happened</div>
+      <div class="form-box">${escapeHtml(f.whatHappened) || '—'}</div>
+      ${f.isInjury ? `
+      <div class="form-section">Injury Details</div>
+      <div class="form-grid c3">
+        <div class="form-cell"><b>Injury Type</b>${escapeHtml(f.injuryType) || '—'}</div>
+        <div class="form-cell"><b>Body Part</b>${escapeHtml(f.bodyPart) || '—'}</div>
+        <div class="form-cell"><b>Treatment Level</b>${escapeHtml(f.treatmentLevel) || '—'}</div>
+        <div class="form-cell"><b>Days Away</b>${f.daysAway}</div>
+        <div class="form-cell"><b>Restricted Days</b>${f.restrictedDays}</div>
+        <div class="form-cell"><b>Recordable</b>${f.recordable ? 'Yes' : 'No'}</div>
+      </div>
+      ` : ''}
+      <div class="form-section">Name(s) of Person(s) Who Witnessed Incident</div>
+      <div class="form-box">${escapeHtml(f.witnesses) || '—'}</div>
+      ${f.describe ? `
+      <div class="form-section">Describe</div>
+      <div class="form-checks">
+        <label>${f.describe === 'unsafe_act' ? '☑' : '☐'} Unsafe act</label>
+        <label>${f.describe === 'unsafe_condition' ? '☑' : '☐'} Unsafe condition</label>
+      </div>
+      ` : ''}
+      <div class="form-section">Immediate Action Taken</div>
+      <div class="form-box">${escapeHtml(f.immediateAction) || '—'}</div>
+      <div class="form-section">Root Cause &amp; Corrective Action</div>
+      <div class="form-box">${escapeHtml(f.rootCause) || '—'}${f.correctiveAction ? `<br><br><b>Corrective action:</b> ${escapeHtml(f.correctiveAction)}` : ''}</div>
+      <div class="form-section">Follow-Up Report and Plan of Action</div>
+      <div class="form-box">
+        <p style="margin:0 0 8px"><label><input type="checkbox" class="ir-check no-print" data-key="discussed_staff"><span class="print-only">☐</span> Discussed with staff involved</label>${f.discussedStaffWho ? ` — ${escapeHtml(f.discussedStaffWho)}` : ''}</p>
+        <p style="margin:0 0 8px"><label><input type="checkbox" class="ir-check no-print" data-key="discussed_meeting"><span class="print-only">☐</span> Discussed at departmental meeting</label></p>
+        <p style="margin:0 0 8px"><label><input type="checkbox" class="ir-check no-print" data-key="reviewed_procedures"><span class="print-only">☐</span> Reviewed procedures with individual</label></p>
+        <p style="margin:0"><label><input type="checkbox" class="ir-check no-print" data-key="other"><span class="print-only">☐</span> Other</label>${f.otherDetail ? ` — ${escapeHtml(f.otherDetail)}` : ''}</p>
+      </div>
+      <div class="form-section">Comments</div>
+      <div class="form-box">${escapeHtml(f.comments) || '—'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Above Report Prepared By</b>${escapeHtml(profile.name || '')}</div>
+        <div class="form-cell"><b>Date</b>${formatDate(new Date().toISOString().slice(0, 10))}</div>
+      </div>
+      <div class="form-page-break">
+      <div class="form-section">Signature of Manager</div>
+      <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
+        <canvas id="ir-mgr-sig-pad" style="width:100%;height:90px;display:block;cursor:crosshair;touch-action:none"></canvas>
+      </div>
+      <button type="button" class="gh no-print" id="ir-mgr-sig-clear" style="margin-bottom:10px">Clear signature</button>
+      <div class="form-section">Signature of Employee</div>
+      <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
+        <canvas id="ir-emp-sig-pad" style="width:100%;height:90px;display:block;cursor:crosshair;touch-action:none"></canvas>
+      </div>
+      <button type="button" class="gh no-print" id="ir-emp-sig-clear" style="margin-bottom:10px">Clear signature</button>
+      <button type="button" class="gh solid no-print" id="ir-save-btn" style="margin-top:10px">Save</button>
+      </div>
+    </div>
+    <button class="gh no-print" id="ir-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
+  `;
+  document.getElementById('ir-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  document.querySelectorAll('.ir-check').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      cb.closest('label').querySelector('.print-only').textContent = cb.checked ? '☑' : '☐';
+    });
+  });
+  setUpSignaturePad('ir-mgr-sig-pad', 'ir-mgr-sig-clear');
+  setUpSignaturePad('ir-emp-sig-pad', 'ir-emp-sig-clear');
+  document.getElementById('ir-save-btn').addEventListener('click', () => saveIncidentReport(f));
+}
+
+async function saveIncidentReport(f) {
+  const checks = {};
+  document.querySelectorAll('.ir-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
+  const mgrState = sigPads['ir-mgr-sig-pad'];
+  const empState = sigPads['ir-emp-sig-pad'];
+  const saveBtn = document.getElementById('ir-save-btn');
+  saveBtn.disabled = true;
+  try {
+    const incidentRef = doc(collection(db, 'incidents'));
+
+    let refusalUrl = null, refusalPath = null;
+    const refusalFile = document.getElementById('ir-refusal-file')?.files[0];
+    if (f.isInjury && f.treatmentLevel === 'refused' && refusalFile) {
+      refusalPath = `incidents/${incidentRef.id}/${refusalFile.name}`;
+      const storageRef = ref(storage, refusalPath);
+      await uploadBytes(storageRef, refusalFile);
+      refusalUrl = await getDownloadURL(storageRef);
+    }
+
+    const batch = writeBatch(db);
+    batch.set(incidentRef, {
+      // ---- same field names Safety's list, corrective tasks, and Form
+      // 300 export already read — nothing there has to change. ----
+      date: f.date, time: f.time, emp_id: f.emp ? f.emp.id : '',
+      division: f.emp ? f.emp.division || '' : '',
+      department: f.department, supervisor: f.supervisor, location: f.location,
+      incident_type: f.incidentType, what_happened: f.whatHappened,
+      injury_type: f.injuryType, body_part: f.bodyPart, treatment_level: f.treatmentLevel,
+      days_away: f.daysAway, restricted_days: f.restrictedDays,
+      recordable: f.recordable, privacy_case: f.privacyCase,
+      cost: f.cost, root_cause: f.rootCause,
+      corrective_action: f.correctiveAction, corrective_owner: f.correctiveOwner, corrective_due: f.correctiveDue,
+      category_needs_review: false,
+      refusal_form_url: refusalUrl, refusal_form_path: refusalPath,
+      // ---- Form 7.3 fields, new on the merged record ----
+      witnesses: f.witnesses, describe: f.describe, immediate_action: f.immediateAction,
+      followup_checks: checks, discussed_staff_who: f.discussedStaffWho, other_detail: f.otherDetail,
+      comments: f.comments, prepared_by: profile.name || '', prepared_date: new Date().toISOString().slice(0, 10),
+      manager_signature_data_url: mgrState && mgrState.hasStroke ? document.getElementById('ir-mgr-sig-pad').toDataURL('image/png') : null,
+      employee_signature_data_url: empState && empState.hasStroke ? document.getElementById('ir-emp-sig-pad').toDataURL('image/png') : null,
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    if (f.correctiveOwner && f.correctiveDue) {
+      batch.set(doc(collection(db, 'tasks')), {
+        assigned_to: f.correctiveOwner, due_date: f.correctiveDue,
+        instructions: `Corrective action — ${f.correctiveAction} (${f.incidentType}, ${f.emp ? f.emp.first_name + ' ' + f.emp.last_name : 'unassigned'})`,
+        recurring: 'none', status: 'open', entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+    }
+    await batch.commit();
+    showToast('Incident logged.' + (f.correctiveOwner ? ' Corrective action task created.' : '') + ' Find it in Safety & incidents.');
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+
 // ---- SOP — matches the real SWL Standard Operating Procedure format:
 // letterhead, a metadata grid (SOP number/dates/revision), PURPOSE and
 // SCOPE section bars, a Responsibilities table, a numbered Procedure
@@ -3080,6 +3406,7 @@ await loadEmployees();
 await loadManagerIds();
 await loadTerminations();
 await loadStaff();
+await loadDepartmentList();
 
 // A nav item can jump straight into a specific generator (used for the
 // Terminations tab) instead of always landing on the tile menu.
