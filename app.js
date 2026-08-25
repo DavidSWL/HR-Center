@@ -148,6 +148,7 @@ export function initShell(activeKey, profile) {
   initTheme();
   initIdleTimeout();
   initErNotifications(profile);
+  initTaskNotifications(profile);
 }
 
 /**
@@ -170,8 +171,8 @@ async function initErNotifications(profile) {
     erLink.appendChild(badge);
 
     if (profile?.role === 'david') {
-      erLink.classList.add('er-flash');
-      badge.classList.add('er-pulse');
+      erLink.classList.add('nav-flash');
+      badge.classList.add('badge-pulse');
       try {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (AudioCtx && !sessionStorage.getItem('er-chime-played')) {
@@ -190,6 +191,36 @@ async function initErNotifications(profile) {
     }
   } catch (err) {
     console.error('ER notification check failed', err);
+  }
+}
+
+/**
+ * Every signed-in user's own open tasks get a badge on the Tasks nav
+ * item, everywhere in the app — the same "don't have to go check" idea
+ * as the ER badge above, just scoped to that person's own open work
+ * instead of one shared queue. It flashes red only when at least one of
+ * those tasks is overdue, since an on-time task doesn't need urgency.
+ */
+async function initTaskNotifications(profile) {
+  const link = document.querySelector('.nv[href="tasks.html"]');
+  if (!link) return;
+  try {
+    const snap = await getDocs(query(collection(db, 'tasks'), where('assigned_to', '==', profile.uid)));
+    const openTasks = snap.docs.map((d) => d.data()).filter((t) => t.status !== 'complete');
+    if (openTasks.length === 0) return;
+
+    const badge = document.createElement('span');
+    badge.className = 'b';
+    badge.textContent = String(openTasks.length);
+    link.appendChild(badge);
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (openTasks.some((t) => t.due_date && t.due_date < todayStr)) {
+      link.classList.add('nav-flash');
+      badge.classList.add('badge-pulse');
+    }
+  } catch (err) {
+    console.error('Task notification check failed', err);
   }
 }
 

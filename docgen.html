@@ -241,6 +241,58 @@ function empSelectOptions(list = employees) {
     .map((e) => `<option value="${e.id}">${e.first_name} ${e.last_name} (${e.id})</option>`).join('');
 }
 
+// Type-ahead employee picker — a text box with a datalist that narrows
+// by name as you type, plus a hidden input that holds the resolved
+// employee id. Every generator reads `${id}`'s value expecting an
+// employee id, exactly like it did with the old <select>, so this is a
+// drop-in replacement: only the markup and the wireEmpSearch() call are
+// new, nothing that reads the value elsewhere has to change.
+function empSearchFieldHtml(id, labelHtml, list = employees) {
+  const sorted = list.slice().sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
+  const opts = sorted.map((e) => `<option value="${escapeHtml(`${e.first_name} ${e.last_name} (${e.id})`)}">`).join('');
+  return `
+    <div class="field">
+      ${labelHtml}
+      <input class="f-in" id="${id}-search" list="${id}-opts" placeholder="Type a name…" autocomplete="off">
+      <datalist id="${id}-opts">${opts}</datalist>
+      <input type="hidden" id="${id}">
+    </div>
+  `;
+}
+
+// Call once right after inserting empSearchFieldHtml()'s markup into the
+// page — wires the visible text box to resolve into the hidden id field,
+// and re-dispatches "change" on the hidden input so existing listeners
+// on it (e.g. auto-filling a title from "Reports to") keep working.
+function wireEmpSearch(id, list = employees) {
+  const search = document.getElementById(`${id}-search`);
+  const hidden = document.getElementById(id);
+  if (!search || !hidden) return;
+  const resolve = () => {
+    const m = search.value.match(/\(([^()]+)\)\s*$/);
+    const match = m && list.find((e) => e.id === m[1]);
+    const newVal = match ? match.id : '';
+    const changed = hidden.value !== newVal;
+    hidden.value = newVal;
+    if (changed) hidden.dispatchEvent(new Event('change'));
+  };
+  search.addEventListener('input', resolve);
+  search.addEventListener('change', resolve);
+}
+
+// Sets a type-ahead employee field programmatically (loading a saved
+// record, following a deep link) — updates both the visible search text
+// and the hidden resolved id, since setting the hidden input alone would
+// leave the text box blank or stale.
+function setEmpField(id, empId, list = employees) {
+  const emp = list.find((e) => e.id === empId);
+  const search = document.getElementById(`${id}-search`);
+  const hidden = document.getElementById(id);
+  if (!search || !hidden) return;
+  search.value = emp ? `${emp.first_name} ${emp.last_name} (${emp.id})` : '';
+  hidden.value = emp ? emp.id : '';
+}
+
 function openGenerator(key) {
   currentKey = key;
   pendingSigDocId = null;
@@ -278,7 +330,7 @@ function renderPip(lang) {
     <div class="card no-print" style="margin-bottom:16px">
       <div class="card-body">
         <div class="frow">
-          <div class="field"><label class="f-lab">${t.employee}</label><select class="f-in" id="pip-emp">${empSelectOptions()}</select></div>
+          ${empSearchFieldHtml('pip-emp', '<label class="f-lab">' + t.employee + '</label>')}
           <div class="field"><label class="f-lab">Start date</label><input class="f-in" id="pip-start" type="date"></div>
         </div>
         <div class="field"><label class="f-lab">Final review date</label><input class="f-in" id="pip-final" type="date"></div>
@@ -296,10 +348,12 @@ function renderPip(lang) {
     </div>
     <div class="doc-sheet" id="pip-sheet" hidden></div>
   `;
+  wireEmpSearch('pip-emp');
 
   document.getElementById('pip-generate-btn').addEventListener('click', async () => {
     const empId = document.getElementById('pip-emp').value;
     const emp = employees.find((e) => e.id === empId);
+    if (!emp) { showToast('Select an employee.', 'error'); return; }
     const start = document.getElementById('pip-start').value;
     const final = document.getElementById('pip-final').value;
     const gaps = document.getElementById('pip-gaps').value.trim();
@@ -495,7 +549,7 @@ function renderReview() {
   document.getElementById('gen-body').innerHTML = `
     <div class="card no-print" style="margin-bottom:16px">
       <div class="card-body">
-        <div class="field"><label class="f-lab">Employee</label><select class="f-in" id="rev-emp">${empSelectOptions()}</select></div>
+        ${empSearchFieldHtml('rev-emp', '<label class="f-lab">Employee</label>')}
       </div>
     </div>
     ${reviewFormHtml(30)}
@@ -503,6 +557,7 @@ function renderReview() {
     ${reviewFormHtml(90)}
     <div class="form-doc" id="rev-sheet" hidden></div>
   `;
+  wireEmpSearch('rev-emp');
 
   [30, 60, 90].forEach((milestone) => {
     document.getElementById(`rev${milestone}-generate-btn`).addEventListener('click', async () => {
@@ -648,7 +703,7 @@ function renderTermination() {
     <div class="card no-print" id="term-form-card" hidden style="margin-bottom:16px">
       <div class="card-h"><h3>New termination</h3></div>
       <div class="card-body">
-        <div class="field"><label class="f-lab">Employee</label><select class="f-in" id="term-emp">${empSelectOptions()}</select></div>
+        ${empSearchFieldHtml('term-emp', '<label class="f-lab">Employee</label>')}
         <div class="frow">
           <div class="field"><label class="f-lab">Last day worked</label><input class="f-in" id="term-lastday" type="date"></div>
           <div class="field"><label class="f-lab">Termination date</label><input class="f-in" id="term-date" type="date"></div>
@@ -714,6 +769,7 @@ function renderTermination() {
     </div>
     <div class="form-doc" id="term-sheet" hidden></div>
   `;
+  wireEmpSearch('term-emp');
 
   document.getElementById('term-new-btn').addEventListener('click', () => {
     document.getElementById('term-form-card').hidden = false;
@@ -1199,7 +1255,7 @@ function renderLetters() {
           <div class="field"><label class="f-lab">Schedule (editable)</label><input class="f-in" id="ltr-schedule"></div>
         </div>
         <div class="frow">
-          <div class="field"><label class="f-lab">Reports to</label><select class="f-in" id="ltr-reportsto">${empSelectOptions(employees.filter((e) => managerIds.has(e.id)))}</select></div>
+          ${empSearchFieldHtml('ltr-reportsto', '<label class="f-lab">Reports to</label>', employees.filter((e) => managerIds.has(e.id)))}
           <div class="field"><label class="f-lab">Reports-to title</label><input class="f-in" id="ltr-reportsto-title"></div>
         </div>
         ${managerIds.size === 0 ? '<p class="dim" style="margin:-4px 0 12px">No managers marked yet — add them in Settings → Managers.</p>' : ''}
@@ -1218,6 +1274,7 @@ function renderLetters() {
     </div>
     <div class="letter" id="ltr-sheet" hidden></div>
   `;
+  wireEmpSearch('ltr-reportsto', employees.filter((e) => managerIds.has(e.id)));
 
   const typeSel = document.getElementById('ltr-type');
   function fillTypes(category) {
@@ -1555,17 +1612,19 @@ async function renderOnboarding(lang) {
   document.getElementById('gen-body').innerHTML = `
     <div class="card no-print" style="margin-bottom:16px">
       <div class="card-body">
-        <div class="field"><label class="f-lab">New hire</label><select class="f-in" id="onb-emp">${empSelectOptions(employees.filter((e) => e.status === 'onboarding'))}</select></div>
+        ${empSearchFieldHtml('onb-emp', '<label class="f-lab">New hire</label>', employees.filter((e) => e.status === 'onboarding'))}
         ${employees.some((e) => e.status === 'onboarding') ? '' : '<p class="dim">No one is currently in onboarding status.</p>'}
         <button class="gh solid" id="onb-load-btn" type="button">Load checklist</button>
       </div>
     </div>
     <div class="form-doc" id="onb-sheet" hidden></div>
   `;
+  wireEmpSearch('onb-emp', employees.filter((e) => e.status === 'onboarding'));
 
   async function loadChecklist(empIdOverride) {
     const empId = empIdOverride || document.getElementById('onb-emp').value;
     const emp = employees.find((e) => e.id === empId);
+    if (!emp) { showToast('Select a new hire.', 'error'); return; }
     const isEs = document.getElementById('lang-select').value === 'es';
     const snap = await getDocs(collection(db, 'employees', empId, 'onboarding_docs'));
     const existing = new Map(snap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
@@ -1642,7 +1701,7 @@ async function renderOnboarding(lang) {
   // them again from the dropdown.
   const linkedEmpId = new URLSearchParams(window.location.search).get('emp');
   if (linkedEmpId && employees.some((e) => e.id === linkedEmpId)) {
-    document.getElementById('onb-emp').value = linkedEmpId;
+    setEmpField('onb-emp', linkedEmpId, employees.filter((e) => e.status === 'onboarding'));
     loadChecklist(linkedEmpId);
   }
 }
@@ -1656,7 +1715,7 @@ function renderRefusal(lang) {
   document.getElementById('gen-body').innerHTML = `
     <div class="card no-print" style="margin-bottom:16px">
       <div class="card-body">
-        <div class="field"><label class="f-lab">Employee</label><select class="f-in" id="ref-emp">${empSelectOptions()}</select></div>
+        ${empSearchFieldHtml('ref-emp', '<label class="f-lab">Employee</label>')}
         <div class="frow">
           <div class="field"><label class="f-lab">Date</label><input class="f-in" id="ref-date" type="date"></div>
           <div class="field"><label class="f-lab">Date/time of incident</label><input class="f-in" id="ref-incident-datetime" placeholder="e.g. 8/19/2026, 10:30am"></div>
@@ -1672,6 +1731,7 @@ function renderRefusal(lang) {
     </div>
     <div class="form-doc" id="ref-sheet" hidden></div>
   `;
+  wireEmpSearch('ref-emp');
 
   document.getElementById('ref-generate-btn').addEventListener('click', () => renderRefusalSheet(lang));
   document.getElementById('ref-log-btn').addEventListener('click', async () => {
@@ -2099,7 +2159,7 @@ function renderTimecard(lang) {
     <div class="card no-print" style="margin-bottom:16px">
       <div class="card-body">
         <div class="frow">
-          <div class="field"><label class="f-lab">Employee</label><select class="f-in" id="tc-emp">${empSelectOptions()}</select></div>
+          ${empSearchFieldHtml('tc-emp', '<label class="f-lab">Employee</label>')}
           <div class="field"><label class="f-lab">Date of punch(es)</label><input class="f-in" id="tc-date" type="date"></div>
         </div>
         <div class="field">
@@ -2118,6 +2178,7 @@ function renderTimecard(lang) {
     <div class="form-doc" id="tc-sheet" hidden></div>
   `;
   document.getElementById('tc-sig-due').value = new Date().toISOString().slice(0, 10);
+  wireEmpSearch('tc-emp');
 
   document.getElementById('tc-generate-btn').addEventListener('click', () => renderTimecardSheet(lang));
   document.getElementById('tc-log-btn').addEventListener('click', async () => {
@@ -2180,13 +2241,13 @@ async function loadPendingSignatureDoc(type, id) {
     pendingSigDocId = id;
     pendingSigTaskId = new URLSearchParams(window.location.search).get('task') || null;
     if (type === 'timecard') {
-      document.getElementById('tc-emp').value = d.emp_id;
+      setEmpField('tc-emp', d.emp_id);
       document.getElementById('tc-date').value = d.date;
       document.getElementById('tc-punches').value = (d.rows || [])
         .map((r) => `${r.type} | ${r.original} | ${r.corrected} | ${r.reason}`).join('\n');
       renderTimecardSheet('en');
     } else if (type === 'mealpenalty') {
-      document.getElementById('mp-emp').value = d.emp_id;
+      setEmpField('mp-emp', d.emp_id);
       document.getElementById('mp-date').value = d.date;
       document.getElementById('mp-shift-start').value = d.shift_start || '';
       document.getElementById('mp-shift-end').value = d.shift_end || '';
@@ -2380,7 +2441,7 @@ function renderMealPenalty(lang) {
     <div class="card no-print" style="margin-bottom:16px">
       <div class="card-body">
         <div class="frow">
-          <div class="field"><label class="f-lab">Employee</label><select class="f-in" id="mp-emp">${empSelectOptions()}</select></div>
+          ${empSearchFieldHtml('mp-emp', '<label class="f-lab">Employee</label>')}
           <div class="field"><label class="f-lab">Date</label><input class="f-in" id="mp-date" type="date"></div>
         </div>
         <div class="frow">
@@ -2445,6 +2506,7 @@ function renderMealPenalty(lang) {
   document.getElementById('mp-pay-date').value = today;
   document.getElementById('mp-due-date').value = today;
   document.getElementById('mp-sig-due').value = today;
+  wireEmpSearch('mp-emp');
 
   document.getElementById('mp-generate-btn').addEventListener('click', () => renderMealPenaltySheet(lang));
   document.getElementById('mp-save-btn').addEventListener('click', () => saveMealPenalty(lang));
