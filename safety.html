@@ -214,6 +214,7 @@
       </div>
       <div class="modal-actions">
         <button type="button" class="gh" id="view-report-btn">View formatted report</button>
+        <button type="button" class="gh" id="get-signature-btn">Get signature</button>
         <button type="button" class="gh" id="cancel-btn">Cancel</button>
         <button type="submit" class="gh solid" id="save-btn">Save</button>
       </div>
@@ -633,6 +634,10 @@ document.getElementById('view-report-btn').addEventListener('click', () => {
 });
 document.getElementById('view-close').addEventListener('click', () => { document.getElementById('view-overlay').hidden = true; });
 document.getElementById('view-print-btn').addEventListener('click', () => window.print());
+document.getElementById('get-signature-btn').addEventListener('click', () => {
+  if (!editingIncidentId) return;
+  window.location.href = `docgen.html?open=incidentreport&doc=${editingIncidentId}`;
+});
 
 document.getElementById('add-btn').addEventListener('click', () => {
   window.location.href = 'docgen.html?open=incidentreport';
