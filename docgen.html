@@ -158,6 +158,14 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// Signed_at is captured on every signature but isn't automatically shown
+// anywhere — sheets that can be reopened with real saved data (not just
+// a blank form) print it explicitly.
+function signedOnHtml(ts) {
+  if (!ts?.toDate) return '';
+  return `<div class="dim" style="margin-top:6px;font-size:11.5px">Signed ${formatDate(ts.toDate().toISOString().slice(0, 10))}</div>`;
+}
+
 // Legal-letter-style long date ("August 18, 2026"), separate from app.js's
 // short admin-table formatDate() — this is only for printed documents.
 function longDate(dateStr, isEs = false) {
@@ -471,6 +479,7 @@ function renderPipSheet(lang, emp, p) {
       <h4>${isEs ? 'Firma Electrónica del Gerente' : 'Manager Electronic Signature'}</h4>
       ${signaturePadHtml('pip-mgr-sig-pad', 'pip-mgr-sig-clear')}
       <button type="button" class="gh solid no-print" id="pip-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
+      ${signedOnHtml(p.signedAt)}
       ${signatureTaskFieldsHtml('pip')}
       <div class="doc-fineprint">${isEs
         ? 'El acuse de recibo de este plan no constituye acuerdo con su contenido, solo confirma que fue entregado y explicado.'
@@ -723,6 +732,7 @@ function renderReviewSheet(emp, milestone, data) {
       <div class="form-section">HR Electronic Signature</div>
       ${signaturePadHtml('rev-hr-sig-pad', 'rev-hr-sig-clear')}
       <button type="button" class="gh solid no-print" id="rev-sig-save" style="margin-bottom:10px;margin-left:8px">Signed — save</button>
+      ${signedOnHtml(data.signed_at)}
       ${signatureTaskFieldsHtml('rev')}
       </div>
     </div>
@@ -1135,6 +1145,7 @@ function renderTerminationSheet(r, finalPay = {}) {
       <div class="form-section">Manager / HR Electronic Signature</div>
       ${signaturePadHtml('term-mgr-sig-pad', 'term-mgr-sig-clear')}
       <button type="button" class="gh solid no-print" id="term-sig-save" style="margin-bottom:10px;margin-left:8px">Signed — save</button>
+      ${signedOnHtml(r.signed_at)}
       ${r.id ? signatureTaskFieldsHtml('term') : ''}
       <div class="form-atwill"><b>At-will Employment Reminder:</b> Employment with the company is at-will. Nothing in this document alters that status or creates a contract of employment.</div>
     </div>
@@ -2968,6 +2979,7 @@ async function loadPendingSignatureDoc(type, id) {
       renderPipSheet(document.getElementById('lang-select').value || 'en', emp, {
         start: d.start_date, final: d.final_review_date, gaps: d.performance_gaps,
         expect: d.expectations, support: d.support_provided || [], checkIns: d.check_ins || [], pipId: id,
+        signedAt: d.signed_at,
       });
       await drawExistingSignatureDataUrl('pip-sig-pad', d.signature_data_url);
       await drawExistingSignatureDataUrl('pip-mgr-sig-pad', d.manager_signature_data_url);
