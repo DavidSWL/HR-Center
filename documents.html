@@ -707,6 +707,17 @@ function render() {
         if (docItem.policy_doc_id) {
           await updateDoc(doc(db, 'policy_documents', docItem.policy_doc_id), { active: false, entered_by: profile.uid }).catch(() => {});
         }
+        // A "save for signature later" task can point at this document —
+        // tasks are never deletable (same append-only rule as everything
+        // else), so complete it instead of leaving a dead "Open document"
+        // link with nothing behind it.
+        if (docItem.status === 'pending_signature') {
+          const tasksSnap = await getDocs(collection(db, 'tasks'));
+          const orphan = tasksSnap.docs.find((t) => t.data().linked_doc_id === docItem.id && t.data().status !== 'complete');
+          if (orphan) {
+            await updateDoc(doc(db, 'tasks', orphan.id), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid }).catch(() => {});
+          }
+        }
         showToast('Document deleted.');
         await loadDocs();
       } catch (err) {
