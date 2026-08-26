@@ -120,6 +120,7 @@ async function ensureLoaded(names) {
       // count toward Safety's numbers — same reasoning as excluding test
       // employees above.
       if (name === 'incidents') rows = rows.filter((i) => !i.voided);
+      if (name === 'attendance') rows = rows.filter((a) => !a.voided);
       data[name] = rows;
     }
   }
