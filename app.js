@@ -45,6 +45,7 @@ export const NAV_SECTIONS = [
       { key: 'tasks', label: 'Tasks', href: 'tasks.html', built: true },
       { key: 'training', label: 'Team training', href: 'training.html', built: true },
       { key: 'documents', label: 'Documents', href: 'documents.html', built: true },
+      { key: 'ipads', label: 'iPad tracking', href: 'ipads.html', built: true },
       { key: 'completed', label: 'Completed work', href: 'activity.html', built: true },
     ],
   },

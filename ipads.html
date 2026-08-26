@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iPad tracking — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>
+.div-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:middle}
+.div-dot.Trees{background:var(--accent)}
+.div-dot.Enhancements{background:#7C5CBF}
+.div-dot.OC{background:#C2703A}
+.div-dot.LA{background:#3B6FBF}
+.div-dot.IE{background:#6B7280}
+.div-legend{display:flex;flex-wrap:wrap;gap:14px;margin:-6px 0 16px;font-size:11.5px;color:var(--muted)}
+.div-legend span{display:inline-flex;align-items:center}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1>iPad tracking</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+
+      <div class="card">
+        <div class="card-h">
+          <h3>iPads</h3>
+          <span id="log-summary">—</span>
+        </div>
+        <div class="tools">
+          <button class="gh solid" id="add-btn" type="button">Add iPad</button>
+          <input class="inp" id="search" placeholder="Search iPad # or name" style="min-width:200px">
+          <select class="inp" id="division-filter">
+            <option value="">All divisions</option>
+            <option>Trees</option>
+            <option>Enhancements</option>
+            <option>OC</option>
+            <option>LA</option>
+            <option>IE</option>
+            <option>Corporate</option>
+            <option>Yard</option>
+          </select>
+        </div>
+        <div class="div-legend">
+          <span><i class="div-dot Trees"></i>Trees</span>
+          <span><i class="div-dot Enhancements"></i>Enhancements</span>
+          <span><i class="div-dot OC"></i>OC</span>
+          <span><i class="div-dot LA"></i>LA</span>
+          <span><i class="div-dot IE"></i>IE</span>
+          <span>Corporate / Yard — no dot</span>
+        </div>
+        <table>
+          <thead>
+            <tr id="head-row">
+              <th class="sortable" data-key="number">iPad #<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="assigned">Assigned to<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="division">Division<span class="sort-arrow"></span></th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div class="legend" id="empty-state" hidden><span>No iPads match — try clearing the search or filter.</span></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- add/edit ipad modal -->
+<div class="modal-overlay" id="modal-overlay" hidden>
+  <div class="modal" style="width:480px">
+    <div class="modal-h">
+      <h3 id="modal-title">Add iPad</h3>
+      <button class="modal-close" id="modal-close" type="button">&times;</button>
+    </div>
+    <form id="ipad-form">
+      <div class="modal-body">
+        <div class="field">
+          <label class="f-lab" for="ipad-number">iPad number</label>
+          <input class="f-in" id="ipad-number" placeholder="e.g. asset tag or serial" required>
+        </div>
+        <div class="field">
+          <label class="f-lab" for="ipad-emp-search">Assigned to</label>
+          <input class="f-in" id="ipad-emp-search" list="ipad-emp-opts" placeholder="Type a name… (leave blank for Unassigned)" autocomplete="off">
+          <datalist id="ipad-emp-opts"></datalist>
+          <input type="hidden" id="ipad-emp">
+        </div>
+        <div class="field">
+          <label class="f-lab" for="ipad-division">Division</label>
+          <select class="f-in" id="ipad-division" required>
+            <option>Trees</option>
+            <option>Enhancements</option>
+            <option>OC</option>
+            <option>LA</option>
+            <option>IE</option>
+            <option>Corporate</option>
+            <option>Yard</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="gh" id="remove-btn" style="color:var(--alertTx)" hidden>Remove</button>
+        <button type="button" class="gh" id="cancel-btn">Cancel</button>
+        <button type="submit" class="gh solid" id="save-btn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, showToast } from './app.js';
+import { db } from './firebaseconfig.js';
+import {
+  collection, doc, getDocs, addDoc, updateDoc, deleteDoc, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('ipads', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+// "Division" here is the same fixed location list the roster's location
+// filter uses (OC/LA/IE/Trees/Enhancements/Corporate/Yard) — not the
+// free-text "division" field on an employee record. Only the five
+// branch/crew locations that were color-assigned get a dot; Corporate
+// and Yard show as plain text.
+const DIVISIONS_WITH_DOT = new Set(['Trees', 'Enhancements', 'OC', 'LA', 'IE']);
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+let employees = [];
+async function loadEmployees() {
+  const snap = await getDocs(collection(db, 'employees'));
+  employees = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((e) => e.status !== 'terminated' && !e.is_test)
+    .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
+  document.getElementById('ipad-emp-opts').innerHTML = employees
+    .map((e) => `<option value="${escapeHtml(`${e.first_name} ${e.last_name} (${e.id})`)}">`).join('');
+}
+
+function wireEmpSearch() {
+  const search = document.getElementById('ipad-emp-search');
+  const hidden = document.getElementById('ipad-emp');
+  const resolve = () => {
+    const m = search.value.match(/\(([^()]+)\)\s*$/);
+    const match = m && employees.find((e) => e.id === m[1]);
+    const newVal = match ? match.id : '';
+    const changed = hidden.value !== newVal;
+    hidden.value = newVal;
+    if (changed) hidden.dispatchEvent(new Event('change'));
+  };
+  search.addEventListener('input', resolve);
+  search.addEventListener('change', resolve);
+}
+function setEmpField(empId) {
+  const emp = employees.find((e) => e.id === empId);
+  document.getElementById('ipad-emp-search').value = emp ? `${emp.first_name} ${emp.last_name} (${emp.id})` : '';
+  document.getElementById('ipad-emp').value = emp ? emp.id : '';
+}
+function empName(empId) {
+  const emp = employees.find((e) => e.id === empId);
+  return emp ? `${emp.first_name} ${emp.last_name}` : '';
+}
+
+let ipads = [];
+async function loadIpads() {
+  const snap = await getDocs(collection(db, 'ipads'));
+  ipads = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  render();
+}
+
+const SORT_ACCESSORS = {
+  number: (i) => (i.ipad_number || '').toLowerCase(),
+  assigned: (i) => (empName(i.assigned_to) || 'zzz unassigned').toLowerCase(),
+  division: (i) => (i.location || '').toLowerCase(),
+};
+let sortKey = 'assigned';
+let sortDir = 'asc';
+
+function updateSortIndicators() {
+  document.querySelectorAll('#head-row .sortable').forEach((th) => {
+    const arrow = th.querySelector('.sort-arrow');
+    arrow.textContent = th.dataset.key === sortKey ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+  });
+}
+document.querySelectorAll('#head-row .sortable').forEach((th) => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.key;
+    if (sortKey === key) { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; } else { sortKey = key; sortDir = 'asc'; }
+    render();
+  });
+});
+
+function render() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const divisionFilter = document.getElementById('division-filter').value;
+
+  const visible = ipads.filter((i) => {
+    if (divisionFilter && i.location !== divisionFilter) return false;
+    if (q && !`${i.ipad_number || ''} ${empName(i.assigned_to)}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  const accessor = SORT_ACCESSORS[sortKey] || SORT_ACCESSORS.assigned;
+  visible.sort((a, b) => {
+    const cmp = String(accessor(a)).localeCompare(String(accessor(b)));
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+  updateSortIndicators();
+
+  document.getElementById('log-summary').textContent = `${visible.length} of ${ipads.length}`;
+  document.getElementById('rows').innerHTML = visible.length ? visible.map((i) => `
+      <tr class="row-clickable" data-id="${i.id}" style="cursor:pointer">
+        <td class="mono">${escapeHtml(i.ipad_number)}</td>
+        <td>${empName(i.assigned_to) || '<span class="dim">Unassigned</span>'}</td>
+        <td>${DIVISIONS_WITH_DOT.has(i.location) ? `<i class="div-dot ${i.location}"></i>` : ''}${escapeHtml(i.location) || '—'}</td>
+      </tr>
+    `).join('') : '';
+  document.getElementById('empty-state').hidden = visible.length > 0;
+
+  document.querySelectorAll('#rows tr').forEach((tr) => {
+    tr.addEventListener('click', () => openEdit(tr.dataset.id));
+  });
+}
+
+let editingId = null;
+
+function openModal(title) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-overlay').hidden = false;
+}
+function closeModal() {
+  document.getElementById('modal-overlay').hidden = true;
+  document.getElementById('ipad-form').reset();
+  setEmpField('');
+  editingId = null;
+}
+
+document.getElementById('add-btn').addEventListener('click', () => {
+  editingId = null;
+  document.getElementById('remove-btn').hidden = true;
+  document.getElementById('ipad-division').value = 'Trees';
+  openModal('Add iPad');
+});
+function openEdit(id) {
+  const i = ipads.find((x) => x.id === id);
+  if (!i) return;
+  editingId = id;
+  document.getElementById('ipad-number').value = i.ipad_number || '';
+  setEmpField(i.assigned_to || '');
+  document.getElementById('ipad-division').value = i.location || 'Trees';
+  document.getElementById('remove-btn').hidden = false;
+  openModal('Edit iPad');
+}
+document.getElementById('modal-close').addEventListener('click', closeModal);
+document.getElementById('cancel-btn').addEventListener('click', closeModal);
+
+// Picking someone auto-fills their location, since that's usually where
+// the iPad actually lives — still editable, for iPads that travel with a
+// crew rather than a specific person's home location.
+document.getElementById('ipad-emp').addEventListener('change', () => {
+  const empId = document.getElementById('ipad-emp').value;
+  const emp = employees.find((e) => e.id === empId);
+  if (!emp || !emp.location) return;
+  const sel = document.getElementById('ipad-division');
+  if ([...sel.options].some((o) => o.value === emp.location)) sel.value = emp.location;
+});
+
+document.getElementById('ipad-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const number = document.getElementById('ipad-number').value.trim();
+  if (!number) { showToast('Enter an iPad number.', 'error'); return; }
+  const data = {
+    ipad_number: number,
+    assigned_to: document.getElementById('ipad-emp').value || '',
+    location: document.getElementById('ipad-division').value,
+    entered_by: profile.uid, updated_at: serverTimestamp(),
+  };
+  try {
+    if (editingId) {
+      await updateDoc(doc(db, 'ipads', editingId), data);
+    } else {
+      await addDoc(collection(db, 'ipads'), { ...data, entered_at: serverTimestamp() });
+    }
+    showToast('Saved.');
+    closeModal();
+    await loadIpads();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+});
+document.getElementById('remove-btn').addEventListener('click', async () => {
+  if (!editingId) return;
+  if (!confirm('Remove this iPad from tracking?')) return;
+  try {
+    await deleteDoc(doc(db, 'ipads', editingId));
+    showToast('Removed.');
+    closeModal();
+    await loadIpads();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not remove — ' + err.message, 'error');
+  }
+});
+
+document.getElementById('search').addEventListener('input', render);
+document.getElementById('division-filter').addEventListener('change', render);
+
+wireEmpSearch();
+await loadEmployees();
+await loadIpads();
+</script>
+</body>
+</html>

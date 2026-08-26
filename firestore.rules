@@ -306,6 +306,18 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ---- iPad tracking --------------------------------------------------
+    // Asset inventory, not an audit record — real deletes are fine here
+    // (unlike incidents/terminations/etc.), same reasoning as
+    // training_documents' SOPs.
+    match /ipads/{ipadId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data)
+        && stamped(request.resource.data);
+      allow update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if isHrUser();
+    }
+
     // ---- settings (managed lists) -----------------------------------
     match /settings/{listName} {
       allow read: if isHrUser();

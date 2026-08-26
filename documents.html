@@ -326,6 +326,8 @@ function renderTimecardHtml(d) {
       </table>
       <div class="form-section">Employee Electronic Signature</div>
       ${d.signature_data_url ? `<img src="${d.signature_data_url}" alt="Employee signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not yet signed.</div>'}
+      <div class="form-section">Supervisor or HR Electronic Signature</div>
+      ${d.supervisor_signature_data_url ? `<img src="${d.supervisor_signature_data_url}" alt="Supervisor signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not yet signed.</div>'}
       <div class="form-fine" style="margin-top:10px">This record corrects worked time only; it does not create or change any pay rate. Signed ${formatDate(d.signed_at?.toDate ? d.signed_at.toDate().toISOString().slice(0, 10) : '')}.</div>
     </div>
   `;
@@ -353,6 +355,8 @@ function renderMealPenaltyHtml(d) {
       <div class="form-box">One additional hour of pay at the employee's regular rate is owed for this day. Status: ${d.premium_pending ? `pending, to be paid by ${formatDate(d.premium_due_date)}` : `paid on ${formatDate(d.pay_date)}`}.</div>
       <div class="form-section">Employee Electronic Signature</div>
       ${d.signature_data_url ? `<img src="${d.signature_data_url}" alt="Employee signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not yet signed.</div>'}
+      <div class="form-section">Supervisor or HR Electronic Signature</div>
+      ${d.supervisor_signature_data_url ? `<img src="${d.supervisor_signature_data_url}" alt="Supervisor signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not yet signed.</div>'}
       <div class="form-fine" style="margin-top:10px">This record documents the meal period and the premium owed; it does not create or change any regular pay rate. Signed ${formatDate(d.signed_at?.toDate ? d.signed_at.toDate().toISOString().slice(0, 10) : '')}.</div>
     </div>
   `;
@@ -400,6 +404,8 @@ function renderRefusalHtml(d) {
       </div>
       <div class="form-section">Employee Electronic Signature</div>
       ${d.signature_data_url ? `<img src="${d.signature_data_url}" alt="Employee signature" style="max-height:90px;border-bottom:1px solid #333">` : `<div class="dim">${checks.declined_to_sign ? 'Employee declined to sign.' : 'Not signed.'}</div>`}
+      <div class="form-section">Supervisor or HR Representative Electronic Signature</div>
+      ${d.supervisor_signature_data_url ? `<img src="${d.supervisor_signature_data_url}" alt="Supervisor signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not signed.</div>'}
       <div class="form-fine" style="margin-top:10px">
         Follow-up: ${checks.requested_treatment_later ? 'Employee later requested treatment. ' : ''}${checks.fully_recovered ? 'Employee reports fully recovered.' : ''}${!checks.requested_treatment_later && !checks.fully_recovered ? 'No follow-up logged yet.' : ''}
       </div>
@@ -512,6 +518,8 @@ function renderMealWaiver2Html(d) {
       ` : ''}
       <div class="form-section">Employee Electronic Signature</div>
       ${d.signature_data_url ? `<img src="${d.signature_data_url}" alt="Employee signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not signed.</div>'}
+      <div class="form-section">Supervisor Electronic Signature</div>
+      ${d.supervisor_signature_data_url ? `<img src="${d.supervisor_signature_data_url}" alt="Supervisor signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not signed.</div>'}
       <div class="form-section">Supervisor Attestation</div>
       <div class="form-box">
         ${supervisorPts.map((s, i) => `<p style="margin:0 0 8px">${checks[`supervisor-${i}`] ? '☑' : '☐'} ${escapeHtmlAttr(s)}</p>`).join('')}
