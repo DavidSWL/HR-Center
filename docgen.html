@@ -468,23 +468,28 @@ function renderPipSheet(lang, emp, p) {
         <canvas id="pip-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
       </div>
       <button type="button" class="gh no-print" id="pip-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      <h4>${isEs ? 'Firma Electrónica del Gerente' : 'Manager Electronic Signature'}</h4>
+      ${signaturePadHtml('pip-mgr-sig-pad', 'pip-mgr-sig-clear')}
       <button type="button" class="gh solid no-print" id="pip-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
       ${signatureTaskFieldsHtml('pip')}
-      <div class="sig-line" style="margin-top:10px">${isEs ? 'Firma del gerente' : 'Manager signature'} / ${isEs ? 'Fecha' : 'Date'}: _______________________________________</div>
       <div class="doc-fineprint">${isEs
         ? 'El acuse de recibo de este plan no constituye acuerdo con su contenido, solo confirma que fue entregado y explicado.'
         : 'Acknowledgment of this plan does not indicate agreement with its content, only that it was delivered and explained.'}</div>
     </div>
   `;
   setUpSignaturePad('pip-sig-pad', 'pip-sig-clear');
+  setUpSignaturePad('pip-mgr-sig-pad', 'pip-mgr-sig-clear');
   document.getElementById('pip-sig-save').addEventListener('click', async () => {
-    const state = sigPads['pip-sig-pad'];
-    if (!state || !state.hasStroke) { showToast('Get a signature first — the pad is empty.', 'error'); return; }
+    const empState = sigPads['pip-sig-pad'];
+    const mgrState = sigPads['pip-mgr-sig-pad'];
+    if (!(empState && empState.hasStroke) && !(mgrState && mgrState.hasStroke)) {
+      showToast('Get at least one signature first — both pads are empty.', 'error'); return;
+    }
     try {
-      await updateDoc(doc(db, 'pips', p.pipId), {
-        signature_data_url: document.getElementById('pip-sig-pad').toDataURL('image/png'),
-        signed_at: serverTimestamp(), signed_by: profile.uid,
-      });
+      const update = { signed_at: serverTimestamp(), signed_by: profile.uid };
+      if (empState && empState.hasStroke) update.signature_data_url = document.getElementById('pip-sig-pad').toDataURL('image/png');
+      if (mgrState && mgrState.hasStroke) update.manager_signature_data_url = document.getElementById('pip-mgr-sig-pad').toDataURL('image/png');
+      await updateDoc(doc(db, 'pips', p.pipId), update);
       if (pendingSigTaskId) {
         await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
         pendingSigDocId = null; pendingSigTaskId = null;
@@ -498,7 +503,7 @@ function renderPipSheet(lang, emp, p) {
   document.getElementById('pip-sig-later-btn').addEventListener('click', () => createSignatureFollowupTask('pip', {
     linkedDocType: 'pip', linkedDocId: p.pipId, title: `PIP — ${emp.first_name} ${emp.last_name}`,
   }));
-  sheetRerender = (l) => withPreservedSignature('pip-sig-pad', () => renderPipSheet(l, emp, p));
+  sheetRerender = (l) => withPreservedSignature('pip-mgr-sig-pad', () => withPreservedSignature('pip-sig-pad', () => renderPipSheet(l, emp, p)));
 }
 
 // ---- 30/60/90 review — matches "30 / 60 / 90 Day New Hire Review" exactly ----
@@ -713,26 +718,33 @@ function renderReviewSheet(emp, milestone, data) {
         <canvas id="rev-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
       </div>
       <button type="button" class="gh no-print" id="rev-sig-clear" style="margin-bottom:10px">Clear signature</button>
+      <div class="form-section">Manager Electronic Signature</div>
+      ${signaturePadHtml('rev-mgr-sig-pad', 'rev-mgr-sig-clear')}
+      <div class="form-section">HR Electronic Signature</div>
+      ${signaturePadHtml('rev-hr-sig-pad', 'rev-hr-sig-clear')}
       <button type="button" class="gh solid no-print" id="rev-sig-save" style="margin-bottom:10px;margin-left:8px">Signed — save</button>
       ${signatureTaskFieldsHtml('rev')}
-      <div class="form-sig" style="grid-template-columns:1fr;margin-top:0">
-        <div style="border-right:none">Manager Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
-        <div style="border-right:none;border-top:none">HR Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
-      </div>
       </div>
     </div>
     <button class="gh no-print" id="rev-back-btn" type="button" style="margin-top:14px">&larr; Back to document generator</button>
   `;
   document.getElementById('rev-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
   setUpSignaturePad('rev-sig-pad', 'rev-sig-clear');
+  setUpSignaturePad('rev-mgr-sig-pad', 'rev-mgr-sig-clear');
+  setUpSignaturePad('rev-hr-sig-pad', 'rev-hr-sig-clear');
   document.getElementById('rev-sig-save').addEventListener('click', async () => {
-    const state = sigPads['rev-sig-pad'];
-    if (!state || !state.hasStroke) { showToast('Get a signature first — the pad is empty.', 'error'); return; }
+    const empState = sigPads['rev-sig-pad'];
+    const mgrState = sigPads['rev-mgr-sig-pad'];
+    const hrState = sigPads['rev-hr-sig-pad'];
+    if (!(empState?.hasStroke) && !(mgrState?.hasStroke) && !(hrState?.hasStroke)) {
+      showToast('Get at least one signature first — all three pads are empty.', 'error'); return;
+    }
     try {
-      await setDoc(doc(db, 'employees', emp.id, 'reviews', String(milestone)), {
-        signature_data_url: document.getElementById('rev-sig-pad').toDataURL('image/png'),
-        signed_at: serverTimestamp(), signed_by: profile.uid,
-      }, { merge: true });
+      const update = { signed_at: serverTimestamp(), signed_by: profile.uid };
+      if (empState?.hasStroke) update.signature_data_url = document.getElementById('rev-sig-pad').toDataURL('image/png');
+      if (mgrState?.hasStroke) update.manager_signature_data_url = document.getElementById('rev-mgr-sig-pad').toDataURL('image/png');
+      if (hrState?.hasStroke) update.hr_signature_data_url = document.getElementById('rev-hr-sig-pad').toDataURL('image/png');
+      await setDoc(doc(db, 'employees', emp.id, 'reviews', String(milestone)), update, { merge: true });
       if (pendingSigTaskId) {
         await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
         pendingSigDocId = null; pendingSigTaskId = null;
@@ -1120,21 +1132,27 @@ function renderTerminationSheet(r, finalPay = {}) {
         <canvas id="term-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
       </div>
       <button type="button" class="gh no-print" id="term-sig-clear" style="margin-bottom:10px">Clear signature</button>
+      <div class="form-section">Manager / HR Electronic Signature</div>
+      ${signaturePadHtml('term-mgr-sig-pad', 'term-mgr-sig-clear')}
       <button type="button" class="gh solid no-print" id="term-sig-save" style="margin-bottom:10px;margin-left:8px">Signed — save</button>
       ${r.id ? signatureTaskFieldsHtml('term') : ''}
       <div class="form-atwill"><b>At-will Employment Reminder:</b> Employment with the company is at-will. Nothing in this document alters that status or creates a contract of employment.</div>
     </div>
   `;
   setUpSignaturePad('term-sig-pad', 'term-sig-clear');
+  setUpSignaturePad('term-mgr-sig-pad', 'term-mgr-sig-clear');
   document.getElementById('term-sig-save').addEventListener('click', async () => {
     if (!r.id) { showToast('Register this termination first, then reopen it from the list to save a signature.', 'error'); return; }
-    const state = sigPads['term-sig-pad'];
-    if (!state || !state.hasStroke) { showToast('Get a signature first — the pad is empty.', 'error'); return; }
+    const empState = sigPads['term-sig-pad'];
+    const mgrState = sigPads['term-mgr-sig-pad'];
+    if (!(empState?.hasStroke) && !(mgrState?.hasStroke)) {
+      showToast('Get at least one signature first — both pads are empty.', 'error'); return;
+    }
     try {
-      await updateDoc(doc(db, 'terminations', r.id), {
-        signature_data_url: document.getElementById('term-sig-pad').toDataURL('image/png'),
-        signed_at: serverTimestamp(), signed_by: profile.uid,
-      });
+      const update = { signed_at: serverTimestamp(), signed_by: profile.uid };
+      if (empState?.hasStroke) update.signature_data_url = document.getElementById('term-sig-pad').toDataURL('image/png');
+      if (mgrState?.hasStroke) update.manager_signature_data_url = document.getElementById('term-mgr-sig-pad').toDataURL('image/png');
+      await updateDoc(doc(db, 'terminations', r.id), update);
       if (pendingSigTaskId) {
         await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
         pendingSigDocId = null; pendingSigTaskId = null;
@@ -2043,9 +2061,10 @@ function renderRefusalSheet(lang) {
         <canvas id="ref-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
       </div>
       <button type="button" class="gh no-print" id="ref-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      <div class="form-box">${isEs ? 'Firma Electrónica del Supervisor o Representante de RH' : 'Supervisor or HR Representative Electronic Signature'}</div>
+      ${signaturePadHtml('ref-sup-sig-pad', 'ref-sup-sig-clear')}
       <div class="form-sig" style="grid-template-columns:1fr">
-        <div style="border-right:none">${isEs ? 'Firma del Supervisor o Representante de RH / Fecha' : 'Supervisor or HR Representative Signature / Date'}: _______________________________________</div>
-        <div style="border-right:none;border-top:none"><label><input type="checkbox" class="ref-check no-print" data-key="declined_to_sign"><span class="print-only">☐</span> ${isEs ? 'El empleado se negó a firmar. Las declaraciones anteriores fueron leídas al empleado en un idioma que entiende, en presencia del testigo indicado abajo.' : 'Employee declined to sign. The statements above were read to the employee in a language they understand, in the presence of the witness below.'}</label></div>
+        <div style="border-right:none"><label><input type="checkbox" class="ref-check no-print" data-key="declined_to_sign"><span class="print-only">☐</span> ${isEs ? 'El empleado se negó a firmar. Las declaraciones anteriores fueron leídas al empleado en un idioma que entiende, en presencia del testigo indicado abajo.' : 'Employee declined to sign. The statements above were read to the employee in a language they understand, in the presence of the witness below.'}</label></div>
         <div style="border-right:none;border-top:none">${isEs ? 'Firma del Testigo / Fecha' : 'Witness Signature / Date'}: _______________________________________</div>
         <div style="border-right:none;border-top:none">${isEs ? 'Nombre del Testigo / Puesto' : 'Witness Printed Name / Title'}: _______________________________________</div>
       </div>
@@ -2074,10 +2093,12 @@ function renderRefusalSheet(lang) {
     });
   });
   setUpSignaturePad('ref-sig-pad', 'ref-sig-clear');
+  setUpSignaturePad('ref-sup-sig-pad', 'ref-sup-sig-clear');
   document.getElementById('ref-sig-save').addEventListener('click', async () => {
     const checks = {};
     document.querySelectorAll('.ref-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
     const state = sigPads['ref-sig-pad'];
+    const supState = sigPads['ref-sup-sig-pad'];
     try {
       const docRef = pendingSigDocId ? doc(db, 'training_documents', pendingSigDocId) : doc(collection(db, 'training_documents'));
       await setDoc(docRef, {
@@ -2087,6 +2108,7 @@ function renderRefusalSheet(lang) {
         date, incident_datetime: incidentDateTime, supervisor, location, description,
         checks, lang,
         signature_data_url: state && state.hasStroke ? document.getElementById('ref-sig-pad').toDataURL('image/png') : null,
+        supervisor_signature_data_url: supState && supState.hasStroke ? document.getElementById('ref-sup-sig-pad').toDataURL('image/png') : null,
         signed_by: profile.uid, signed_at: serverTimestamp(),
         entered_by: profile.uid, entered_at: serverTimestamp(),
       }, { merge: true });
@@ -2107,7 +2129,7 @@ function renderRefusalSheet(lang) {
   sheetRerender = (l) => {
     const checks = {};
     document.querySelectorAll('.ref-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
-    withPreservedSignature('ref-sig-pad', () => renderRefusalSheet(l));
+    withPreservedSignature('ref-sup-sig-pad', () => withPreservedSignature('ref-sig-pad', () => renderRefusalSheet(l)));
     document.querySelectorAll('.ref-check').forEach((cb) => {
       if (checks[cb.dataset.key]) {
         cb.checked = true;
@@ -2940,14 +2962,16 @@ async function loadPendingSignatureDoc(type, id) {
       const d = snap.data();
       const emp = employees.find((e) => e.id === d.emp_id);
       if (!emp) { showToast('That employee could not be found.', 'error'); return; }
-      if (taskId && d.signature_data_url) await completeLinkedTask(taskId);
-      pendingSigDocId = id; pendingSigTaskId = d.signature_data_url ? null : taskId;
+      const bothSigned = d.signature_data_url && d.manager_signature_data_url;
+      if (taskId && bothSigned) await completeLinkedTask(taskId);
+      pendingSigDocId = id; pendingSigTaskId = bothSigned ? null : taskId;
       renderPipSheet(document.getElementById('lang-select').value || 'en', emp, {
         start: d.start_date, final: d.final_review_date, gaps: d.performance_gaps,
         expect: d.expectations, support: d.support_provided || [], checkIns: d.check_ins || [], pipId: id,
       });
       await drawExistingSignatureDataUrl('pip-sig-pad', d.signature_data_url);
-      if (d.signature_data_url) showToast('Already signed — shown below.');
+      await drawExistingSignatureDataUrl('pip-mgr-sig-pad', d.manager_signature_data_url);
+      if (bothSigned) showToast('Already fully signed — shown below.');
       return;
     }
     if (type === 'review') {
@@ -2957,22 +2981,27 @@ async function loadPendingSignatureDoc(type, id) {
       const snap = await getDoc(doc(db, 'employees', empId, 'reviews', milestone));
       if (!snap.exists()) { showToast('That review could not be found.', 'error'); return; }
       const d = snap.data();
-      if (taskId && d.signature_data_url) await completeLinkedTask(taskId);
-      pendingSigDocId = id; pendingSigTaskId = d.signature_data_url ? null : taskId;
+      const allSigned = d.signature_data_url && d.manager_signature_data_url && d.hr_signature_data_url;
+      if (taskId && allSigned) await completeLinkedTask(taskId);
+      pendingSigDocId = id; pendingSigTaskId = allSigned ? null : taskId;
       renderReviewSheet(emp, Number(milestone), d);
       await drawExistingSignatureDataUrl('rev-sig-pad', d.signature_data_url);
-      if (d.signature_data_url) showToast('Already signed — shown below.');
+      await drawExistingSignatureDataUrl('rev-mgr-sig-pad', d.manager_signature_data_url);
+      await drawExistingSignatureDataUrl('rev-hr-sig-pad', d.hr_signature_data_url);
+      if (allSigned) showToast('Already fully signed — shown below.');
       return;
     }
     if (type === 'termination') {
       const rec = terminations.find((t) => t.id === id);
       if (!rec) { showToast('That termination could not be found.', 'error'); return; }
-      if (taskId && rec.signature_data_url) await completeLinkedTask(taskId);
-      pendingSigDocId = id; pendingSigTaskId = rec.signature_data_url ? null : taskId;
+      const bothSigned = rec.signature_data_url && rec.manager_signature_data_url;
+      if (taskId && bothSigned) await completeLinkedTask(taskId);
+      pendingSigDocId = id; pendingSigTaskId = bothSigned ? null : taskId;
       document.getElementById('term-print-acts').hidden = false;
       renderTerminationSheet(rec);
       await drawExistingSignatureDataUrl('term-sig-pad', rec.signature_data_url);
-      if (rec.signature_data_url) showToast('Already signed — shown below.');
+      await drawExistingSignatureDataUrl('term-mgr-sig-pad', rec.manager_signature_data_url);
+      if (bothSigned) showToast('Already fully signed — shown below.');
       return;
     }
     if (type === 'incidentreport') {
@@ -3093,18 +3122,22 @@ async function loadPendingSignatureDoc(type, id) {
 // signature as an image, saves (or updates) the signed record in
 // Documents, and — if this came from a "save for later" task — completes
 // that task so the follow-up doesn't linger once it's actually signed.
-async function finalizeSignedDocument(canvasId, docData) {
+async function finalizeSignedDocument(canvasId, docData, supervisorCanvasId = null) {
   const state = sigPads[canvasId];
-  if (!state || !state.hasStroke) { showToast('Get a signature first — the pad is empty.', 'error'); return; }
-  const canvas = document.getElementById(canvasId);
-  const signatureDataUrl = canvas.toDataURL('image/png');
+  const supState = supervisorCanvasId ? sigPads[supervisorCanvasId] : null;
+  if (!(state && state.hasStroke) && !(supState && supState.hasStroke)) {
+    showToast('Get at least one signature first — both pads are empty.', 'error'); return;
+  }
   try {
     const docRef = pendingSigDocId ? doc(db, 'training_documents', pendingSigDocId) : doc(collection(db, 'training_documents'));
-    await setDoc(docRef, {
-      ...docData, status: 'signed', signature_data_url: signatureDataUrl,
+    const payload = {
+      ...docData, status: 'signed',
       signed_by: profile.uid, signed_at: serverTimestamp(),
       entered_by: profile.uid, entered_at: serverTimestamp(),
-    }, { merge: true });
+    };
+    if (state && state.hasStroke) payload.signature_data_url = document.getElementById(canvasId).toDataURL('image/png');
+    if (supState && supState.hasStroke) payload.supervisor_signature_data_url = document.getElementById(supervisorCanvasId).toDataURL('image/png');
+    await setDoc(docRef, payload, { merge: true });
     if (pendingSigTaskId) {
       await updateDoc(doc(db, 'tasks', pendingSigTaskId), {
         status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid,
@@ -3193,6 +3226,18 @@ function setUpSignaturePad(canvasId, clearBtnId) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     state.hasStroke = false;
   });
+}
+
+// Shared signature-pad markup — canvas + its own Clear button, no
+// heading (each sheet's headings follow its own family's convention, so
+// callers wrap this with their own <h4>/.form-section).
+function signaturePadHtml(canvasId, clearId, height = 90) {
+  return `
+    <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
+      <canvas id="${canvasId}" style="width:100%;height:${height}px;display:block;cursor:crosshair;touch-action:none"></canvas>
+    </div>
+    <button type="button" class="gh no-print" id="${clearId}" style="margin-bottom:10px">Clear signature</button>
+  `;
 }
 
 // Shared "get the signature later" control for sheets whose record is
@@ -3292,10 +3337,9 @@ function renderTimecardSheet(lang) {
         <canvas id="tc-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
       </div>
       <button type="button" class="gh no-print" id="tc-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      <div class="form-section">${isEs ? 'Firma Electrónica del Supervisor o RH' : 'Supervisor or HR Electronic Signature'}</div>
+      ${signaturePadHtml('tc-sup-sig-pad', 'tc-sup-sig-clear')}
       <button type="button" class="gh solid no-print" id="tc-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
-      <div class="form-sig" style="grid-template-columns:1fr">
-        <div style="border-right:none">${isEs ? 'Firma del Supervisor o RH / Fecha' : 'Supervisor or HR Signature / Date'}: _______________________________________</div>
-      </div>
       <div class="form-fine">${isEs
         ? 'Este registro corrige únicamente el tiempo trabajado; no crea ni modifica ninguna tasa de pago. Firmar arriba, imprimir como PDF y archivar según el proceso de RH.'
         : 'This record corrects worked time only; it does not create or change any pay rate. Sign above, print to PDF, and file per HR process.'}</div>
@@ -3309,9 +3353,10 @@ function renderTimecardSheet(lang) {
     emp_id: emp.id, emp_name: `${emp.first_name} ${emp.last_name}`,
     division: emp.division || '', position: emp.position || '',
     date, rows,
-  }));
+  }, 'tc-sup-sig-pad'));
   setUpSignaturePad('tc-sig-pad', 'tc-sig-clear');
-  sheetRerender = (l) => withPreservedSignature('tc-sig-pad', () => renderTimecardSheet(l));
+  setUpSignaturePad('tc-sup-sig-pad', 'tc-sup-sig-clear');
+  sheetRerender = (l) => withPreservedSignature('tc-sup-sig-pad', () => withPreservedSignature('tc-sig-pad', () => renderTimecardSheet(l)));
 }
 
 // ---- Missed meal period — documents a meal break that couldn't be taken
@@ -3498,10 +3543,9 @@ function renderMealPenaltySheet(lang) {
         <canvas id="mp-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
       </div>
       <button type="button" class="gh no-print" id="mp-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      <div class="form-section">${isEs ? 'Firma Electrónica del Supervisor o RH' : 'Supervisor or HR Electronic Signature'}</div>
+      ${signaturePadHtml('mp-sup-sig-pad', 'mp-sup-sig-clear')}
       <button type="button" class="gh solid no-print" id="mp-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
-      <div class="form-sig" style="grid-template-columns:1fr">
-        <div style="border-right:none">${isEs ? 'Firma del Supervisor o RH / Fecha' : 'Supervisor or HR Signature / Date'}: _______________________________________</div>
-      </div>
       <div class="form-fine">${isEs
         ? 'Este registro documenta el período de comida y la prima adeudada; no crea ni modifica ninguna tasa de pago regular. Firmar arriba, imprimir como PDF y archivar según el proceso de RH.'
         : 'This record documents the meal period and the premium owed; it does not create or change any regular pay rate. Sign above, print to PDF, and file per HR process.'}</div>
@@ -3518,9 +3562,10 @@ function renderMealPenaltySheet(lang) {
     late_lunch: f.lateLunch, late_lunch_time: f.lateLunchTime,
     premium_pending: f.premiumPending, pay_date: f.payDate,
     premium_assignee_id: f.assigneeId, premium_due_date: f.dueDate,
-  }));
+  }, 'mp-sup-sig-pad'));
   setUpSignaturePad('mp-sig-pad', 'mp-sig-clear');
-  sheetRerender = (l) => withPreservedSignature('mp-sig-pad', () => renderMealPenaltySheet(l));
+  setUpSignaturePad('mp-sup-sig-pad', 'mp-sup-sig-clear');
+  sheetRerender = (l) => withPreservedSignature('mp-sup-sig-pad', () => withPreservedSignature('mp-sig-pad', () => renderMealPenaltySheet(l)));
 }
 
 async function saveMealPenalty(lang) {
@@ -3736,9 +3781,8 @@ function renderMealWaiver2Sheet(lang) {
       <div class="form-box">
         ${supervisorPts.map((s, i) => `<p style="margin:0 0 8px"><label><input type="checkbox" class="mw2-check no-print" data-key="supervisor-${i}"><span class="print-only">☐</span> ${s}</label></p>`).join('')}
       </div>
-      <div class="form-sig" style="grid-template-columns:1fr">
-        <div style="border-right:none">${isEs ? 'Firma del Supervisor / Fecha' : 'Supervisor Signature / Date'}: _______________________________________</div>
-      </div>
+      <div class="form-section">${isEs ? 'Firma Electrónica del Supervisor' : 'Supervisor Electronic Signature'}</div>
+      ${signaturePadHtml('mw2-sup-sig-pad', 'mw2-sup-sig-clear')}
       <div class="form-fine">${isEs
         ? 'Un segundo período de comida solo puede renunciarse por consentimiento mutuo cuando las horas totales no exceden 12 y el primer período de comida no fue renunciado (Código Laboral §512). Un período de comida perdido o no conforme requiere una hora adicional de pago a la tarifa regular (Código Laboral §226.7). Conserve el formulario completo en el expediente del empleado y envíe una copia a Recursos Humanos.'
         : 'A second meal period may only be waived by mutual consent when total hours worked do not exceed 12 and the first meal period was not waived (Labor Code §512). A missed or non-compliant meal period requires one additional hour of pay at the regular rate (Labor Code §226.7). Retain the completed form in the employee file and forward a copy to HR.'}</div>
@@ -3754,10 +3798,12 @@ function renderMealWaiver2Sheet(lang) {
     });
   });
   setUpSignaturePad('mw2-sig-pad', 'mw2-sig-clear');
+  setUpSignaturePad('mw2-sup-sig-pad', 'mw2-sup-sig-clear');
   document.getElementById('mw2-sig-save').addEventListener('click', async () => {
     const checks = {};
     document.querySelectorAll('.mw2-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
     const state = sigPads['mw2-sig-pad'];
+    const supState = sigPads['mw2-sup-sig-pad'];
     try {
       const docRef = pendingSigDocId ? doc(db, 'training_documents', pendingSigDocId) : doc(collection(db, 'training_documents'));
       await setDoc(docRef, {
@@ -3767,6 +3813,7 @@ function renderMealWaiver2Sheet(lang) {
         branch: f.branch, date: f.date, hours: f.hours,
         first_taken: f.firstTaken, waiving: f.waiving, checks, lang,
         signature_data_url: state && state.hasStroke ? document.getElementById('mw2-sig-pad').toDataURL('image/png') : null,
+        supervisor_signature_data_url: supState && supState.hasStroke ? document.getElementById('mw2-sup-sig-pad').toDataURL('image/png') : null,
         signed_by: profile.uid, signed_at: serverTimestamp(),
         entered_by: profile.uid, entered_at: serverTimestamp(),
       }, { merge: true });
@@ -3787,7 +3834,7 @@ function renderMealWaiver2Sheet(lang) {
   sheetRerender = (l) => {
     const checks = {};
     document.querySelectorAll('.mw2-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
-    withPreservedSignature('mw2-sig-pad', () => renderMealWaiver2Sheet(l));
+    withPreservedSignature('mw2-sup-sig-pad', () => withPreservedSignature('mw2-sig-pad', () => renderMealWaiver2Sheet(l)));
     document.querySelectorAll('.mw2-check').forEach((cb) => {
       if (checks[cb.dataset.key]) {
         cb.checked = true;
