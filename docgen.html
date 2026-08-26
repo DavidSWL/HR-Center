@@ -1434,11 +1434,14 @@ async function openTermImport() {
 const LETTER_TYPES = [
   { value: 'hourly-en', label: 'Hourly Offer Letter (English)', category: 'offer' },
   { value: 'hourly-es', label: 'Hourly Offer Letter (Español)', category: 'offer' },
-  { value: 'salary', label: 'Salaried Offer Letter', category: 'offer' },
+  { value: 'salary', label: 'Salaried Offer Letter (English)', category: 'offer' },
+  { value: 'salary-es', label: 'Salaried Offer Letter (Español)', category: 'offer' },
   { value: 'increase-en', label: 'Wage Increase Letter (English)', category: 'increase' },
   { value: 'increase-es', label: 'Wage Increase Letter (Español)', category: 'increase' },
-  { value: 'promotion-hourly', label: 'Promotion Letter — Hourly', category: 'promotion' },
-  { value: 'promotion-salary', label: 'Promotion Letter — Salary', category: 'promotion' },
+  { value: 'promotion-hourly', label: 'Promotion Letter — Hourly (English)', category: 'promotion' },
+  { value: 'promotion-hourly-es', label: 'Promotion Letter — Hourly (Español)', category: 'promotion' },
+  { value: 'promotion-salary', label: 'Promotion Letter — Salary (English)', category: 'promotion' },
+  { value: 'promotion-salary-es', label: 'Promotion Letter — Salary (Español)', category: 'promotion' },
 ];
 
 function renderLetters() {
@@ -1511,7 +1514,7 @@ function renderLetters() {
 
   function toggleLetterFields() {
     const type = typeSel.value;
-    const isSalary = type === 'salary' || type === 'promotion-salary';
+    const isSalary = type === 'salary' || type === 'salary-es' || type === 'promotion-salary' || type === 'promotion-salary-es';
     document.getElementById('ltr-salary-field').hidden = !isSalary;
     document.getElementById('ltr-rate-field').querySelector('#ltr-rate').closest('.field').hidden = isSalary;
     document.getElementById('ltr-position-field').hidden = (type === 'increase-en' || type === 'increase-es');
@@ -1664,6 +1667,30 @@ function buildSalary(ctx) {
     ${acceptanceBlock('ACCEPTANCE AND AGREEMENT:', 'Signature', 'Date')}
     ${pageFooter()}`;
 }
+function buildSalaryEs(ctx) {
+  return `${letterHead()}
+    <p><strong>${ctx.date}</strong></p>
+    <p><strong>Estimado(a) Solicitante: ${escapeHtml(ctx.name)}</strong></p>
+    <p class="just">En nombre de Southwest Landscape, me complace ofrecerle un puesto <strong>${escapeHtml(ctx.empType)}, exento</strong> como <strong>${escapeHtml(ctx.position)}</strong>. Si acepta, los términos de su empleo con Southwest Landscape serán los siguientes:</p>
+    <p class="just indent"><strong>1. Fecha de Inicio.</strong> Su fecha de inicio prevista está programada para el <strong>${ctx.startDate}</strong>.</p>
+    <p class="just indent tight"><strong>2. Compensación.</strong></p>
+    <ul class="tight"><li>Se le pagará un salario inicial de <strong>${formatMoney(ctx.salary)} al año.</strong></li></ul>
+    <p class="just">Se le pagará semanalmente, con cada período de pago cubriendo el trabajo realizado de domingo a sábado. Todas las formas de compensación mencionadas en esta carta están sujetas a las retenciones e impuestos de nómina aplicables.</p>
+    <p class="indent tight"><strong>3. Ubicación y Supervisor:</strong></p>
+    <ul>
+      <li>Usted tendrá su sede en nuestras instalaciones ubicadas en <strong>${escapeHtml(ctx.address)} – Equipo de ${escapeHtml(ctx.branchLabel)}.</strong></li>
+      <li>Usted reportará a <strong>${escapeHtml(ctx.supervisorName)} – ${escapeHtml(ctx.supervisorTitle)}.</strong></li>
+      <li>Su horario es el siguiente: <strong>${escapeHtml(ctx.schedule)}</strong> – El horario puede variar según las necesidades del negocio.</li>
+    </ul>
+    <p class="center">Su ubicación y horario pueden estar sujetos a cambios según lo requieran las necesidades de la empresa.</p>
+    <p class="indent section-gap"><strong>4. Beneficios.</strong> Como empleado regular de Southwest Landscape, usted será elegible para tiempo de vacaciones pagadas y podrá inscribirse en un seguro médico subsidiado. La participación en el plan de salud es voluntaria y está disponible a su cargo. Los detalles completos, incluyendo elegibilidad e inscripción, se proporcionan en la Guía de Beneficios para Empleados.</p>
+    <p class="section-gap"><strong>5. Oferta Condicional.</strong> Esta oferta de empleo está sujeta a la finalización exitosa de las verificaciones estándar previas al empleo. Estas pueden incluir la confirmación del historial laboral, verificación de referencias, revisión del historial de manejo (si aplica), y verificación de cualquier información o credencial proporcionada durante el proceso de contratación. Esta oferta se realiza bajo el entendimiento de que toda la información divulgada por el candidato es precisa y completa.</p>
+    <p class="indent section-gap force-break"><strong>6. Relación Laboral.</strong> No obstante lo anterior, su empleo con Southwest Landscape es "a voluntad", lo que significa que usted o Southwest Landscape pueden terminar la relación laboral en cualquier momento, con o sin causa, y con o sin previo aviso.</p>
+    <p>Si desea aceptar esta oferta, favor de firmar y fechar esta carta y devolverla a mí antes del <strong>${ctx.returnDate}</strong>.</p>
+    ${sigBlock('Atentamente,')}
+    ${acceptanceBlock('ACEPTACIÓN Y ACUERDO:', 'Firma', 'Fecha')}
+    ${pageFooter()}`;
+}
 function buildIncreaseEn(ctx) {
   const overtime = formatMoney(ctx.rate * 1.5);
   return `${letterHead()}
@@ -1748,6 +1775,34 @@ function buildPromotionHourly(ctx) {
     ${acceptanceBlock('ACCEPTANCE AND AGREEMENT:', 'Signature', 'Date')}
     ${pageFooter()}`;
 }
+function buildPromotionHourlyEs(ctx) {
+  const overtime = formatMoney(ctx.rate * 1.5);
+  return `${letterHead()}
+    <p><strong>${ctx.date}</strong></p>
+    <p><strong>Estimado(a) ${escapeHtml(ctx.name)}:</strong></p>
+    <p class="just">En nombre de Southwest Landscape, me complace ofrecerle un cambio de puesto a <strong>${escapeHtml(ctx.empType)}, no exento</strong> como <strong>${escapeHtml(ctx.position)}</strong>. Si acepta, los términos de su empleo con Southwest Landscape serán los siguientes:</p>
+    <p class="just indent"><strong>1. Fecha de Vigencia.</strong> Su fecha de inicio prevista está programada para el <strong>${ctx.startDate}</strong>.</p>
+    <p class="just indent tight"><strong>2. Compensación.</strong></p>
+    <ul class="tight">
+      <li>Se le pagará un salario inicial de <strong>${formatMoney(ctx.rate)} por hora</strong>.</li>
+      <li>Su tarifa de tiempo extra será de <strong>${overtime} por hora</strong>, de acuerdo con las leyes aplicables.</li>
+    </ul>
+    <p class="just">Se le pagará semanalmente, con cada período de pago cubriendo el trabajo realizado de domingo a sábado. Todas las formas de compensación mencionadas en esta carta están sujetas a las retenciones e impuestos de nómina aplicables.</p>
+    <p class="indent tight"><strong>3. Ubicación y Supervisor:</strong></p>
+    <ul>
+      <li>Usted tendrá su sede en nuestras instalaciones ubicadas en <strong>${escapeHtml(ctx.address)} – Equipo de ${escapeHtml(ctx.branchLabel)}.</strong></li>
+      <li>Usted reportará a <strong>${escapeHtml(ctx.supervisorName)} – ${escapeHtml(ctx.supervisorTitle)}.</strong></li>
+      <li>Su horario es el siguiente: <strong>${escapeHtml(ctx.schedule)}</strong> – El horario puede variar según las necesidades del negocio.</li>
+    </ul>
+    <p class="center">Su ubicación y horario pueden estar sujetos a cambios según lo requieran las necesidades de la empresa.</p>
+    <p class="indent section-gap"><strong>4. Beneficios.</strong> Sus beneficios actualmente elegidos y la acumulación de tiempo de vacaciones/enfermedad permanecen igual según lo descrito en nuestra Guía de Beneficios y Manual del Empleado.</p>
+    <p class="section-gap"><strong>5. Período de Desempeño de 90 Días.</strong> Estará sujeto(a) a una revisión de desempeño de 90 días, a partir de su primer día en el puesto. El propósito de este período es evaluar su idoneidad para el puesto y brindarle retroalimentación, orientación y capacitación para ayudarle a tener éxito en su función. Su supervisor realizará una evaluación formal de desempeño al final del período de 90 días para determinar si continuará en este puesto. Si se determina durante o al final del período de 90 días que el puesto no es el adecuado, la Compañía podrá, a su discreción, intentar reubicarlo(a) en su puesto anterior (o uno comparable) si hay uno disponible. Sin embargo, la Compañía no puede garantizar dicha reubicación.</p>
+    <p class="indent section-gap force-break"><strong>6. Relación Laboral.</strong> No obstante lo anterior, su empleo con Southwest Landscape es "a voluntad", lo que significa que usted o Southwest Landscape pueden terminar la relación laboral en cualquier momento, con o sin causa, y con o sin previo aviso.</p>
+    <p>Si desea aceptar esta oferta, favor de firmar y fechar esta carta y devolverla a mí antes del <strong>${ctx.returnDate}</strong>.</p>
+    ${sigBlock('Atentamente,')}
+    ${acceptanceBlock('ACEPTACIÓN Y ACUERDO:', 'Firma', 'Fecha')}
+    ${pageFooter()}`;
+}
 function buildPromotionSalary(ctx) {
   return `${letterHead()}
     <p><strong>${ctx.date}</strong></p>
@@ -1770,6 +1825,30 @@ function buildPromotionSalary(ctx) {
     <p>If you wish to accept this offer, please sign and date this letter and return it to me by <strong>${ctx.returnDate}</strong>.</p>
     ${sigBlock()}
     ${acceptanceBlock('ACCEPTANCE AND AGREEMENT:', 'Signature', 'Date')}
+    ${pageFooter()}`;
+}
+function buildPromotionSalaryEs(ctx) {
+  return `${letterHead()}
+    <p><strong>${ctx.date}</strong></p>
+    <p><strong>Estimado(a) ${escapeHtml(ctx.name)}:</strong></p>
+    <p class="just">En nombre de Southwest Landscape, me complace ofrecerle un cambio de puesto a <strong>${escapeHtml(ctx.empType)}, exento</strong> como <strong>${escapeHtml(ctx.position)}</strong>. Si acepta, los términos de su empleo con Southwest Landscape serán los siguientes:</p>
+    <p class="just indent"><strong>1. Fecha de Vigencia.</strong> Su fecha de inicio prevista está programada para el <strong>${ctx.startDate}</strong>.</p>
+    <p class="just indent tight"><strong>2. Compensación.</strong></p>
+    <ul class="tight"><li>Se le pagará un salario inicial de <strong>${formatMoney(ctx.salary)} al año.</strong></li></ul>
+    <p class="just">Se le pagará semanalmente, con cada período de pago cubriendo el trabajo realizado de domingo a sábado. Todas las formas de compensación mencionadas en esta carta están sujetas a las retenciones e impuestos de nómina aplicables.</p>
+    <p class="indent tight"><strong>3. Ubicación y Supervisor:</strong></p>
+    <ul>
+      <li>Usted tendrá su sede en nuestras instalaciones ubicadas en <strong>${escapeHtml(ctx.address)} – Equipo de ${escapeHtml(ctx.branchLabel)}.</strong></li>
+      <li>Usted reportará a <strong>${escapeHtml(ctx.supervisorName)} – ${escapeHtml(ctx.supervisorTitle)}.</strong></li>
+      <li>Su horario es el siguiente: <strong>${escapeHtml(ctx.schedule)}</strong> – El horario puede variar según las necesidades del negocio.</li>
+    </ul>
+    <p class="center">Su ubicación y horario pueden estar sujetos a cambios según lo requieran las necesidades de la empresa.</p>
+    <p class="indent section-gap"><strong>4. Beneficios.</strong> Sus beneficios actualmente elegidos y la acumulación de tiempo de vacaciones/enfermedad permanecen igual según lo descrito en nuestra Guía de Beneficios y Manual del Empleado.</p>
+    <p class="section-gap"><strong>5. Período de Desempeño de 90 Días.</strong> Estará sujeto(a) a una revisión de desempeño de 90 días, a partir de su primer día en el puesto. El propósito de este período es evaluar su idoneidad para el puesto y brindarle retroalimentación, orientación y capacitación para ayudarle a tener éxito en su función. Su supervisor realizará una evaluación formal de desempeño al final del período de 90 días para determinar si continuará en este puesto. Si se determina durante o al final del período de 90 días que el puesto no es el adecuado, la Compañía podrá, a su discreción, intentar reubicarlo(a) en su puesto anterior (o uno comparable) si hay uno disponible. Sin embargo, la Compañía no puede garantizar dicha reubicación.</p>
+    <p class="indent section-gap force-break"><strong>6. Relación Laboral.</strong> No obstante lo anterior, su empleo con Southwest Landscape es "a voluntad", lo que significa que usted o Southwest Landscape pueden terminar la relación laboral en cualquier momento, con o sin causa, y con o sin previo aviso.</p>
+    <p>Si desea aceptar esta oferta, favor de firmar y fechar esta carta y devolverla a mí antes del <strong>${ctx.returnDate}</strong>.</p>
+    ${sigBlock('Atentamente,')}
+    ${acceptanceBlock('ACEPTACIÓN Y ACUERDO:', 'Firma', 'Fecha')}
     ${pageFooter()}`;
 }
 
@@ -1800,11 +1879,11 @@ function generateLetterSheet() {
   if (!letterDate || !startDate || !returnDate) return showToast('Letter date, start date, and return-by date are all required.', 'error');
   const positionRequired = type !== 'increase-en' && type !== 'increase-es';
   if (positionRequired && !position) return showToast('Enter a position title.', 'error');
-  const isSalaryType = type === 'salary' || type === 'promotion-salary';
+  const isSalaryType = type === 'salary' || type === 'salary-es' || type === 'promotion-salary' || type === 'promotion-salary-es';
   if (!isSalaryType && (!rate || rate <= 0)) return showToast('Enter a valid hourly rate.', 'error');
   if (isSalaryType && (!salary || salary <= 0)) return showToast('Enter a valid annual salary.', 'error');
 
-  const isEs = type === 'hourly-es' || type === 'increase-es';
+  const isEs = type.endsWith('-es');
   const ctx = {
     name: `${first} ${last}`,
     date: longDate(letterDate, isEs), startDate: longDate(startDate, isEs), returnDate: longDate(returnDate, isEs),
@@ -1814,9 +1893,10 @@ function generateLetterSheet() {
   };
 
   const builders = {
-    'hourly-en': buildHourlyEn, 'hourly-es': buildHourlyEs, salary: buildSalary,
+    'hourly-en': buildHourlyEn, 'hourly-es': buildHourlyEs, salary: buildSalary, 'salary-es': buildSalaryEs,
     'increase-en': buildIncreaseEn, 'increase-es': buildIncreaseEs,
-    'promotion-hourly': buildPromotionHourly, 'promotion-salary': buildPromotionSalary,
+    'promotion-hourly': buildPromotionHourly, 'promotion-hourly-es': buildPromotionHourlyEs,
+    'promotion-salary': buildPromotionSalary, 'promotion-salary-es': buildPromotionSalaryEs,
   };
   const sheet = document.getElementById('ltr-sheet');
   sheet.hidden = false;
@@ -1883,7 +1963,7 @@ function letterRecordBase(type, f) {
     position: f.position, emp_type: f.empType, address: f.address, schedule: f.schedule,
     branch_label: f.branchLabel, supervisor_name: f.supervisorName, supervisor_title: f.supervisorTitle,
     letter_date: f.letterDate, start_date: f.startDate, return_date: f.returnDate,
-    lang: (type === 'hourly-es' || type === 'increase-es') ? 'es' : 'en',
+    lang: type.endsWith('-es') ? 'es' : 'en',
   };
 }
 
