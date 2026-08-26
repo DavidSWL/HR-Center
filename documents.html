@@ -148,6 +148,13 @@ function escapeHtmlAttr(str) {
   return div.innerHTML;
 }
 
+// Every signed document stores signed_at, but it isn't automatically
+// visible anywhere — each read-only view has to print it explicitly.
+function signedOnHtml(ts, label = 'Signed') {
+  if (!ts?.toDate) return '';
+  return `<div class="dim" style="margin-top:6px;font-size:11.5px">${label} ${formatDate(ts.toDate().toISOString().slice(0, 10))}</div>`;
+}
+
 // "## Heading" starts a new section bar (matches the printed-form look
 // used everywhere else in the app); everything else is body paragraphs,
 // split on blank lines.
@@ -406,6 +413,7 @@ function renderRefusalHtml(d) {
       ${d.signature_data_url ? `<img src="${d.signature_data_url}" alt="Employee signature" style="max-height:90px;border-bottom:1px solid #333">` : `<div class="dim">${checks.declined_to_sign ? 'Employee declined to sign.' : 'Not signed.'}</div>`}
       <div class="form-section">Supervisor or HR Representative Electronic Signature</div>
       ${d.supervisor_signature_data_url ? `<img src="${d.supervisor_signature_data_url}" alt="Supervisor signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not signed.</div>'}
+      ${signedOnHtml(d.signed_at)}
       <div class="form-fine" style="margin-top:10px">
         Follow-up: ${checks.requested_treatment_later ? 'Employee later requested treatment. ' : ''}${checks.fully_recovered ? 'Employee reports fully recovered.' : ''}${!checks.requested_treatment_later && !checks.fully_recovered ? 'No follow-up logged yet.' : ''}
       </div>
@@ -520,6 +528,7 @@ function renderMealWaiver2Html(d) {
       ${d.signature_data_url ? `<img src="${d.signature_data_url}" alt="Employee signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not signed.</div>'}
       <div class="form-section">Supervisor Electronic Signature</div>
       ${d.supervisor_signature_data_url ? `<img src="${d.supervisor_signature_data_url}" alt="Supervisor signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not signed.</div>'}
+      ${signedOnHtml(d.signed_at)}
       <div class="form-section">Supervisor Attestation</div>
       <div class="form-box">
         ${supervisorPts.map((s, i) => `<p style="margin:0 0 8px">${checks[`supervisor-${i}`] ? '☑' : '☐'} ${escapeHtmlAttr(s)}</p>`).join('')}

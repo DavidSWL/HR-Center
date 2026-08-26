@@ -301,6 +301,13 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// Signed_at is captured on every signature but isn't automatically
+// shown anywhere — the read-only report has to print it explicitly.
+function signedOnHtml(ts) {
+  if (!ts?.toDate) return '';
+  return `<div class="dim" style="margin-top:6px;font-size:11.5px">Signed ${formatDate(ts.toDate().toISOString().slice(0, 10))}</div>`;
+}
+
 // Type-ahead employee picker — a text input (with a datalist for
 // narrowing by name as you type) paired with a hidden input holding the
 // resolved employee id. An empty/unresolved value is a valid state here
@@ -623,8 +630,10 @@ function renderIncidentReportHtml(inc) {
       </div>
       <div class="form-section">Signature of Manager</div>
       ${inc.manager_signature_data_url ? `<img src="${inc.manager_signature_data_url}" alt="Manager signature" style="max-height:80px;border-bottom:1px solid #333">` : '<div class="dim">Not signed.</div>'}
+      ${signedOnHtml(inc.manager_signed_at)}
       <div class="form-section">Signature of Employee</div>
       ${inc.employee_signature_data_url ? `<img src="${inc.employee_signature_data_url}" alt="Employee signature" style="max-height:80px;border-bottom:1px solid #333">` : '<div class="dim">Not signed.</div>'}
+      ${signedOnHtml(inc.employee_signed_at)}
     </div>
   `;
 }
