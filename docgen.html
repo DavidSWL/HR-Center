@@ -349,7 +349,7 @@ function openGenerator(key) {
   // exactly as supplied — those forms are English-only, so the language
   // toggle only applies to PIP, Onboarding, and the letters (which manage
   // English/Spanish through their own letter-type list instead).
-  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty' || key === 'mealwaiver2') ? '' : 'none';
+  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty' || key === 'mealwaiver2' || key === 'review' || key === 'termination' || key === 'incidentreport') ? '' : 'none';
   renderCurrent();
 }
 
@@ -527,12 +527,32 @@ const REVIEW_AREAS = [
   'Teamwork & Attitude',
   'Communication (Crew, Manager, Clients)',
 ];
+// Sheet output only is bilingual (same rule as every other generator) —
+// the data-entry form above stays in English since HR fills it out.
+// Keyed by the exact English text so a saved review's ratings (stored in
+// English) can still be shown in Spanish later.
+const REVIEW_AREAS_ES = {
+  'Attendance & Punctuality': 'Asistencia y Puntualidad',
+  'Safety Practices (PPE, Procedures, Awareness)': 'Prácticas de Seguridad (EPP, Procedimientos, Conciencia)',
+  'Quality of Work': 'Calidad del Trabajo',
+  'Job Knowledge / Skill Progress': 'Conocimiento del Puesto / Progreso de Habilidades',
+  'Follows Instructions & Procedures': 'Sigue Instrucciones y Procedimientos',
+  'Care of Equipment, Tools & Vehicles': 'Cuidado del Equipo, Herramientas y Vehículos',
+  'Teamwork & Attitude': 'Trabajo en Equipo y Actitud',
+  'Communication (Crew, Manager, Clients)': 'Comunicación (Cuadrilla, Gerente, Clientes)',
+};
 const REVIEW_FOCUS = {
   30: 'Trained on safety basics, knows the daily routine, performing core tasks with supervision.',
   60: 'Handling core duties with less supervision; consistent quality, safety, and attendance.',
   90: 'Fully performing the role independently and meeting company standards for quality, safety, and reliability.',
 };
+const REVIEW_FOCUS_ES = {
+  30: 'Capacitado en conceptos básicos de seguridad, conoce la rutina diaria, realiza tareas principales con supervisión.',
+  60: 'Maneja las funciones principales con menos supervisión; calidad, seguridad y asistencia consistentes.',
+  90: 'Desempeña completamente el puesto de forma independiente y cumple con los estándares de la empresa en calidad, seguridad y confiabilidad.',
+};
 const REVIEW_HEADING = { 30: '30-Day Review — Learning the Job', 60: '60-Day Review — Working with Support', 90: '90-Day Review — Working Independently' };
+const REVIEW_HEADING_ES = { 30: 'Revisión de 30 Días — Aprendiendo el Puesto', 60: 'Revisión de 60 Días — Trabajando con Apoyo', 90: 'Revisión de 90 Días — Trabajando de Forma Independiente' };
 
 function reviewFormHtml(milestone) {
   return `
@@ -665,7 +685,7 @@ function renderReview() {
           });
         }
         showToast('Review saved.' + (notOnTrack ? ' Routed to HR as a task.' : ''));
-        renderReviewSheet(emp, milestone, data);
+        renderReviewSheet(emp, milestone, data, document.getElementById('lang-select').value);
       } catch (err) {
         console.error(err);
         showToast('Could not save — ' + err.message, 'error');
@@ -674,64 +694,75 @@ function renderReview() {
   });
 }
 
-function onTrackLabel(v) {
+function onTrackLabel(v, isEs) {
+  if (isEs) return v === 'yes' ? 'Sí' : v === 'yes-items' ? 'Sí, con puntos a trabajar (ver notas)' : 'No — notificar a Recursos Humanos';
   return v === 'yes' ? 'Yes' : v === 'yes-items' ? 'Yes, with items to work on (see notes)' : 'No — notify HR';
 }
 
-function renderReviewSheet(emp, milestone, data) {
+function renderReviewSheet(emp, milestone, data, lang = 'en') {
+  const isEs = lang === 'es';
+  const areaLabel = (a) => (isEs ? (REVIEW_AREAS_ES[a] || a) : a);
   const sheet = document.getElementById('rev-sheet');
   sheet.hidden = false;
   sheet.innerHTML = `
     <div class="form-doc-inner">
       <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
-      <h1 class="form-title">30 / 60 / 90 Day New Hire Review</h1>
-      <div class="form-section">Employee Information</div>
+      <h1 class="form-title">${isEs ? 'Revisión de Nuevo Empleado de 30 / 60 / 90 Días' : '30 / 60 / 90 Day New Hire Review'}</h1>
+      <div class="form-section">${isEs ? 'Información del Empleado' : 'Employee Information'}</div>
       <div class="form-grid c2">
-        <div class="form-cell"><b>Employee Name</b>${emp.first_name} ${emp.last_name}</div>
-        <div class="form-cell"><b>Employee ID</b>${emp.id}</div>
-        <div class="form-cell"><b>Job Title</b>${emp.position || ''}</div>
-        <div class="form-cell"><b>Department</b>${emp.division || ''}</div>
-        <div class="form-cell"><b>Manager</b>${(employees.find(m => m.id === emp.manager_emp_id) || {}).first_name ? `${employees.find(m => m.id === emp.manager_emp_id).first_name} ${employees.find(m => m.id === emp.manager_emp_id).last_name}` : ''}</div>
-        <div class="form-cell"><b>Start Date</b>${formatDate(emp.hire_date)}</div>
+        <div class="form-cell"><b>${isEs ? 'Nombre del Empleado' : 'Employee Name'}</b>${emp.first_name} ${emp.last_name}</div>
+        <div class="form-cell"><b>${isEs ? 'ID del Empleado' : 'Employee ID'}</b>${emp.id}</div>
+        <div class="form-cell"><b>${isEs ? 'Puesto' : 'Job Title'}</b>${emp.position || ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Departamento' : 'Department'}</b>${emp.division || ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Gerente' : 'Manager'}</b>${(employees.find(m => m.id === emp.manager_emp_id) || {}).first_name ? `${employees.find(m => m.id === emp.manager_emp_id).first_name} ${employees.find(m => m.id === emp.manager_emp_id).last_name}` : ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha de Inicio' : 'Start Date'}</b>${formatDate(emp.hire_date)}</div>
       </div>
-      <div class="form-fine" style="border-top:1px solid #999">Complete one review at each milestone using the same checklist so progress is easy to see. Rating scale: E = Exceeds Expectations, M = Meets Expectations, N = Needs Improvement. Any "N" rating should include a comment. If the employee is not on track, notify HR before the next milestone.</div>
+      <div class="form-fine" style="border-top:1px solid #999">${isEs
+        ? 'Complete una revisión en cada hito usando la misma lista de verificación para que el progreso sea fácil de ver. Escala de calificación: E = Supera las Expectativas, M = Cumple las Expectativas, N = Necesita Mejorar. Cualquier calificación "N" debe incluir un comentario. Si el empleado no va por buen camino, notifique a Recursos Humanos antes del siguiente hito.'
+        : 'Complete one review at each milestone using the same checklist so progress is easy to see. Rating scale: E = Exceeds Expectations, M = Meets Expectations, N = Needs Improvement. Any "N" rating should include a comment. If the employee is not on track, notify HR before the next milestone.'}</div>
 
-      <div class="form-section">${REVIEW_HEADING[milestone]}</div>
-      <div class="form-fine" style="border-top:1px solid #999">Focus: ${REVIEW_FOCUS[milestone]}</div>
+      <div class="form-section">${isEs ? REVIEW_HEADING_ES[milestone] : REVIEW_HEADING[milestone]}</div>
+      <div class="form-fine" style="border-top:1px solid #999">${isEs ? 'Enfoque' : 'Focus'}: ${isEs ? REVIEW_FOCUS_ES[milestone] : REVIEW_FOCUS[milestone]}</div>
       <table class="form-notice-table">
-        <thead><tr><th>Performance Area</th><th>E</th><th>M</th><th>N</th><th>Comments</th></tr></thead>
+        <thead><tr><th>${isEs ? 'Área de Desempeño' : 'Performance Area'}</th><th>E</th><th>M</th><th>N</th><th>${isEs ? 'Comentarios' : 'Comments'}</th></tr></thead>
         <tbody>
-          ${data.ratings.map(r => `<tr><td>${escapeHtml(r.area)}</td><td style="text-align:center">${r.rating === 'E' ? '☑' : '☐'}</td><td style="text-align:center">${r.rating === 'M' ? '☑' : '☐'}</td><td style="text-align:center">${r.rating === 'N' ? '☑' : '☐'}</td><td>${escapeHtml(r.comment)}</td></tr>`).join('')}
+          ${data.ratings.map(r => `<tr><td>${escapeHtml(areaLabel(r.area))}</td><td style="text-align:center">${r.rating === 'E' ? '☑' : '☐'}</td><td style="text-align:center">${r.rating === 'M' ? '☑' : '☐'}</td><td style="text-align:center">${r.rating === 'N' ? '☑' : '☐'}</td><td>${escapeHtml(r.comment)}</td></tr>`).join('')}
         </tbody>
       </table>
-      <div class="form-box">Is the employee on track at this stage? ${onTrackLabel(data.on_track)}</div>
-      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">Manager Notes</b>${escapeHtml(data.manager_notes) || '—'}</div>
+      <div class="form-box">${isEs ? '¿El empleado va por buen camino en esta etapa?' : 'Is the employee on track at this stage?'} ${onTrackLabel(data.on_track, isEs)}</div>
+      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">${isEs ? 'Notas del Gerente' : 'Manager Notes'}</b>${escapeHtml(data.manager_notes) || '—'}</div>
       <div class="form-sig">
-        <div>Review Completed On: ${formatDate(new Date().toISOString().slice(0, 10))}</div>
-        <div>Manager Initials: ______&nbsp;&nbsp;&nbsp;Employee Initials: ______</div>
+        <div>${isEs ? 'Revisión Completada El' : 'Review Completed On'}: ${formatDate(new Date().toISOString().slice(0, 10))}</div>
+        <div>${isEs ? 'Iniciales del Gerente' : 'Manager Initials'}: ______&nbsp;&nbsp;&nbsp;${isEs ? 'Iniciales del Empleado' : 'Employee Initials'}: ______</div>
       </div>
 
       ${milestone === 90 ? `
-      <div class="form-section">Overall 90-Day Assessment</div>
-      <div class="form-box">${data.overall === 'exceeds' ? 'Exceeds Expectations — performing above the standard for this role' : data.overall === 'needs' ? 'Needs Improvement — see comments; improvement plan or extended review period below' : 'Meets Expectations — performing at the standard for this role'}</div>
-      <div class="form-section">Recommendation</div>
-      <div class="form-box">${{ continue: 'Continue in role', 'continue-support': 'Continue with additional training / support (see comments)', extend: `Extend review period to: ${formatDate(data.extend_date)}`, other: `Other: ${escapeHtml(data.other_recommend)}` }[data.recommend]}</div>
-      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">Manager Overall Comments</b>${escapeHtml(data.overall_comments) || '—'}</div>
-      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">Employee Comments (optional)</b>${escapeHtml(data.employee_comments) || '—'}</div>
+      <div class="form-section">${isEs ? 'Evaluación General de 90 Días' : 'Overall 90-Day Assessment'}</div>
+      <div class="form-box">${isEs
+        ? (data.overall === 'exceeds' ? 'Supera las Expectativas — desempeño por encima del estándar para este puesto' : data.overall === 'needs' ? 'Necesita Mejorar — ver comentarios; plan de mejora o período de revisión extendido abajo' : 'Cumple las Expectativas — desempeño al nivel del estándar para este puesto')
+        : (data.overall === 'exceeds' ? 'Exceeds Expectations — performing above the standard for this role' : data.overall === 'needs' ? 'Needs Improvement — see comments; improvement plan or extended review period below' : 'Meets Expectations — performing at the standard for this role')}</div>
+      <div class="form-section">${isEs ? 'Recomendación' : 'Recommendation'}</div>
+      <div class="form-box">${isEs
+        ? { continue: 'Continuar en el puesto', 'continue-support': 'Continuar con capacitación / apoyo adicional (ver comentarios)', extend: `Extender el período de revisión hasta: ${formatDate(data.extend_date)}`, other: `Otro: ${escapeHtml(data.other_recommend)}` }[data.recommend]
+        : { continue: 'Continue in role', 'continue-support': 'Continue with additional training / support (see comments)', extend: `Extend review period to: ${formatDate(data.extend_date)}`, other: `Other: ${escapeHtml(data.other_recommend)}` }[data.recommend]}</div>
+      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">${isEs ? 'Comentarios Generales del Gerente' : 'Manager Overall Comments'}</b>${escapeHtml(data.overall_comments) || '—'}</div>
+      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">${isEs ? 'Comentarios del Empleado (opcional)' : 'Employee Comments (optional)'}</b>${escapeHtml(data.employee_comments) || '—'}</div>
       ` : ''}
 
       <div class="form-page-break">
-      <div class="form-fine" style="margin-top:14px;border:1px solid #999">This review is a coaching and communication tool. It does not create a contract of employment, and nothing in this document alters the at-will nature of employment. Either the employee or the Company may end employment at any time, with or without cause or notice.</div>
-      <div class="form-section">Employee Electronic Signature</div>
+      <div class="form-fine" style="margin-top:14px;border:1px solid #999">${isEs
+        ? 'Esta revisión es una herramienta de coaching y comunicación. No crea un contrato de empleo, y nada en este documento altera la naturaleza de empleo a voluntad ("at-will"). Tanto el empleado como la Compañía pueden terminar la relación laboral en cualquier momento, con o sin causa y con o sin previo aviso.'
+        : 'This review is a coaching and communication tool. It does not create a contract of employment, and nothing in this document alters the at-will nature of employment. Either the employee or the Company may end employment at any time, with or without cause or notice.'}</div>
+      <div class="form-section">${isEs ? 'Firma Electrónica del Empleado' : 'Employee Electronic Signature'}</div>
       <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
         <canvas id="rev-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
       </div>
-      <button type="button" class="gh no-print" id="rev-sig-clear" style="margin-bottom:10px">Clear signature</button>
-      <div class="form-section">Manager Electronic Signature</div>
+      <button type="button" class="gh no-print" id="rev-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      <div class="form-section">${isEs ? 'Firma Electrónica del Gerente' : 'Manager Electronic Signature'}</div>
       ${signaturePadHtml('rev-mgr-sig-pad', 'rev-mgr-sig-clear')}
-      <div class="form-section">HR Electronic Signature</div>
+      <div class="form-section">${isEs ? 'Firma Electrónica de Recursos Humanos' : 'HR Electronic Signature'}</div>
       ${signaturePadHtml('rev-hr-sig-pad', 'rev-hr-sig-clear')}
-      <button type="button" class="gh solid no-print" id="rev-sig-save" style="margin-bottom:10px;margin-left:8px">Signed — save</button>
+      <button type="button" class="gh solid no-print" id="rev-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
       ${signedOnHtml(data.signed_at)}
       ${signatureTaskFieldsHtml('rev')}
       </div>
@@ -768,6 +799,7 @@ function renderReviewSheet(emp, milestone, data) {
   document.getElementById('rev-sig-later-btn').addEventListener('click', () => createSignatureFollowupTask('rev', {
     linkedDocType: 'review', linkedDocId: `${emp.id}:${milestone}`, title: `${milestone}-day review — ${emp.first_name} ${emp.last_name}`,
   }));
+  sheetRerender = (l) => withPreservedSignature('rev-hr-sig-pad', () => withPreservedSignature('rev-mgr-sig-pad', () => withPreservedSignature('rev-sig-pad', () => renderReviewSheet(emp, milestone, data, l))));
 }
 
 // ---- Termination — matches the SWL termination form exactly. Final-pay
@@ -775,13 +807,34 @@ function renderReviewSheet(emp, milestone, data) {
 // Firestore — same rule as the offer letter's rate field. ----
 
 const TERM_REASONS = ['Voluntary Resignation', 'Layoff / Reduction in Force', 'Performance', 'Attendance / Tardiness', 'Policy/Conduct Violation', 'Other'];
+// Sheet output only is bilingual — the data-entry form above stays in
+// English (HR fills it out); a saved termination's reason/property/notice
+// values are stored in English and looked up here for display.
+const TERM_REASONS_ES = {
+  'Voluntary Resignation': 'Renuncia Voluntaria', 'Layoff / Reduction in Force': 'Despido / Reducción de Personal',
+  Performance: 'Desempeño', 'Attendance / Tardiness': 'Asistencia / Tardanza',
+  'Policy/Conduct Violation': 'Violación de Política/Conducta', Other: 'Otro',
+};
 const PROPERTY_ITEMS = ['Keys', 'Uniform', 'Laptop', 'Phone', 'CC/Gas Card', 'Vehicle', 'Email/System Access Revoked', 'Building/Key Fob Access Revoked'];
+const PROPERTY_ITEMS_ES = {
+  Keys: 'Llaves', Uniform: 'Uniforme', Laptop: 'Laptop', Phone: 'Teléfono', 'CC/Gas Card': 'Tarjeta de Crédito/Gasolina',
+  Vehicle: 'Vehículo', 'Email/System Access Revoked': 'Acceso a Correo/Sistemas Revocado',
+  'Building/Key Fob Access Revoked': 'Acceso al Edificio/Llavero Revocado',
+};
 const NOTICE_ITEMS = [
   { key: 'edd', label: 'EDD "For Your Benefit" Pamphlet (DE 2320)' },
   { key: 'change', label: 'Notice to Employee as to Change in Relationship (involuntary separations only)' },
   { key: 'cobra', label: 'COBRA Election Notice' },
   { key: 'hipp', label: 'HIPP Notice (DHCS 9061)' },
 ];
+const NOTICE_ITEMS_ES = {
+  edd: 'Folleto "Para Su Beneficio" del EDD (DE 2320)',
+  change: 'Aviso al Empleado sobre Cambio en la Relación Laboral (solo separaciones involuntarias)',
+  cobra: 'Aviso de Elección de COBRA',
+  hipp: 'Aviso de HIPP (DHCS 9061)',
+};
+const DELIVERY_METHODS_ES = { 'In Person': 'En Persona', Mailed: 'Por Correo', 'Direct Deposit': 'Depósito Directo' };
+const NOTICE_DELIVERY_METHODS_ES = { 'In Person': 'En Persona', 'Certified Mail': 'Correo Certificado', 'Email w/Pay Stub Notice': 'Correo Electrónico con Aviso de Recibo de Pago' };
 const involuntaryReasons = new Set(['Layoff / Reduction in Force', 'Performance', 'Attendance / Tardiness', 'Policy/Conduct Violation']);
 
 let terminations = [];
@@ -963,7 +1016,7 @@ function renderTermRows() {
       const rec = terminations.find((r) => r.id === tr.dataset.id);
       if (rec) {
         document.getElementById('term-print-acts').hidden = false;
-        renderTerminationSheet(rec);
+        renderTerminationSheet(rec, {}, document.getElementById('lang-select').value);
       }
     });
   });
@@ -1045,7 +1098,7 @@ function printTermination() {
   const built = buildTerminationRecord();
   if (!built) return;
   document.getElementById('term-print-acts').hidden = false;
-  renderTerminationSheet(built.record, built.finalPay);
+  renderTerminationSheet(built.record, built.finalPay, document.getElementById('lang-select').value);
 }
 
 async function registerTermination() {
@@ -1081,73 +1134,81 @@ async function registerTermination() {
   }
 }
 
-function renderTerminationSheet(r, finalPay = {}) {
+function renderTerminationSheet(r, finalPay = {}, lang = 'en') {
+  const isEs = lang === 'es';
+  const reasonLabel = (v) => (isEs ? (TERM_REASONS_ES[v] || v) : v);
+  const propLabel = (v) => (isEs ? (PROPERTY_ITEMS_ES[v] || v) : v);
+  const deliveryLabel = (v) => (isEs ? (DELIVERY_METHODS_ES[v] || v) : v);
+  const noticeDeliveryLabel = (v) => (isEs ? (NOTICE_DELIVERY_METHODS_ES[v] || v) : v);
+  const noticeLabel = (n) => (isEs ? (NOTICE_ITEMS_ES[n.key] || n.label) : n.label);
   const sheet = document.getElementById('term-sheet');
   sheet.hidden = false;
   sheet.scrollIntoView({ behavior: 'smooth' });
   sheet.innerHTML = `
     <div class="form-doc-inner">
       <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
-      <div class="form-section">Employee Information</div>
+      <div class="form-section">${isEs ? 'Información del Empleado' : 'Employee Information'}</div>
       <div class="form-grid c2">
-        <div class="form-cell"><b>Employee Name</b>${escapeHtml(r.emp_name)}</div>
-        <div class="form-cell"><b>Date</b>${formatDate(new Date().toISOString().slice(0, 10))}</div>
-        <div class="form-cell"><b>Job Title</b>${escapeHtml(r.job_title)}</div>
-        <div class="form-cell"><b>Employee ID</b>${escapeHtml(r.emp_id)}</div>
+        <div class="form-cell"><b>${isEs ? 'Nombre del Empleado' : 'Employee Name'}</b>${escapeHtml(r.emp_name)}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha' : 'Date'}</b>${formatDate(new Date().toISOString().slice(0, 10))}</div>
+        <div class="form-cell"><b>${isEs ? 'Puesto' : 'Job Title'}</b>${escapeHtml(r.job_title)}</div>
+        <div class="form-cell"><b>${isEs ? 'ID del Empleado' : 'Employee ID'}</b>${escapeHtml(r.emp_id)}</div>
       </div>
-      <div class="form-section">Employee Details</div>
+      <div class="form-section">${isEs ? 'Detalles del Empleado' : 'Employee Details'}</div>
       <div class="form-grid c3">
-        <div class="form-cell"><b>Date of Hire</b>${formatDate(r.hire_date)}</div>
-        <div class="form-cell"><b>Last Day Worked</b>${formatDate(r.last_day_worked)}</div>
-        <div class="form-cell"><b>Termination Date</b>${formatDate(r.termination_date)}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha de Contratación' : 'Date of Hire'}</b>${formatDate(r.hire_date)}</div>
+        <div class="form-cell"><b>${isEs ? 'Último Día Trabajado' : 'Last Day Worked'}</b>${formatDate(r.last_day_worked)}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha de Terminación' : 'Termination Date'}</b>${formatDate(r.termination_date)}</div>
       </div>
-      <div class="form-section">Reason for Termination</div>
-      <div class="form-checks">${TERM_REASONS.filter(rs => rs !== 'Other').map(rs => `<label>${rs === r.reason ? '☑' : '☐'} ${rs}</label>`).join('')}<label>${!TERM_REASONS.includes(r.reason) ? '☑' : '☐'} Other: ${!TERM_REASONS.includes(r.reason) ? escapeHtml(r.reason) : ''}</label></div>
-      <div class="form-section">Description of Circumstances</div>
+      <div class="form-section">${isEs ? 'Motivo de la Terminación' : 'Reason for Termination'}</div>
+      <div class="form-checks">${TERM_REASONS.filter(rs => rs !== 'Other').map(rs => `<label>${rs === r.reason ? '☑' : '☐'} ${reasonLabel(rs)}</label>`).join('')}<label>${!TERM_REASONS.includes(r.reason) ? '☑' : '☐'} ${isEs ? 'Otro' : 'Other'}: ${!TERM_REASONS.includes(r.reason) ? escapeHtml(r.reason) : ''}</label></div>
+      <div class="form-section">${isEs ? 'Descripción de las Circunstancias' : 'Description of Circumstances'}</div>
       <div class="form-box">${escapeHtml(r.circumstances) || '—'}</div>
-      <div class="form-section">Final Hours</div>
+      <div class="form-section">${isEs ? 'Horas Finales' : 'Final Hours'}</div>
       <div class="form-grid c3">
-        <div class="form-cell"><b>Regular Hours</b>${finalPay.regHours || ''}</div>
-        <div class="form-cell"><b>OT Hours</b>${finalPay.otHours || ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Horas Regulares' : 'Regular Hours'}</b>${finalPay.regHours || ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Horas Extra' : 'OT Hours'}</b>${finalPay.otHours || ''}</div>
         <div class="form-cell"><b>VAC</b>${finalPay.vac || ''}</div>
-        <div class="form-cell"><b>Sick Pay</b>${finalPay.sick || ''}</div>
-        <div class="form-cell"><b>CMP (California Meal Penalty)</b>${finalPay.cmp || ''}</div>
-        <div class="form-cell"><b>Other</b>${escapeHtml(finalPay.other || '')}</div>
+        <div class="form-cell"><b>${isEs ? 'Pago por Enfermedad' : 'Sick Pay'}</b>${finalPay.sick || ''}</div>
+        <div class="form-cell"><b>${isEs ? 'CMP (Penalización de Comida de California)' : 'CMP (California Meal Penalty)'}</b>${finalPay.cmp || ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Otro' : 'Other'}</b>${escapeHtml(finalPay.other || '')}</div>
       </div>
       <div class="form-grid c2">
-        <div class="form-cell"><b>Final Wages Amount</b>${finalPay.amount ? '$' + Number(finalPay.amount).toLocaleString() : ''}</div>
-        <div class="form-cell"><b>Date Final Check Issued</b>${formatDate(finalPay.checkDate)}</div>
+        <div class="form-cell"><b>${isEs ? 'Monto de Salario Final' : 'Final Wages Amount'}</b>${finalPay.amount ? '$' + Number(finalPay.amount).toLocaleString() : ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha de Emisión del Cheque Final' : 'Date Final Check Issued'}</b>${formatDate(finalPay.checkDate)}</div>
       </div>
-      <div class="form-fine">Note: Accrued, unused sick leave is generally not required to be paid out under California law (unlike vacation/PTO). Final pay timing: involuntary termination — wages due immediately, same day. Voluntary resignation with less than 72 hours' notice — wages due within 72 hours. Late final pay may trigger waiting-time penalties (Labor Code §201-203).</div>
-      <div class="form-section">Method of Delivery</div>
-      <div class="form-checks">${['In Person', 'Mailed', 'Direct Deposit'].map(m => `<label>${m === r.delivery_method ? '☑' : '☐'} ${m}</label>`).join('')}</div>
-      <div class="form-section">Company Property Return</div>
-      <div class="form-checks">${PROPERTY_ITEMS.map(p => `<label>${(r.property_returned || []).includes(p) ? '☑' : '☐'} ${p}</label>`).join('')}</div>
-      <div class="form-section">Required Notices Provided</div>
+      <div class="form-fine">${isEs
+        ? 'Nota: El tiempo por enfermedad acumulado y no usado generalmente no se requiere pagar bajo la ley de California (a diferencia de las vacaciones/PTO). Momento del pago final: terminación involuntaria — el salario se debe de inmediato, el mismo día. Renuncia voluntaria con menos de 72 horas de aviso — el salario se debe dentro de 72 horas. El pago final tardío puede generar penalidades por tiempo de espera (Código Laboral §201-203).'
+        : 'Note: Accrued, unused sick leave is generally not required to be paid out under California law (unlike vacation/PTO). Final pay timing: involuntary termination — wages due immediately, same day. Voluntary resignation with less than 72 hours\' notice — wages due within 72 hours. Late final pay may trigger waiting-time penalties (Labor Code §201-203).'}</div>
+      <div class="form-section">${isEs ? 'Método de Entrega' : 'Method of Delivery'}</div>
+      <div class="form-checks">${['In Person', 'Mailed', 'Direct Deposit'].map(m => `<label>${m === r.delivery_method ? '☑' : '☐'} ${deliveryLabel(m)}</label>`).join('')}</div>
+      <div class="form-section">${isEs ? 'Devolución de Propiedad de la Compañía' : 'Company Property Return'}</div>
+      <div class="form-checks">${PROPERTY_ITEMS.map(p => `<label>${(r.property_returned || []).includes(p) ? '☑' : '☐'} ${propLabel(p)}</label>`).join('')}</div>
+      <div class="form-section">${isEs ? 'Avisos Requeridos Proporcionados' : 'Required Notices Provided'}</div>
       <table class="form-notice-table">
-        <thead><tr><th>Notice</th><th>Provided?</th><th>N/A</th><th>Date</th></tr></thead>
+        <thead><tr><th>${isEs ? 'Aviso' : 'Notice'}</th><th>${isEs ? '¿Proporcionado?' : 'Provided?'}</th><th>N/A</th><th>${isEs ? 'Fecha' : 'Date'}</th></tr></thead>
         <tbody>
-          ${(r.notices || []).map(n => `<tr><td>${escapeHtml(n.label)}</td><td style="text-align:center">${n.status === 'provided' ? '☑' : '☐'}</td><td style="text-align:center">${n.status === 'na' ? '☑' : '☐'}</td><td>${formatDate(n.date)}</td></tr>`).join('')}
+          ${(r.notices || []).map(n => `<tr><td>${escapeHtml(noticeLabel(n))}</td><td style="text-align:center">${n.status === 'provided' ? '☑' : '☐'}</td><td style="text-align:center">${n.status === 'na' ? '☑' : '☐'}</td><td>${formatDate(n.date)}</td></tr>`).join('')}
         </tbody>
       </table>
-      <div class="form-section">Acknowledgment &amp; Delivery</div>
+      <div class="form-section">${isEs ? 'Reconocimiento y Entrega' : 'Acknowledgment & Delivery'}</div>
       <div class="form-grid c2">
-        <div class="form-cell"><b>Delivered By</b>${escapeHtml(r.delivered_by || '')}</div>
-        <div class="form-cell"><b>Date Delivered</b>${formatDate(r.date_delivered)}</div>
+        <div class="form-cell"><b>${isEs ? 'Entregado Por' : 'Delivered By'}</b>${escapeHtml(r.delivered_by || '')}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha de Entrega' : 'Date Delivered'}</b>${formatDate(r.date_delivered)}</div>
       </div>
-      <div class="form-checks">${['In Person', 'Certified Mail', 'Email w/Pay Stub Notice'].map(m => `<label>${m === r.notice_delivery_method ? '☑' : '☐'} ${m}</label>`).join('')}</div>
-      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">Employee Acknowledgement</b>I acknowledge receipt of this termination notice and final pay information.</div>
-      <div class="form-section">Employee Electronic Signature</div>
+      <div class="form-checks">${['In Person', 'Certified Mail', 'Email w/Pay Stub Notice'].map(m => `<label>${m === r.notice_delivery_method ? '☑' : '☐'} ${noticeDeliveryLabel(m)}</label>`).join('')}</div>
+      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">${isEs ? 'Reconocimiento del Empleado' : 'Employee Acknowledgement'}</b>${isEs ? 'Reconozco haber recibido este aviso de terminación e información sobre el pago final.' : 'I acknowledge receipt of this termination notice and final pay information.'}</div>
+      <div class="form-section">${isEs ? 'Firma Electrónica del Empleado' : 'Employee Electronic Signature'}</div>
       <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
         <canvas id="term-sig-pad" style="width:100%;height:110px;display:block;cursor:crosshair;touch-action:none"></canvas>
       </div>
-      <button type="button" class="gh no-print" id="term-sig-clear" style="margin-bottom:10px">Clear signature</button>
-      <div class="form-section">Manager / HR Electronic Signature</div>
+      <button type="button" class="gh no-print" id="term-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      <div class="form-section">${isEs ? 'Firma Electrónica del Gerente / RH' : 'Manager / HR Electronic Signature'}</div>
       ${signaturePadHtml('term-mgr-sig-pad', 'term-mgr-sig-clear')}
-      <button type="button" class="gh solid no-print" id="term-sig-save" style="margin-bottom:10px;margin-left:8px">Signed — save</button>
+      <button type="button" class="gh solid no-print" id="term-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
       ${signedOnHtml(r.signed_at)}
       ${r.id ? signatureTaskFieldsHtml('term') : ''}
-      <div class="form-atwill"><b>At-will Employment Reminder:</b> Employment with the company is at-will. Nothing in this document alters that status or creates a contract of employment.</div>
+      <div class="form-atwill"><b>${isEs ? 'Recordatorio de Empleo a Voluntad:' : 'At-will Employment Reminder:'}</b> ${isEs ? 'El empleo con la compañía es a voluntad ("at-will"). Nada en este documento altera ese estatus ni crea un contrato de empleo.' : 'Employment with the company is at-will. Nothing in this document alters that status or creates a contract of employment.'}</div>
     </div>
   `;
   setUpSignaturePad('term-sig-pad', 'term-sig-clear');
@@ -1179,6 +1240,7 @@ function renderTerminationSheet(r, finalPay = {}) {
       linkedDocType: 'termination', linkedDocId: r.id, title: `Termination — ${r.emp_name}`,
     }));
   }
+  sheetRerender = (l) => withPreservedSignature('term-mgr-sig-pad', () => withPreservedSignature('term-sig-pad', () => renderTerminationSheet(r, finalPay, l)));
 }
 
 // ---- Termination import — reads the "Terminations" sheet of the roster
@@ -2285,7 +2347,7 @@ function renderIncidentReport() {
     document.getElementById(id).addEventListener('input', updateRecordableHint);
     document.getElementById(id).addEventListener('change', updateRecordableHint);
   });
-  document.getElementById('ir-generate-btn').addEventListener('click', () => renderIncidentReportSheet());
+  document.getElementById('ir-generate-btn').addEventListener('click', () => renderIncidentReportSheet(document.getElementById('lang-select').value));
 }
 
 function readIncidentReportForm() {
@@ -2323,7 +2385,12 @@ function readIncidentReportForm() {
   };
 }
 
-function renderIncidentReportSheet() {
+const INCIDENT_TYPE_ES = { Injury: 'Lesión', 'Near miss': 'Casi accidente', 'Property damage': 'Daño a la propiedad', 'Vehicle accident': 'Accidente vehicular' };
+const TREATMENT_LEVEL_LABELS = { none: 'None needed', first_aid: 'First aid', clinic: 'Clinic', er: 'Emergency room', hospitalization: 'Hospitalization', refused: 'Employee refused treatment' };
+const TREATMENT_LEVEL_LABELS_ES = { none: 'No se necesitó', first_aid: 'Primeros auxilios', clinic: 'Clínica', er: 'Sala de emergencias', hospitalization: 'Hospitalización', refused: 'Empleado rechazó tratamiento' };
+
+function renderIncidentReportSheet(lang = 'en') {
+  const isEs = lang === 'es';
   const f = readIncidentReportForm();
   const sheet = document.getElementById('ir-sheet');
   sheet.hidden = false;
@@ -2331,68 +2398,68 @@ function renderIncidentReportSheet() {
   sheet.innerHTML = `
     <div class="form-doc-inner">
       <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
-      <h1 class="form-title">Incident Report</h1>
+      <h1 class="form-title">${isEs ? 'Reporte de Incidente' : 'Incident Report'}</h1>
       <div class="form-grid c2">
-        <div class="form-cell"><b>Date</b>${formatDate(f.date)}</div>
-        <div class="form-cell"><b>Time</b>${escapeHtml(f.time) || '—'}</div>
-        <div class="form-cell"><b>Employee Involved</b>${f.emp ? `${f.emp.first_name} ${f.emp.last_name}` : 'Unassigned'}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha' : 'Date'}</b>${formatDate(f.date)}</div>
+        <div class="form-cell"><b>${isEs ? 'Hora' : 'Time'}</b>${escapeHtml(f.time) || '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Empleado Involucrado' : 'Employee Involved'}</b>${f.emp ? `${f.emp.first_name} ${f.emp.last_name}` : (isEs ? 'Sin asignar' : 'Unassigned')}</div>
         <div class="form-cell"><b>Supervisor</b>${escapeHtml(f.supervisor) || '—'}</div>
-        <div class="form-cell"><b>Department</b>${escapeHtml(f.department) || '—'}</div>
-        <div class="form-cell"><b>Location / Client Site</b>${escapeHtml(f.location) || '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Departamento' : 'Department'}</b>${escapeHtml(f.department) || '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Ubicación / Sitio del Cliente' : 'Location / Client Site'}</b>${escapeHtml(f.location) || '—'}</div>
       </div>
-      <div class="form-section">Incident Type</div>
-      <div class="form-box">${escapeHtml(f.incidentType)}</div>
-      <div class="form-section">What Happened</div>
+      <div class="form-section">${isEs ? 'Tipo de Incidente' : 'Incident Type'}</div>
+      <div class="form-box">${escapeHtml(isEs ? (INCIDENT_TYPE_ES[f.incidentType] || f.incidentType) : f.incidentType)}</div>
+      <div class="form-section">${isEs ? 'Qué Pasó' : 'What Happened'}</div>
       <div class="form-box">${escapeHtml(f.whatHappened) || '—'}</div>
       ${f.isInjury ? `
-      <div class="form-section">Injury Details</div>
+      <div class="form-section">${isEs ? 'Detalles de la Lesión' : 'Injury Details'}</div>
       <div class="form-grid c3">
-        <div class="form-cell"><b>Injury Type</b>${escapeHtml(f.injuryType) || '—'}</div>
-        <div class="form-cell"><b>Body Part</b>${escapeHtml(f.bodyPart) || '—'}</div>
-        <div class="form-cell"><b>Treatment Level</b>${escapeHtml(f.treatmentLevel) || '—'}</div>
-        <div class="form-cell"><b>Days Away</b>${f.daysAway}</div>
-        <div class="form-cell"><b>Restricted Days</b>${f.restrictedDays}</div>
-        <div class="form-cell"><b>Recordable</b>${f.recordable ? 'Yes' : 'No'}</div>
+        <div class="form-cell"><b>${isEs ? 'Tipo de Lesión' : 'Injury Type'}</b>${escapeHtml(f.injuryType) || '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Parte del Cuerpo' : 'Body Part'}</b>${escapeHtml(f.bodyPart) || '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Nivel de Tratamiento' : 'Treatment Level'}</b>${f.treatmentLevel ? escapeHtml((isEs ? TREATMENT_LEVEL_LABELS_ES : TREATMENT_LEVEL_LABELS)[f.treatmentLevel] || f.treatmentLevel) : '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Días Ausente' : 'Days Away'}</b>${f.daysAway}</div>
+        <div class="form-cell"><b>${isEs ? 'Días con Restricción' : 'Restricted Days'}</b>${f.restrictedDays}</div>
+        <div class="form-cell"><b>${isEs ? 'Registrable' : 'Recordable'}</b>${f.recordable ? (isEs ? 'Sí' : 'Yes') : 'No'}</div>
       </div>
       ` : ''}
-      <div class="form-section">Name(s) of Person(s) Who Witnessed Incident</div>
+      <div class="form-section">${isEs ? 'Nombre(s) de Persona(s) que Presenciaron el Incidente' : 'Name(s) of Person(s) Who Witnessed Incident'}</div>
       <div class="form-box">${escapeHtml(f.witnesses) || '—'}</div>
       ${f.describe ? `
-      <div class="form-section">Describe</div>
+      <div class="form-section">${isEs ? 'Describir' : 'Describe'}</div>
       <div class="form-checks">
-        <label>${f.describe === 'unsafe_act' ? '☑' : '☐'} Unsafe act</label>
-        <label>${f.describe === 'unsafe_condition' ? '☑' : '☐'} Unsafe condition</label>
+        <label>${f.describe === 'unsafe_act' ? '☑' : '☐'} ${isEs ? 'Acto inseguro' : 'Unsafe act'}</label>
+        <label>${f.describe === 'unsafe_condition' ? '☑' : '☐'} ${isEs ? 'Condición insegura' : 'Unsafe condition'}</label>
       </div>
       ` : ''}
-      <div class="form-section">Immediate Action Taken</div>
+      <div class="form-section">${isEs ? 'Acción Inmediata Tomada' : 'Immediate Action Taken'}</div>
       <div class="form-box">${escapeHtml(f.immediateAction) || '—'}</div>
-      <div class="form-section">Root Cause &amp; Corrective Action</div>
-      <div class="form-box">${escapeHtml(f.rootCause) || '—'}${f.correctiveAction ? `<br><br><b>Corrective action:</b> ${escapeHtml(f.correctiveAction)}` : ''}</div>
-      <div class="form-section">Follow-Up Report and Plan of Action</div>
+      <div class="form-section">${isEs ? 'Causa Raíz y Acción Correctiva' : 'Root Cause & Corrective Action'}</div>
+      <div class="form-box">${escapeHtml(f.rootCause) || '—'}${f.correctiveAction ? `<br><br><b>${isEs ? 'Acción correctiva:' : 'Corrective action:'}</b> ${escapeHtml(f.correctiveAction)}` : ''}</div>
+      <div class="form-section">${isEs ? 'Reporte de Seguimiento y Plan de Acción' : 'Follow-Up Report and Plan of Action'}</div>
       <div class="form-box">
-        <p style="margin:0 0 8px"><label><input type="checkbox" class="ir-check no-print" data-key="discussed_staff"><span class="print-only">☐</span> Discussed with staff involved</label>${f.discussedStaffWho ? ` — ${escapeHtml(f.discussedStaffWho)}` : ''}</p>
-        <p style="margin:0 0 8px"><label><input type="checkbox" class="ir-check no-print" data-key="discussed_meeting"><span class="print-only">☐</span> Discussed at departmental meeting</label></p>
-        <p style="margin:0 0 8px"><label><input type="checkbox" class="ir-check no-print" data-key="reviewed_procedures"><span class="print-only">☐</span> Reviewed procedures with individual</label></p>
-        <p style="margin:0"><label><input type="checkbox" class="ir-check no-print" data-key="other"><span class="print-only">☐</span> Other</label>${f.otherDetail ? ` — ${escapeHtml(f.otherDetail)}` : ''}</p>
+        <p style="margin:0 0 8px"><label><input type="checkbox" class="ir-check no-print" data-key="discussed_staff"><span class="print-only">☐</span> ${isEs ? 'Discutido con el personal involucrado' : 'Discussed with staff involved'}</label>${f.discussedStaffWho ? ` — ${escapeHtml(f.discussedStaffWho)}` : ''}</p>
+        <p style="margin:0 0 8px"><label><input type="checkbox" class="ir-check no-print" data-key="discussed_meeting"><span class="print-only">☐</span> ${isEs ? 'Discutido en la reunión del departamento' : 'Discussed at departmental meeting'}</label></p>
+        <p style="margin:0 0 8px"><label><input type="checkbox" class="ir-check no-print" data-key="reviewed_procedures"><span class="print-only">☐</span> ${isEs ? 'Se revisaron los procedimientos con la persona' : 'Reviewed procedures with individual'}</label></p>
+        <p style="margin:0"><label><input type="checkbox" class="ir-check no-print" data-key="other"><span class="print-only">☐</span> ${isEs ? 'Otro' : 'Other'}</label>${f.otherDetail ? ` — ${escapeHtml(f.otherDetail)}` : ''}</p>
       </div>
-      <div class="form-section">Comments</div>
+      <div class="form-section">${isEs ? 'Comentarios' : 'Comments'}</div>
       <div class="form-box">${escapeHtml(f.comments) || '—'}</div>
       <div class="form-grid c2">
-        <div class="form-cell"><b>Above Report Prepared By</b>${escapeHtml(profile.name || '')}</div>
-        <div class="form-cell"><b>Date</b>${formatDate(new Date().toISOString().slice(0, 10))}</div>
+        <div class="form-cell"><b>${isEs ? 'Reporte Preparado Por' : 'Above Report Prepared By'}</b>${escapeHtml(profile.name || '')}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha' : 'Date'}</b>${formatDate(new Date().toISOString().slice(0, 10))}</div>
       </div>
       <div class="form-page-break">
-      <div class="form-section">Signature of Manager</div>
+      <div class="form-section">${isEs ? 'Firma del Gerente' : 'Signature of Manager'}</div>
       <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
         <canvas id="ir-mgr-sig-pad" style="width:100%;height:90px;display:block;cursor:crosshair;touch-action:none"></canvas>
       </div>
-      <button type="button" class="gh no-print" id="ir-mgr-sig-clear" style="margin-bottom:10px">Clear signature</button>
-      <div class="form-section">Signature of Employee</div>
+      <button type="button" class="gh no-print" id="ir-mgr-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      <div class="form-section">${isEs ? 'Firma del Empleado' : 'Signature of Employee'}</div>
       <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
         <canvas id="ir-emp-sig-pad" style="width:100%;height:90px;display:block;cursor:crosshair;touch-action:none"></canvas>
       </div>
-      <button type="button" class="gh no-print" id="ir-emp-sig-clear" style="margin-bottom:10px">Clear signature</button>
-      <button type="button" class="gh solid no-print" id="ir-save-btn" style="margin-top:10px">Save</button>
+      <button type="button" class="gh no-print" id="ir-emp-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      <button type="button" class="gh solid no-print" id="ir-save-btn" style="margin-top:10px">${isEs ? 'Guardar' : 'Save'}</button>
       ${signatureTaskFieldsHtml('ir', 'Save and create signature reminder')}
       <div class="dim no-print" style="font-size:11.5px;margin-top:4px">The incident always saves right away, signed or not. Fill in who/by-when above only if a signature is still missing and you want a task to follow up.</div>
       </div>
@@ -2409,6 +2476,14 @@ function renderIncidentReportSheet() {
   setUpSignaturePad('ir-emp-sig-pad', 'ir-emp-sig-clear');
   document.getElementById('ir-save-btn').addEventListener('click', () => saveIncidentReport(f));
   document.getElementById('ir-sig-later-btn').addEventListener('click', () => saveIncidentReport(f, true));
+  sheetRerender = (l) => {
+    const checks = {};
+    document.querySelectorAll('.ir-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
+    withPreservedSignature('ir-emp-sig-pad', () => withPreservedSignature('ir-mgr-sig-pad', () => renderIncidentReportSheet(l)));
+    document.querySelectorAll('.ir-check').forEach((cb) => {
+      if (checks[cb.dataset.key]) { cb.checked = true; cb.closest('label').querySelector('.print-only').textContent = '☑'; }
+    });
+  };
 }
 
 async function saveIncidentReport(f, wantsSignatureTask = false) {
@@ -2996,7 +3071,7 @@ async function loadPendingSignatureDoc(type, id) {
       const allSigned = d.signature_data_url && d.manager_signature_data_url && d.hr_signature_data_url;
       if (taskId && allSigned) await completeLinkedTask(taskId);
       pendingSigDocId = id; pendingSigTaskId = allSigned ? null : taskId;
-      renderReviewSheet(emp, Number(milestone), d);
+      renderReviewSheet(emp, Number(milestone), d, document.getElementById('lang-select').value);
       await drawExistingSignatureDataUrl('rev-sig-pad', d.signature_data_url);
       await drawExistingSignatureDataUrl('rev-mgr-sig-pad', d.manager_signature_data_url);
       await drawExistingSignatureDataUrl('rev-hr-sig-pad', d.hr_signature_data_url);
@@ -3010,7 +3085,7 @@ async function loadPendingSignatureDoc(type, id) {
       if (taskId && bothSigned) await completeLinkedTask(taskId);
       pendingSigDocId = id; pendingSigTaskId = bothSigned ? null : taskId;
       document.getElementById('term-print-acts').hidden = false;
-      renderTerminationSheet(rec);
+      renderTerminationSheet(rec, {}, document.getElementById('lang-select').value);
       await drawExistingSignatureDataUrl('term-sig-pad', rec.signature_data_url);
       await drawExistingSignatureDataUrl('term-mgr-sig-pad', rec.manager_signature_data_url);
       if (bothSigned) showToast('Already fully signed — shown below.');
@@ -3028,7 +3103,7 @@ async function loadPendingSignatureDoc(type, id) {
       }
       pendingSigDocId = id; pendingSigTaskId = taskId;
       populateIncidentReportForm(d);
-      renderIncidentReportSheet();
+      renderIncidentReportSheet(document.getElementById('lang-select').value);
       if (d.followup_checks) {
         document.querySelectorAll('.ir-check').forEach((cb) => {
           if (d.followup_checks[cb.dataset.key]) { cb.checked = true; cb.closest('label').querySelector('.print-only').textContent = '☑'; }
