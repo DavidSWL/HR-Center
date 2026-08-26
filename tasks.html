@@ -115,6 +115,13 @@ function staffName(uid) {
   const s = staff.find((x) => x.id === uid);
   return s ? s.name : uid;
 }
+// Every linked-doc task opens back into Document Generator except a
+// write-up, which lives on its own page (discipline.html), never inside
+// Document Generator's own generator list.
+function linkedDocUrl(type, docId, taskId) {
+  if (type === 'writeup') return `discipline.html?doc=${docId}&task=${taskId}`;
+  return `docgen.html?open=${type}&doc=${docId}&task=${taskId}`;
+}
 function empById(id) { return employees.find((e) => e.id === id); }
 
 async function loadEmployees() {
@@ -192,7 +199,7 @@ function render() {
   });
   document.querySelectorAll('.open-doc-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      window.location.href = `docgen.html?open=${btn.dataset.type}&doc=${btn.dataset.doc}&task=${btn.dataset.id}`;
+      window.location.href = linkedDocUrl(btn.dataset.type, btn.dataset.doc, btn.dataset.id);
     });
   });
 }
@@ -365,7 +372,7 @@ async function toggleCalTask(id) {
   // Always go to the document instead; docgen.html sorts out whether it
   // still needs a signature or is already done (and fixes the task if so).
   if (t.linked_doc_id) {
-    window.location.href = `docgen.html?open=${t.linked_doc_type}&doc=${t.linked_doc_id}&task=${t.id}`;
+    window.location.href = linkedDocUrl(t.linked_doc_type, t.linked_doc_id, t.id);
     return;
   }
   if (t.status === 'complete') {
