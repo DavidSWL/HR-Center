@@ -116,6 +116,10 @@ async function ensureLoaded(names) {
       // toward any report — same reasoning as excluding them from the
       // dashboard's headcount.
       if (name === 'employees') rows = rows.filter((e) => !e.is_test);
+      // Entered-in-error incidents stay in Firestore for audit, but never
+      // count toward Safety's numbers — same reasoning as excluding test
+      // employees above.
+      if (name === 'incidents') rows = rows.filter((i) => !i.voided);
       data[name] = rows;
     }
   }

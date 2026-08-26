@@ -40,6 +40,18 @@
 .doc-fineprint{font-size:10.5px;color:#555;font-style:italic;border:1px solid #ccc;padding:10px;margin-top:14px}
 .sig-line{border-top:1px solid #333;margin-top:36px;padding-top:4px;font-size:11px}
 
+/* Form fields (the "get the signature later" assignee/due controls) sit
+   directly on these white print-style sheets, outside any .card-body or
+   .modal-body — without this, they fall back to styles.css's base .f-in
+   (login-page style: white text on a dark transparent background), which
+   is unreadable against a white sheet. */
+.doc-body .f-in, .form-doc-inner .f-in, .letter .f-in {
+  background:#fff; border-color:#ccc; color:#111;
+}
+.doc-body .f-in:focus, .form-doc-inner .f-in:focus, .letter .f-in:focus {
+  outline:0; border-color:#154733; background-color:#f3f8f5;
+}
+
 /* .form-doc family (Write-up / Termination / 30-60-90 review) now lives
    in styles.css — shared with discipline.html's write-up print sheet. */
 

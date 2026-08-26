@@ -215,6 +215,7 @@
       <div class="modal-actions">
         <button type="button" class="gh" id="view-report-btn">View formatted report</button>
         <button type="button" class="gh" id="get-signature-btn">Get signature</button>
+        <button type="button" class="gh" id="void-btn" style="color:var(--alertTx)">Mark as entered in error</button>
         <button type="button" class="gh" id="cancel-btn">Cancel</button>
         <button type="submit" class="gh solid" id="save-btn">Save</button>
       </div>
@@ -398,6 +399,7 @@ async function loadIncidents() {
   const snap = await getDocs(collection(db, 'incidents'));
   incidents = snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((i) => !i.voided) // entered-in-error records stay in Firestore for audit, just out of view here
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   renderReport();
   render();
@@ -637,6 +639,25 @@ document.getElementById('view-print-btn').addEventListener('click', () => window
 document.getElementById('get-signature-btn').addEventListener('click', () => {
   if (!editingIncidentId) return;
   window.location.href = `docgen.html?open=incidentreport&doc=${editingIncidentId}`;
+});
+document.getElementById('void-btn').addEventListener('click', async () => {
+  if (!editingIncidentId) return;
+  const inc = incidents.find((x) => x.id === editingIncidentId);
+  const ok = confirm(`Mark this incident (${inc ? empNameFor(inc) : ''}, ${formatDate(inc?.date)}) as entered in error? It disappears from the incident list, cost cards, and Form 300 export — it is not deleted, and stays available for audit if it's ever needed again.`);
+  if (!ok) return;
+  const reason = prompt('Reason (required):');
+  if (!reason || !reason.trim()) { showToast('A reason is required — not voided.', 'error'); return; }
+  try {
+    await updateDoc(doc(db, 'incidents', editingIncidentId), {
+      voided: true, voided_reason: reason.trim(), voided_by: profile.uid, voided_at: serverTimestamp(),
+    });
+    showToast('Marked as entered in error.');
+    document.getElementById('modal-overlay').hidden = true;
+    await loadIncidents();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
 });
 
 document.getElementById('add-btn').addEventListener('click', () => {
