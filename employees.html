@@ -56,6 +56,11 @@
             <option value="terminated">Terminated only</option>
             <option value="all">All, including terminated</option>
           </select>
+          <button class="gh" id="headcount-btn" type="button">Headcount by division</button>
+        </div>
+        <div class="card" id="headcount-card" style="margin:0 0 14px" hidden>
+          <div class="card-h"><h3>Headcount by division</h3><span id="headcount-total"></span></div>
+          <div id="headcount-rows"></div>
         </div>
         <table>
           <thead>
@@ -409,6 +414,30 @@ function render() {
   const activeCount = allEmployees.filter((e) => e.status !== 'terminated' && !e.is_test).length;
   const divisions = new Set(allEmployees.filter((e) => e.status !== 'terminated' && !e.is_test).map((e) => e.division).filter(Boolean));
   document.getElementById('roster-summary').textContent = `${activeCount} active · ${divisions.size} division${divisions.size === 1 ? '' : 's'}`;
+
+  renderHeadcount();
+}
+
+// Always counts active + onboarding, non-test employees — independent of
+// whatever the search/filter row above is set to, so it reads as a real
+// headcount snapshot rather than a count of the current filtered view.
+function renderHeadcount() {
+  const active = allEmployees.filter((e) => e.status !== 'terminated' && !e.is_test);
+  const byDivision = {};
+  active.forEach((e) => {
+    const d = e.division || 'Unspecified';
+    byDivision[d] = (byDivision[d] || 0) + 1;
+  });
+  const pairs = Object.entries(byDivision).sort((a, b) => b[1] - a[1]);
+  const max = pairs.length ? pairs[0][1] : 1;
+  document.getElementById('headcount-total').textContent = `${active.length} total`;
+  document.getElementById('headcount-rows').innerHTML = pairs.length ? pairs.map(([d, c]) => `
+    <div class="rowbar">
+      <div class="l">${d}</div>
+      <div class="trk"><i style="width:${(c / max) * 100}%"></i></div>
+      <div class="mono" style="text-align:right">${c}</div>
+    </div>
+  `).join('') : '<div class="card-body dim">No active employees.</div>';
 }
 
 // Division isn't a fixed list — real rosters have more divisions than
@@ -529,6 +558,10 @@ document.getElementById('search').addEventListener('input', render);
 document.getElementById('division-filter').addEventListener('change', render);
 document.getElementById('location-filter').addEventListener('change', render);
 document.getElementById('status-filter').addEventListener('change', render);
+document.getElementById('headcount-btn').addEventListener('click', () => {
+  const card = document.getElementById('headcount-card');
+  card.hidden = !card.hidden;
+});
 
 document.getElementById('terminate-btn').addEventListener('click', () => {
   document.getElementById('terminate-section').hidden = false;
