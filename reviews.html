@@ -219,14 +219,15 @@ function renderQueue() {
 
   document.getElementById('queue-rows').innerHTML = visible.length ? visible.map((r) => {
     const emp = empById(r.empId);
+    const terminated = emp.status === 'terminated';
     const overdue = !r.review_completed && r.due_date && r.due_date < todayStr;
     const soon = !r.review_completed && r.due_date &&
       daysBetween(new Date(r.due_date + 'T00:00:00'), today) >= -7 && r.due_date >= todayStr;
-    const dueStyle = overdue ? 'color:var(--alertTx);font-weight:700' : (soon ? 'color:#9A7C1E;font-weight:600' : '');
+    const dueStyle = terminated ? '' : overdue ? 'color:var(--alertTx);font-weight:700' : (soon ? 'color:#9A7C1E;font-weight:600' : '');
     return `
-      <tr>
-        <td class="mono" style="${dueStyle}">${formatDate(r.due_date)}${overdue ? ' · overdue' : ''}</td>
-        <td>${emp.first_name} ${emp.last_name}</td>
+      <tr${terminated ? ' style="opacity:.5"' : ''}>
+        <td class="mono" style="${dueStyle}">${formatDate(r.due_date)}${overdue && !terminated ? ' · overdue' : ''}</td>
+        <td>${emp.first_name} ${emp.last_name}${terminated ? ' <span class="pill">Terminated — not needed</span>' : ''}</td>
         <td class="mono dim">${emp.division || '—'}</td>
         <td class="mono">${r.milestone}-day</td>
         <td>
@@ -255,6 +256,7 @@ function renderQueue() {
 function renderEscalation() {
   const overdue14 = reviews.filter((r) => {
     if (r.review_completed || !r.due_date) return false;
+    if (empById(r.empId)?.status === 'terminated') return false; // nothing left to escalate — the review is moot
     const d = daysBetween(today, new Date(r.due_date + 'T00:00:00'));
     return d > 14;
   });

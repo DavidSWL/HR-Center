@@ -78,6 +78,7 @@
             <span class="dim" id="cal-progress" style="margin-left:auto;font-size:12.5px"></span>
           </div>
           <div class="trk" style="margin:0 16px 12px"><i id="cal-progress-bar"></i></div>
+          <p class="dim" style="margin:-6px 16px 10px;font-size:11px">Purple-bordered entries are 30/60/90 reviews still due — click one to open Reviews. Terminated employees' reviews don't show here.</p>
           <div id="cal-grid"></div>
         </div>
         <table id="list-view" style="margin-top:16px">
@@ -94,7 +95,7 @@ import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
 import { db } from './firebaseconfig.js';
 import {
-  collection, doc, getDocs, setDoc, updateDoc, addDoc, serverTimestamp,
+  collection, collectionGroup, doc, getDocs, setDoc, updateDoc, addDoc, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
@@ -106,11 +107,31 @@ document.getElementById('header-date').textContent =
 
 let staff = [];
 let tasks = [];
+let employees = [];
+let pendingReviews = []; // 30/60/90 reviews still due — calendar only, not part of the tasks list/table below
 const todayStr = new Date().toISOString().slice(0, 10);
 
 function staffName(uid) {
   const s = staff.find((x) => x.id === uid);
   return s ? s.name : uid;
+}
+function empById(id) { return employees.find((e) => e.id === id); }
+
+async function loadEmployees() {
+  const snap = await getDocs(collection(db, 'employees'));
+  employees = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+// 30/60/90 reviews don't create their own task record — they're
+// computed due dates on the employee, same as everywhere else in this
+// app. Surfacing them here means pulling from the reviews collection
+// group directly rather than duplicating them into tasks (which would
+// need to be kept in sync with completion/reassignment separately).
+async function loadPendingReviews() {
+  const snap = await getDocs(collectionGroup(db, 'reviews'));
+  pendingReviews = snap.docs
+    .map((d) => ({ id: d.id, empId: d.ref.parent.parent.id, ...d.data() }))
+    .filter((r) => !r.review_completed && r.due_date && empById(r.empId)?.status !== 'terminated');
 }
 
 async function loadStaff() {
@@ -264,10 +285,21 @@ function renderCalendar() {
   document.getElementById('cal-progress-bar').style.width = monthTasks.length
     ? `${Math.round((doneCount / monthTasks.length) * 100)}%` : '0%';
 
+  const monthReviews = pendingReviews.filter((r) => {
+    if (personFilter && r.assigned_to !== personFilter) return false;
+    const [y, m] = r.due_date.split('-').map(Number);
+    return y === year && (m - 1) === month;
+  });
+
   const byDay = {};
   monthTasks.forEach((t) => {
     const day = Number(t.due_date.split('-')[2]);
     (byDay[day] = byDay[day] || []).push(t);
+  });
+  const reviewsByDay = {};
+  monthReviews.forEach((r) => {
+    const day = Number(r.due_date.split('-')[2]);
+    (reviewsByDay[day] = reviewsByDay[day] || []).push(r);
   });
 
   const firstWeekday = new Date(year, month, 1).getDay();
@@ -289,10 +321,19 @@ function renderCalendar() {
         : overdue ? 'color:var(--alertTx);font-weight:600' : 'color:var(--text)';
       return `<div class="cal-task" data-id="${t.id}" style="${style};cursor:pointer;font-size:11px;padding:2px 4px;margin-top:2px;border-left:2px solid ${t.status === 'complete' ? 'var(--faint)' : overdue ? 'var(--alertTx)' : 'var(--accent)'}" title="${escapeAttr(staffName(t.assigned_to))} — click to ${t.linked_doc_id ? 'open the document' : t.status === 'complete' ? 'reopen' : 'complete'}">${escapeAttr(t.instructions).slice(0, 40)}${t.instructions.length > 40 ? '…' : ''}</div>`;
     }).join('');
+    const dayReviews = reviewsByDay[day] || [];
+    const reviewChips = dayReviews.map((r) => {
+      const emp = empById(r.empId);
+      const overdue = r.due_date < todayStr;
+      const name = emp ? `${emp.first_name} ${emp.last_name}` : r.empId;
+      const label = `${r.milestone}-day review — ${name}`;
+      return `<div class="cal-review" style="color:${overdue ? 'var(--alertTx)' : 'var(--text)'};font-weight:${overdue ? 600 : 400};cursor:pointer;font-size:11px;padding:2px 4px;margin-top:2px;border-left:2px solid #7C5CBF" title="${escapeAttr(staffName(r.assigned_to))} — click to open Reviews">${escapeAttr(label).slice(0, 40)}${label.length > 40 ? '…' : ''}</div>`;
+    }).join('');
     cells.push(`
       <div style="background:var(--raise);border:1px solid var(--line);min-height:88px;padding:5px 6px;${isToday ? 'box-shadow:inset 0 0 0 2px var(--accent)' : ''}">
         <div style="font-family:var(--mono);font-size:11px;color:${isToday ? 'var(--accentTx)' : 'var(--faint)'};font-weight:${isToday ? 700 : 400}">${day}</div>
         ${chips}
+        ${reviewChips}
       </div>
     `);
   }
@@ -304,6 +345,9 @@ function renderCalendar() {
 
   document.querySelectorAll('.cal-task').forEach((el) => {
     el.addEventListener('click', () => toggleCalTask(el.dataset.id));
+  });
+  document.querySelectorAll('.cal-review').forEach((el) => {
+    el.addEventListener('click', () => { window.location.href = 'reviews.html'; });
   });
 }
 
@@ -360,6 +404,8 @@ document.getElementById('task-form').addEventListener('submit', async (e) => {
 });
 
 await loadStaff();
+await loadEmployees();
+await loadPendingReviews();
 await loadTasks();
 </script>
 </body>
