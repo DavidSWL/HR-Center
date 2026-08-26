@@ -89,6 +89,7 @@
             <option value="sop">SOPs</option>
             <option value="pay_time">Pay &amp; time</option>
             <option value="safety">Safety</option>
+            <option value="new_hire_offers">New hire &amp; offers</option>
             <option value="form_template">Forms / templates</option>
             <option value="policy">Policies</option>
             <option value="handbook">Handbooks</option>
@@ -137,7 +138,7 @@ document.getElementById('header-date').textContent =
 const CATEGORY_LABELS = {
   job_description: 'Job description', sop: 'SOP', form_template: 'Form / template',
   other: 'Other reference', policy: 'Policy', handbook: 'Handbook', notice: 'Notice',
-  pay_time: 'Pay & time', safety: 'Safety',
+  pay_time: 'Pay & time', safety: 'Safety', new_hire_offers: 'New hire & offers',
 };
 const POLICY_CATEGORIES = new Set(['policy', 'handbook', 'notice']);
 
@@ -448,6 +449,35 @@ const MW2_SUPERVISOR_ES = [
   'Las necesidades operativas no impidieron que se le ofreciera al empleado la oportunidad del período de comida',
 ];
 
+// Not a reproduction of the actual letterhead/legal text — that copy
+// already went to the employee at generation time. This is the audit
+// record: who, what type, when it was signed. Ask if you'd rather see
+// the full letter text here too.
+function renderLetterHtml(d) {
+  return `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">${escapeHtmlAttr(d.letter_label || 'Letter')}</h1>
+      <div class="form-section">Details</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Employee</b>${escapeHtmlAttr(d.emp_name)}</div>
+        <div class="form-cell"><b>Position</b>${escapeHtmlAttr(d.position) || '—'}</div>
+        <div class="form-cell"><b>Employment Type</b>${escapeHtmlAttr(d.emp_type) || '—'}</div>
+        <div class="form-cell"><b>Branch</b>${escapeHtmlAttr(d.branch_label)}</div>
+        <div class="form-cell"><b>Reports To</b>${escapeHtmlAttr(d.supervisor_name)}${d.supervisor_title ? ` — ${escapeHtmlAttr(d.supervisor_title)}` : ''}</div>
+        <div class="form-cell"><b>Letter Date</b>${formatDate(d.letter_date)}</div>
+        <div class="form-cell"><b>Start / Effective Date</b>${formatDate(d.start_date)}</div>
+        <div class="form-cell"><b>Sign and Return By</b>${formatDate(d.return_date)}</div>
+      </div>
+      <div class="form-fine">Pay rate and salary are never saved here — this record tracks that the letter was generated and signed, not the offered compensation. See the printed/emailed copy on file for the amount.</div>
+      <div class="form-section">Employee Electronic Signature</div>
+      ${d.signature_data_url
+        ? `<img src="${d.signature_data_url}" alt="Employee signature" style="max-height:90px;border-bottom:1px solid #333"><div class="dim" style="margin-top:4px">Signed ${formatDate(d.signed_at?.toDate ? d.signed_at.toDate().toISOString().slice(0, 10) : '')}</div>`
+        : '<div class="dim">Not signed yet.</div>'}
+    </div>
+  `;
+}
+
 function renderMealWaiver2Html(d) {
   const isEs = d.lang === 'es';
   const opportunity = isEs ? MW2_OPPORTUNITY_ES : MW2_OPPORTUNITY_EN;
@@ -499,6 +529,7 @@ function openView(d) {
   const isMealPenalty = d.content_type === 'mealpenalty';
   const isRefusal = d.content_type === 'refusal';
   const isMealWaiver2 = d.content_type === 'mealwaiver2';
+  const isLetter = d.content_type === 'letter';
   sheet.className = isSop ? 'sop-doc' : isJobDesc ? 'jd-doc' : 'form-doc';
   sheet.innerHTML = isSop
     ? renderSopHtml(d)
@@ -512,6 +543,8 @@ function openView(d) {
     ? renderRefusalHtml(d)
     : isMealWaiver2
     ? renderMealWaiver2Html(d)
+    : isLetter
+    ? renderLetterHtml(d)
     : `<div class="form-doc-inner"><div class="form-title">${escapeHtmlAttr(d.title)}</div>${renderBodyHtml(d.body)}</div>`;
   document.getElementById('view-overlay').hidden = false;
 }
@@ -643,7 +676,7 @@ function render() {
   document.getElementById('docs-summary').textContent = `${visible.length} of ${docs.length}`;
   document.getElementById('doc-rows').innerHTML = visible.length ? visible.map((d) => `
     <tr>
-      <td>${d.content_type === 'text' || d.content_type === 'sop' || d.content_type === 'jobdesc' || d.content_type === 'timecard' || d.content_type === 'mealpenalty' || d.content_type === 'refusal' || d.content_type === 'mealwaiver2'
+      <td>${d.content_type === 'text' || d.content_type === 'sop' || d.content_type === 'jobdesc' || d.content_type === 'timecard' || d.content_type === 'mealpenalty' || d.content_type === 'refusal' || d.content_type === 'mealwaiver2' || d.content_type === 'letter'
         ? `<a href="#" class="view-doc-link" data-id="${d.id}">${escapeHtmlAttr(d.title)}</a>`
         : `<a href="${d.file_url}" target="_blank" rel="noopener">${escapeHtmlAttr(d.title)}</a>`
       }${d.policy_doc_id ? ' <span class="pill ok">In Policy Compliance</span>' : ''}</td>

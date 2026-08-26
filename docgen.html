@@ -401,7 +401,7 @@ function renderPip(lang) {
       const batch = writeBatch(db);
       batch.set(pipRef, {
         emp_id: empId, division: emp.division || '', start_date: start, final_review_date: final,
-        performance_gaps: gaps, expectations: expect, support_provided: support,
+        performance_gaps: gaps, expectations: expect, support_provided: support, check_ins: checkIns,
         entered_by: profile.uid, entered_at: serverTimestamp(),
       });
       checkIns.forEach((d, i) => {
@@ -457,6 +457,7 @@ function renderPipSheet(lang, emp, p) {
       </div>
       <button type="button" class="gh no-print" id="pip-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
       <button type="button" class="gh solid no-print" id="pip-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
+      ${signatureTaskFieldsHtml('pip')}
       <div class="sig-line" style="margin-top:10px">${isEs ? 'Firma del gerente' : 'Manager signature'} / ${isEs ? 'Fecha' : 'Date'}: _______________________________________</div>
       <div class="doc-fineprint">${isEs
         ? 'El acuse de recibo de este plan no constituye acuerdo con su contenido, solo confirma que fue entregado y explicado.'
@@ -472,12 +473,19 @@ function renderPipSheet(lang, emp, p) {
         signature_data_url: document.getElementById('pip-sig-pad').toDataURL('image/png'),
         signed_at: serverTimestamp(), signed_by: profile.uid,
       });
+      if (pendingSigTaskId) {
+        await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
+        pendingSigDocId = null; pendingSigTaskId = null;
+      }
       showToast('Signature saved.');
     } catch (err) {
       console.error(err);
       showToast('Could not save — ' + err.message, 'error');
     }
   });
+  document.getElementById('pip-sig-later-btn').addEventListener('click', () => createSignatureFollowupTask('pip', {
+    linkedDocType: 'pip', linkedDocId: p.pipId, title: `PIP — ${emp.first_name} ${emp.last_name}`,
+  }));
   sheetRerender = (l) => withPreservedSignature('pip-sig-pad', () => renderPipSheet(l, emp, p));
 }
 
@@ -694,6 +702,7 @@ function renderReviewSheet(emp, milestone, data) {
       </div>
       <button type="button" class="gh no-print" id="rev-sig-clear" style="margin-bottom:10px">Clear signature</button>
       <button type="button" class="gh solid no-print" id="rev-sig-save" style="margin-bottom:10px;margin-left:8px">Signed — save</button>
+      ${signatureTaskFieldsHtml('rev')}
       <div class="form-sig" style="grid-template-columns:1fr;margin-top:0">
         <div style="border-right:none">Manager Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
         <div style="border-right:none;border-top:none">HR Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
@@ -712,12 +721,19 @@ function renderReviewSheet(emp, milestone, data) {
         signature_data_url: document.getElementById('rev-sig-pad').toDataURL('image/png'),
         signed_at: serverTimestamp(), signed_by: profile.uid,
       }, { merge: true });
+      if (pendingSigTaskId) {
+        await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
+        pendingSigDocId = null; pendingSigTaskId = null;
+      }
       showToast('Signature saved.');
     } catch (err) {
       console.error(err);
       showToast('Could not save — ' + err.message, 'error');
     }
   });
+  document.getElementById('rev-sig-later-btn').addEventListener('click', () => createSignatureFollowupTask('rev', {
+    linkedDocType: 'review', linkedDocId: `${emp.id}:${milestone}`, title: `${milestone}-day review — ${emp.first_name} ${emp.last_name}`,
+  }));
 }
 
 // ---- Termination — matches the SWL termination form exactly. Final-pay
@@ -1093,6 +1109,7 @@ function renderTerminationSheet(r, finalPay = {}) {
       </div>
       <button type="button" class="gh no-print" id="term-sig-clear" style="margin-bottom:10px">Clear signature</button>
       <button type="button" class="gh solid no-print" id="term-sig-save" style="margin-bottom:10px;margin-left:8px">Signed — save</button>
+      ${r.id ? signatureTaskFieldsHtml('term') : ''}
       <div class="form-atwill"><b>At-will Employment Reminder:</b> Employment with the company is at-will. Nothing in this document alters that status or creates a contract of employment.</div>
     </div>
   `;
@@ -1106,12 +1123,21 @@ function renderTerminationSheet(r, finalPay = {}) {
         signature_data_url: document.getElementById('term-sig-pad').toDataURL('image/png'),
         signed_at: serverTimestamp(), signed_by: profile.uid,
       });
+      if (pendingSigTaskId) {
+        await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
+        pendingSigDocId = null; pendingSigTaskId = null;
+      }
       showToast('Signature saved.');
     } catch (err) {
       console.error(err);
       showToast('Could not save — ' + err.message, 'error');
     }
   });
+  if (r.id) {
+    document.getElementById('term-sig-later-btn').addEventListener('click', () => createSignatureFollowupTask('term', {
+      linkedDocType: 'termination', linkedDocId: r.id, title: `Termination — ${r.emp_name}`,
+    }));
+  }
 }
 
 // ---- Termination import — reads the "Terminations" sheet of the roster
@@ -1447,6 +1473,10 @@ function acceptanceBlock(agreementLabel, sigLabel, dateLabel) {
       <span class="blank short"></span>
     </div>
     <div class="accept-label-line"><span class="lbl">${escapeHtml(sigLabel)} <button type="button" class="gh no-print" id="ltr-sig-clear" style="font-size:9px;padding:2px 6px;margin-left:8px">Clear</button></span><span class="lbl short">${escapeHtml(dateLabel)}</span></div>
+    <div class="no-print" style="margin-top:12px">
+      <button type="button" class="gh solid" id="ltr-sig-save">Signed — save</button>
+      ${signatureTaskFieldsHtml('ltr')}
+    </div>
   </div>`;
 }
 function formatMoney(n) { return (Number(n) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' }); }
@@ -1691,6 +1721,67 @@ function generateLetterSheet() {
   sheet.scrollIntoView({ behavior: 'smooth' });
   setUpSignaturePad('ltr-sig-pad', 'ltr-sig-clear');
   showToast('Letter generated.');
+
+  const record = letterRecordBase(type, {
+    first, last, position, empType, address, schedule, branchLabel: loc.label,
+    supervisorName: ctx.supervisorName, supervisorTitle: ctx.supervisorTitle,
+    letterDate, startDate, returnDate,
+  });
+
+  document.getElementById('ltr-sig-save').addEventListener('click', async () => {
+    const state = sigPads['ltr-sig-pad'];
+    if (!state || !state.hasStroke) { showToast('Get a signature first — the pad is empty.', 'error'); return; }
+    try {
+      const docRef = pendingSigDocId ? doc(db, 'training_documents', pendingSigDocId) : doc(collection(db, 'training_documents'));
+      await setDoc(docRef, {
+        ...record, status: 'signed',
+        signature_data_url: document.getElementById('ltr-sig-pad').toDataURL('image/png'),
+        signed_by: profile.uid, signed_at: serverTimestamp(),
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      }, { merge: true });
+      if (pendingSigTaskId) {
+        await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
+        pendingSigDocId = null; pendingSigTaskId = null;
+      }
+      showToast('Signed and saved — find it any time in Documents.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
+  document.getElementById('ltr-sig-later-btn').addEventListener('click', async () => {
+    const assigneeId = document.getElementById('ltr-sig-assignee').value;
+    const dueDate = document.getElementById('ltr-sig-due').value;
+    if (!assigneeId || !dueDate) { showToast('Pick who should get the signature and by when.', 'error'); return; }
+    const assignee = staff.find((s) => s.id === assigneeId);
+    try {
+      const docRef = doc(collection(db, 'training_documents'));
+      await setDoc(docRef, { ...record, signature_data_url: null, entered_by: profile.uid, entered_at: serverTimestamp() });
+      await addDoc(collection(db, 'tasks'), {
+        assigned_to: assigneeId, due_date: dueDate,
+        instructions: `Get signature — ${record.title}`,
+        recurring: 'none', status: 'open', linked_doc_id: docRef.id, linked_doc_type: 'offer',
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast(`Saved. A task was created for ${assignee?.name || assigneeId} — open it from Tasks when ready to sign.`);
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
+}
+
+function letterRecordBase(type, f) {
+  const label = LETTER_TYPES.find((t) => t.value === type)?.label || 'Letter';
+  return {
+    content_type: 'letter', category: 'new_hire_offers', status: 'pending_signature',
+    letter_type: type, letter_label: label, title: `${label} — ${f.first} ${f.last}`,
+    emp_first: f.first, emp_last: f.last, emp_name: `${f.first} ${f.last}`,
+    position: f.position, emp_type: f.empType, address: f.address, schedule: f.schedule,
+    branch_label: f.branchLabel, supervisor_name: f.supervisorName, supervisor_title: f.supervisorTitle,
+    letter_date: f.letterDate, start_date: f.startDate, return_date: f.returnDate,
+    lang: (type === 'hourly-es' || type === 'increase-es') ? 'es' : 'en',
+  };
 }
 
 // ---- Onboarding packet ----
@@ -1822,6 +1913,7 @@ function renderRefusal(lang) {
         <div class="field"><label class="f-lab">Description of injury or symptoms</label><textarea class="f-in" id="ref-description" rows="3" style="resize:vertical"></textarea></div>
         <button class="gh solid" id="ref-generate-btn" type="button">Generate</button>
         <button class="gh" id="ref-log-btn" type="button">Log to activity</button>
+        ${signatureTaskFieldsHtml('ref')}
       </div>
     </div>
     <div class="form-doc" id="ref-sheet" hidden></div>
@@ -1829,6 +1921,7 @@ function renderRefusal(lang) {
   wireEmpSearch('ref-emp');
 
   document.getElementById('ref-generate-btn').addEventListener('click', () => renderRefusalSheet(lang));
+  document.getElementById('ref-sig-later-btn').addEventListener('click', () => saveRefusalForSignatureLater(lang));
   document.getElementById('ref-log-btn').addEventListener('click', async () => {
     const emp = employees.find((e) => e.id === document.getElementById('ref-emp').value);
     if (!emp) { showToast('Select an employee.', 'error'); return; }
@@ -1843,6 +1936,41 @@ function renderRefusal(lang) {
       showToast('Could not log — ' + err.message, 'error');
     }
   });
+}
+
+async function saveRefusalForSignatureLater(lang) {
+  const emp = employees.find((e) => e.id === document.getElementById('ref-emp').value);
+  if (!emp) { showToast('Select an employee.', 'error'); return; }
+  const assigneeId = document.getElementById('ref-sig-assignee').value;
+  const dueDate = document.getElementById('ref-sig-due').value;
+  if (!assigneeId || !dueDate) { showToast('Pick who should get the signature and by when.', 'error'); return; }
+  const assignee = staff.find((s) => s.id === assigneeId);
+  const date = document.getElementById('ref-date').value;
+  const incidentDateTime = document.getElementById('ref-incident-datetime').value.trim();
+  const supervisor = document.getElementById('ref-supervisor').value.trim();
+  const location = document.getElementById('ref-location').value.trim();
+  const description = document.getElementById('ref-description').value.trim();
+  try {
+    const docRef = doc(collection(db, 'training_documents'));
+    await setDoc(docRef, {
+      content_type: 'refusal', category: 'safety', status: 'pending_signature',
+      title: `Medical Treatment Refusal — ${emp.first_name} ${emp.last_name} (${formatDate(date)})`,
+      emp_id: emp.id, emp_name: `${emp.first_name} ${emp.last_name}`,
+      date, incident_datetime: incidentDateTime, supervisor, location, description,
+      checks: {}, lang, signature_data_url: null,
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    await addDoc(collection(db, 'tasks'), {
+      assigned_to: assigneeId, due_date: dueDate,
+      instructions: `Get signature — Medical Treatment Refusal — ${emp.first_name} ${emp.last_name}`,
+      recurring: 'none', status: 'open', linked_doc_id: docRef.id, linked_doc_type: 'refusal',
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    showToast(`Saved. A task was created for ${assignee?.name || assigneeId} — open it from Tasks when ready to sign.`);
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
 }
 
 function renderRefusalSheet(lang) {
@@ -1939,8 +2067,9 @@ function renderRefusalSheet(lang) {
     document.querySelectorAll('.ref-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
     const state = sigPads['ref-sig-pad'];
     try {
-      await setDoc(doc(collection(db, 'training_documents')), {
-        content_type: 'refusal', category: 'safety',
+      const docRef = pendingSigDocId ? doc(db, 'training_documents', pendingSigDocId) : doc(collection(db, 'training_documents'));
+      await setDoc(docRef, {
+        content_type: 'refusal', category: 'safety', status: 'signed',
         title: `Medical Treatment Refusal — ${emp.first_name} ${emp.last_name} (${formatDate(date)})`,
         emp_id: emp.id, emp_name: `${emp.first_name} ${emp.last_name}`,
         date, incident_datetime: incidentDateTime, supervisor, location, description,
@@ -1948,7 +2077,11 @@ function renderRefusalSheet(lang) {
         signature_data_url: state && state.hasStroke ? document.getElementById('ref-sig-pad').toDataURL('image/png') : null,
         signed_by: profile.uid, signed_at: serverTimestamp(),
         entered_by: profile.uid, entered_at: serverTimestamp(),
-      });
+      }, { merge: true });
+      if (pendingSigTaskId) {
+        await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
+        pendingSigDocId = null; pendingSigTaskId = null;
+      }
       await addDoc(collection(db, 'activity'), {
         module: 'documents', item: `Medical Treatment Refusal saved — ${emp.first_name} ${emp.last_name}`,
         entered_by: profile.uid, entered_at: serverTimestamp(),
@@ -2215,6 +2348,8 @@ function renderIncidentReportSheet() {
       </div>
       <button type="button" class="gh no-print" id="ir-emp-sig-clear" style="margin-bottom:10px">Clear signature</button>
       <button type="button" class="gh solid no-print" id="ir-save-btn" style="margin-top:10px">Save</button>
+      ${signatureTaskFieldsHtml('ir', 'Save and create signature reminder')}
+      <div class="dim no-print" style="font-size:11.5px;margin-top:4px">The incident always saves right away, signed or not. Fill in who/by-when above only if a signature is still missing and you want a task to follow up.</div>
       </div>
     </div>
     <button class="gh no-print" id="ir-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
@@ -2228,17 +2363,29 @@ function renderIncidentReportSheet() {
   setUpSignaturePad('ir-mgr-sig-pad', 'ir-mgr-sig-clear');
   setUpSignaturePad('ir-emp-sig-pad', 'ir-emp-sig-clear');
   document.getElementById('ir-save-btn').addEventListener('click', () => saveIncidentReport(f));
+  document.getElementById('ir-sig-later-btn').addEventListener('click', () => saveIncidentReport(f, true));
 }
 
-async function saveIncidentReport(f) {
+async function saveIncidentReport(f, wantsSignatureTask = false) {
   const checks = {};
   document.querySelectorAll('.ir-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
   const mgrState = sigPads['ir-mgr-sig-pad'];
   const empState = sigPads['ir-emp-sig-pad'];
+  const hasMgrSig = mgrState && mgrState.hasStroke;
+  const hasEmpSig = empState && empState.hasStroke;
+
+  let assigneeId = '', dueDate = '';
+  if (wantsSignatureTask) {
+    assigneeId = document.getElementById('ir-sig-assignee').value;
+    dueDate = document.getElementById('ir-sig-due').value;
+    if (!assigneeId || !dueDate) { showToast('Pick who should get the signature and by when.', 'error'); return; }
+    if (hasMgrSig && hasEmpSig) { showToast('Both signatures are already here — just hit Save.', 'error'); return; }
+  }
+
   const saveBtn = document.getElementById('ir-save-btn');
   saveBtn.disabled = true;
   try {
-    const incidentRef = doc(collection(db, 'incidents'));
+    const incidentRef = pendingSigDocId ? doc(db, 'incidents', pendingSigDocId) : doc(collection(db, 'incidents'));
 
     let refusalUrl = null, refusalPath = null;
     const refusalFile = document.getElementById('ir-refusal-file')?.files[0];
@@ -2250,7 +2397,7 @@ async function saveIncidentReport(f) {
     }
 
     const batch = writeBatch(db);
-    batch.set(incidentRef, {
+    const incidentData = {
       // ---- same field names Safety's list, corrective tasks, and Form
       // 300 export already read — nothing there has to change. ----
       date: f.date, time: f.time, emp_id: f.emp ? f.emp.id : '',
@@ -2268,11 +2415,14 @@ async function saveIncidentReport(f) {
       witnesses: f.witnesses, describe: f.describe, immediate_action: f.immediateAction,
       followup_checks: checks, discussed_staff_who: f.discussedStaffWho, other_detail: f.otherDetail,
       comments: f.comments, prepared_by: profile.name || '', prepared_date: new Date().toISOString().slice(0, 10),
-      manager_signature_data_url: mgrState && mgrState.hasStroke ? document.getElementById('ir-mgr-sig-pad').toDataURL('image/png') : null,
-      employee_signature_data_url: empState && empState.hasStroke ? document.getElementById('ir-emp-sig-pad').toDataURL('image/png') : null,
+      manager_signature_data_url: hasMgrSig ? document.getElementById('ir-mgr-sig-pad').toDataURL('image/png') : null,
+      employee_signature_data_url: hasEmpSig ? document.getElementById('ir-emp-sig-pad').toDataURL('image/png') : null,
       entered_by: profile.uid, entered_at: serverTimestamp(),
-    });
-    if (f.correctiveOwner && f.correctiveDue) {
+    };
+    if (hasMgrSig) incidentData.manager_signed_at = serverTimestamp();
+    if (hasEmpSig) incidentData.employee_signed_at = serverTimestamp();
+    batch.set(incidentRef, incidentData, pendingSigDocId ? { merge: true } : undefined);
+    if (!pendingSigDocId && f.correctiveOwner && f.correctiveDue) {
       batch.set(doc(collection(db, 'tasks')), {
         assigned_to: f.correctiveOwner, due_date: f.correctiveDue,
         instructions: `Corrective action — ${f.correctiveAction} (${f.incidentType}, ${f.emp ? f.emp.first_name + ' ' + f.emp.last_name : 'unassigned'})`,
@@ -2280,7 +2430,21 @@ async function saveIncidentReport(f) {
       });
     }
     await batch.commit();
-    showToast('Incident logged.' + (f.correctiveOwner ? ' Corrective action task created.' : '') + ' Find it in Safety & incidents.');
+    if (pendingSigTaskId) {
+      await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
+      pendingSigDocId = null; pendingSigTaskId = null;
+    }
+    if (wantsSignatureTask) {
+      await addDoc(collection(db, 'tasks'), {
+        assigned_to: assigneeId, due_date: dueDate,
+        instructions: `Get signature — Incident Report — ${f.emp ? f.emp.first_name + ' ' + f.emp.last_name : f.incidentType}`,
+        recurring: 'none', status: 'open', linked_doc_id: incidentRef.id, linked_doc_type: 'incidentreport',
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast('Incident logged. Signature reminder task created — find it in Safety & incidents.');
+    } else {
+      showToast('Incident logged.' + (!pendingSigDocId && f.correctiveOwner ? ' Corrective action task created.' : '') + ' Find it in Safety & incidents.');
+    }
   } catch (err) {
     console.error(err);
     showToast('Could not save — ' + err.message, 'error');
@@ -2693,25 +2857,146 @@ async function saveTimecardForSignature() {
   }
 }
 
-async function loadPendingSignatureDoc(type, id) {
+async function completeLinkedTask(taskId) {
   try {
+    await updateDoc(doc(db, 'tasks', taskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
+  } catch (err) { console.error('Could not auto-complete task', err); }
+}
+
+function drawExistingSignatureDataUrl(canvasId, dataUrl) {
+  return new Promise((resolve) => {
+    const canvas = document.getElementById(canvasId);
+    const state = sigPads[canvasId];
+    if (!canvas || !state || !dataUrl) { resolve(); return; }
+    const rect = canvas.getBoundingClientRect();
+    const img = new Image();
+    img.onload = () => {
+      state.ctx.drawImage(img, 0, 0, rect.width, rect.height);
+      state.hasStroke = true;
+      resolve();
+    };
+    img.src = dataUrl;
+  });
+}
+
+function populateIncidentReportForm(d) {
+  document.getElementById('ir-date').value = d.date || '';
+  document.getElementById('ir-time').value = d.time || '';
+  setEmpField('ir-emp', d.emp_id);
+  document.getElementById('ir-department').value = d.department || '';
+  document.getElementById('ir-location').value = d.location || '';
+  document.getElementById('ir-type').value = d.incident_type || 'Injury';
+  document.getElementById('ir-type').dispatchEvent(new Event('change'));
+  document.getElementById('ir-what-happened').value = d.what_happened || '';
+  document.getElementById('ir-injury-type').value = d.injury_type || '';
+  document.getElementById('ir-body-part').value = d.body_part || '';
+  document.getElementById('ir-treatment-level').value = d.treatment_level || 'none';
+  document.getElementById('ir-treatment-level').dispatchEvent(new Event('change'));
+  document.getElementById('ir-days-away').value = d.days_away || 0;
+  document.getElementById('ir-restricted-days').value = d.restricted_days || 0;
+  document.getElementById('ir-recordable').checked = !!d.recordable;
+  document.getElementById('ir-privacy-case').checked = !!d.privacy_case;
+  document.getElementById('ir-witnesses').value = d.witnesses || '';
+  document.getElementById('ir-describe').value = d.describe || '';
+  document.getElementById('ir-immediate-action').value = d.immediate_action || '';
+  document.getElementById('ir-cost').value = d.cost ?? '';
+  document.getElementById('ir-root-cause').value = d.root_cause || '';
+  document.getElementById('ir-corrective-action').value = d.corrective_action || '';
+  document.getElementById('ir-corrective-owner').value = d.corrective_owner || '';
+  document.getElementById('ir-corrective-due').value = d.corrective_due || '';
+  document.getElementById('ir-discussed-staff-who').value = d.discussed_staff_who || '';
+  document.getElementById('ir-other-detail').value = d.other_detail || '';
+  document.getElementById('ir-comments').value = d.comments || '';
+  const sel = document.getElementById('ir-supervisor');
+  if (d.supervisor && ![...sel.options].some((o) => o.value === d.supervisor)) {
+    const opt = document.createElement('option'); opt.value = d.supervisor; opt.textContent = d.supervisor; sel.appendChild(opt);
+  }
+  sel.value = d.supervisor || '';
+}
+
+// Reopens a saved-but-not-yet-signed (or partially signed) record from a
+// task's "Open document" link. Training_documents-backed types
+// (timecard/mealpenalty/refusal/mealwaiver2/letter) share one lookup;
+// PIP/Review/Termination/Incident Report live in their own collections
+// since they're filed the moment they're generated, before any signature.
+async function loadPendingSignatureDoc(type, id) {
+  const taskId = new URLSearchParams(window.location.search).get('task') || null;
+  try {
+    if (type === 'pip') {
+      const snap = await getDoc(doc(db, 'pips', id));
+      if (!snap.exists()) { showToast('That PIP could not be found.', 'error'); return; }
+      const d = snap.data();
+      const emp = employees.find((e) => e.id === d.emp_id);
+      if (!emp) { showToast('That employee could not be found.', 'error'); return; }
+      if (taskId && d.signature_data_url) await completeLinkedTask(taskId);
+      pendingSigDocId = id; pendingSigTaskId = d.signature_data_url ? null : taskId;
+      renderPipSheet(document.getElementById('lang-select').value || 'en', emp, {
+        start: d.start_date, final: d.final_review_date, gaps: d.performance_gaps,
+        expect: d.expectations, support: d.support_provided || [], checkIns: d.check_ins || [], pipId: id,
+      });
+      await drawExistingSignatureDataUrl('pip-sig-pad', d.signature_data_url);
+      if (d.signature_data_url) showToast('Already signed — shown below.');
+      return;
+    }
+    if (type === 'review') {
+      const [empId, milestone] = id.split(':');
+      const emp = employees.find((e) => e.id === empId);
+      if (!emp) { showToast('That employee could not be found.', 'error'); return; }
+      const snap = await getDoc(doc(db, 'employees', empId, 'reviews', milestone));
+      if (!snap.exists()) { showToast('That review could not be found.', 'error'); return; }
+      const d = snap.data();
+      if (taskId && d.signature_data_url) await completeLinkedTask(taskId);
+      pendingSigDocId = id; pendingSigTaskId = d.signature_data_url ? null : taskId;
+      renderReviewSheet(emp, Number(milestone), d);
+      await drawExistingSignatureDataUrl('rev-sig-pad', d.signature_data_url);
+      if (d.signature_data_url) showToast('Already signed — shown below.');
+      return;
+    }
+    if (type === 'termination') {
+      const rec = terminations.find((t) => t.id === id);
+      if (!rec) { showToast('That termination could not be found.', 'error'); return; }
+      if (taskId && rec.signature_data_url) await completeLinkedTask(taskId);
+      pendingSigDocId = id; pendingSigTaskId = rec.signature_data_url ? null : taskId;
+      document.getElementById('term-print-acts').hidden = false;
+      renderTerminationSheet(rec);
+      await drawExistingSignatureDataUrl('term-sig-pad', rec.signature_data_url);
+      if (rec.signature_data_url) showToast('Already signed — shown below.');
+      return;
+    }
+    if (type === 'incidentreport') {
+      const snap = await getDoc(doc(db, 'incidents', id));
+      if (!snap.exists()) { showToast('That incident could not be found.', 'error'); return; }
+      const d = snap.data();
+      if (d.manager_signature_data_url && d.employee_signature_data_url) {
+        if (taskId) await completeLinkedTask(taskId);
+        showToast('Both signatures are already on file — opening it from Safety.');
+        window.location.href = 'safety.html';
+        return;
+      }
+      pendingSigDocId = id; pendingSigTaskId = taskId;
+      populateIncidentReportForm(d);
+      renderIncidentReportSheet();
+      if (d.followup_checks) {
+        document.querySelectorAll('.ir-check').forEach((cb) => {
+          if (d.followup_checks[cb.dataset.key]) { cb.checked = true; cb.closest('label').querySelector('.print-only').textContent = '☑'; }
+        });
+      }
+      await drawExistingSignatureDataUrl('ir-mgr-sig-pad', d.manager_signature_data_url);
+      await drawExistingSignatureDataUrl('ir-emp-sig-pad', d.employee_signature_data_url);
+      return;
+    }
+
+    // Training_documents-backed types: timecard, mealpenalty, refusal, mealwaiver2, letter
     const snap = await getDoc(doc(db, 'training_documents', id));
     if (!snap.exists()) { showToast('That saved document could not be found.', 'error'); return; }
     const d = snap.data();
-    const taskId = new URLSearchParams(window.location.search).get('task') || null;
 
     // This document is already signed — the task pointing here is only
     // "open" because of a stray click (e.g. the Tasks calendar chip), not
     // because a signature is actually still needed. Fix the task quietly
     // instead of making someone re-sign, and go straight to the saved copy.
     if (d.status === 'signed') {
-      if (taskId) {
-        try {
-          await updateDoc(doc(db, 'tasks', taskId), {
-            status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid,
-          });
-        } catch (err) { console.error('Could not auto-complete task', err); }
-      }
+      if (taskId) await completeLinkedTask(taskId);
       showToast('Already signed — opening the saved copy.');
       window.location.href = `documents.html?doc=${id}`;
       return;
@@ -2743,6 +3028,48 @@ async function loadPendingSignatureDoc(type, id) {
         document.getElementById('mp-pay-date').value = d.pay_date || '';
       }
       renderMealPenaltySheet('en');
+    } else if (type === 'refusal') {
+      setEmpField('ref-emp', d.emp_id);
+      document.getElementById('ref-date').value = d.date || '';
+      document.getElementById('ref-incident-datetime').value = d.incident_datetime || '';
+      document.getElementById('ref-supervisor').value = d.supervisor || '';
+      document.getElementById('ref-location').value = d.location || '';
+      document.getElementById('ref-description').value = d.description || '';
+      renderRefusalSheet(d.lang || 'en');
+    } else if (type === 'mealwaiver2') {
+      setEmpField('mw2-emp', d.emp_id);
+      const branchKey = Object.entries(LOCATIONS).find(([, v]) => v.label === d.branch)?.[0];
+      document.getElementById('mw2-branch').value = branchKey || '';
+      document.getElementById('mw2-date').value = d.date || '';
+      document.getElementById('mw2-hours').value = d.hours || '';
+      document.getElementById('mw2-first-taken').value = d.first_taken ? 'yes' : 'no';
+      document.getElementById('mw2-decision').value = d.waiving ? 'waive' : 'take';
+      renderMealWaiver2Sheet(d.lang || 'en');
+    } else if (type === 'offer') {
+      const typeSel = document.getElementById('ltr-type');
+      const meta = LETTER_TYPES.find((t) => t.value === d.letter_type);
+      if (meta) {
+        document.querySelectorAll('#ltr-tabs .tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.category === meta.category));
+        typeSel.innerHTML = LETTER_TYPES.filter((t) => t.category === meta.category).map((t) => `<option value="${t.value}">${t.label}</option>`).join('');
+      }
+      typeSel.value = d.letter_type;
+      typeSel.dispatchEvent(new Event('change'));
+      document.getElementById('ltr-first').value = d.emp_first || '';
+      document.getElementById('ltr-last').value = d.emp_last || '';
+      document.getElementById('ltr-position').value = d.position || '';
+      document.getElementById('ltr-emptype').value = d.emp_type || 'Full-time';
+      const branchKey = Object.entries(LOCATIONS).find(([, v]) => v.label === d.branch_label)?.[0];
+      document.getElementById('ltr-branch').value = branchKey || '';
+      document.getElementById('ltr-address').value = d.address || '';
+      document.getElementById('ltr-schedule').value = d.schedule || '';
+      const mgrPool = employees.filter((e) => managerIds.has(e.id));
+      const mgrMatch = mgrPool.find((e) => `${e.first_name} ${e.last_name}` === d.supervisor_name);
+      if (mgrMatch) setEmpField('ltr-reportsto', mgrMatch.id, mgrPool);
+      document.getElementById('ltr-reportsto-title').value = d.supervisor_title || '';
+      document.getElementById('ltr-date').value = d.letter_date || '';
+      document.getElementById('ltr-start').value = d.start_date || '';
+      document.getElementById('ltr-return').value = d.return_date || '';
+      showToast('Loaded — this is the one document type where pay isn\'t saved, so re-enter the rate/salary, then Generate to reach the signature.', 'error');
     }
   } catch (err) {
     console.error(err);
@@ -2854,6 +3181,50 @@ function setUpSignaturePad(canvasId, clearBtnId) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     state.hasStroke = false;
   });
+}
+
+// Shared "get the signature later" control for sheets whose record is
+// already filed the moment it's generated (PIP, Review, Termination,
+// Incident Report) — signing itself is optional at that point, so the
+// only thing left to do is create a follow-up task. Documents that don't
+// save until the moment they're signed (Refusal, Second Meal Waiver,
+// Letters) use their own save-for-later flow instead, same shape as
+// Time Card/Missed Meal Period's.
+function signatureTaskFieldsHtml(prefix, buttonLabel = 'Save for signature later') {
+  return `
+    <div class="frow" style="margin-top:10px;align-items:flex-end">
+      <div class="field" style="margin:0">
+        <label class="f-lab">Not signing right now? Get the signature later — who should get it signed</label>
+        <select class="f-in" id="${prefix}-sig-assignee"><option value="">Choose…</option>${staff.map((s) => `<option value="${s.id}">${s.name}</option>`).join('')}</select>
+      </div>
+      <div class="field" style="margin:0"><label class="f-lab">By when</label><input class="f-in" id="${prefix}-sig-due" type="date"></div>
+      <button class="gh no-print" id="${prefix}-sig-later-btn" type="button">${buttonLabel}</button>
+    </div>
+  `;
+}
+
+// Creates the follow-up task pointing back at a record that's already
+// saved. linkedDocType is read by loadPendingSignatureDoc() when the
+// task's "Open document" link brings someone back here later.
+async function createSignatureFollowupTask(prefix, { linkedDocType, linkedDocId, title }) {
+  const assigneeId = document.getElementById(`${prefix}-sig-assignee`).value;
+  const dueDate = document.getElementById(`${prefix}-sig-due`).value;
+  if (!assigneeId || !dueDate) { showToast('Pick who should get the signature and by when.', 'error'); return false; }
+  const assignee = staff.find((s) => s.id === assigneeId);
+  try {
+    await addDoc(collection(db, 'tasks'), {
+      assigned_to: assigneeId, due_date: dueDate,
+      instructions: `Get signature — ${title}`,
+      recurring: 'none', status: 'open', linked_doc_id: linkedDocId, linked_doc_type: linkedDocType,
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    showToast(`Task created for ${assignee?.name || assigneeId} — open it from Tasks when ready to sign.`);
+    return true;
+  } catch (err) {
+    console.error(err);
+    showToast('Could not create the task — ' + err.message, 'error');
+    return false;
+  }
 }
 
 function renderTimecardSheet(lang) {
@@ -3239,6 +3610,7 @@ function renderMealWaiver2(lang) {
           <select class="f-in" id="mw2-decision"><option value="take">Take the second 30-minute meal period</option><option value="waive">Waive the second 30-minute meal period</option></select>
         </div>
         <button class="gh solid" id="mw2-generate-btn" type="button">Generate</button>
+        ${signatureTaskFieldsHtml('mw2')}
       </div>
     </div>
     <div class="form-doc" id="mw2-sheet" hidden></div>
@@ -3246,6 +3618,37 @@ function renderMealWaiver2(lang) {
   document.getElementById('mw2-date').value = new Date().toISOString().slice(0, 10);
   wireEmpSearch('mw2-emp');
   document.getElementById('mw2-generate-btn').addEventListener('click', () => renderMealWaiver2Sheet(lang));
+  document.getElementById('mw2-sig-later-btn').addEventListener('click', () => saveMealWaiver2ForSignatureLater(lang));
+}
+
+async function saveMealWaiver2ForSignatureLater(lang) {
+  const f = readMealWaiver2Form();
+  if (!f) return;
+  const assigneeId = document.getElementById('mw2-sig-assignee').value;
+  const dueDate = document.getElementById('mw2-sig-due').value;
+  if (!assigneeId || !dueDate) { showToast('Pick who should get the signature and by when.', 'error'); return; }
+  const assignee = staff.find((s) => s.id === assigneeId);
+  try {
+    const docRef = doc(collection(db, 'training_documents'));
+    await setDoc(docRef, {
+      content_type: 'mealwaiver2', category: 'pay_time', status: 'pending_signature',
+      title: `Second Meal Period Waiver — ${f.emp.first_name} ${f.emp.last_name} (${formatDate(f.date)})`,
+      emp_id: f.emp.id, emp_name: `${f.emp.first_name} ${f.emp.last_name}`,
+      branch: f.branch, date: f.date, hours: f.hours,
+      first_taken: f.firstTaken, waiving: f.waiving, checks: {}, lang, signature_data_url: null,
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    await addDoc(collection(db, 'tasks'), {
+      assigned_to: assigneeId, due_date: dueDate,
+      instructions: `Get signature — Second Meal Period Waiver — ${f.emp.first_name} ${f.emp.last_name}`,
+      recurring: 'none', status: 'open', linked_doc_id: docRef.id, linked_doc_type: 'mealwaiver2',
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    showToast(`Saved. A task was created for ${assignee?.name || assigneeId} — open it from Tasks when ready to sign.`);
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
 }
 
 function readMealWaiver2Form() {
@@ -3344,8 +3747,9 @@ function renderMealWaiver2Sheet(lang) {
     document.querySelectorAll('.mw2-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
     const state = sigPads['mw2-sig-pad'];
     try {
-      await setDoc(doc(collection(db, 'training_documents')), {
-        content_type: 'mealwaiver2', category: 'pay_time',
+      const docRef = pendingSigDocId ? doc(db, 'training_documents', pendingSigDocId) : doc(collection(db, 'training_documents'));
+      await setDoc(docRef, {
+        content_type: 'mealwaiver2', category: 'pay_time', status: 'signed',
         title: `Second Meal Period Waiver — ${f.emp.first_name} ${f.emp.last_name} (${formatDate(f.date)})`,
         emp_id: f.emp.id, emp_name: `${f.emp.first_name} ${f.emp.last_name}`,
         branch: f.branch, date: f.date, hours: f.hours,
@@ -3353,7 +3757,11 @@ function renderMealWaiver2Sheet(lang) {
         signature_data_url: state && state.hasStroke ? document.getElementById('mw2-sig-pad').toDataURL('image/png') : null,
         signed_by: profile.uid, signed_at: serverTimestamp(),
         entered_by: profile.uid, entered_at: serverTimestamp(),
-      });
+      }, { merge: true });
+      if (pendingSigTaskId) {
+        await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
+        pendingSigDocId = null; pendingSigTaskId = null;
+      }
       await addDoc(collection(db, 'activity'), {
         module: 'documents', item: `Second Meal Period Waiver saved — ${f.emp.first_name} ${f.emp.last_name}`,
         entered_by: profile.uid, entered_at: serverTimestamp(),
@@ -3412,9 +3820,10 @@ await loadDepartmentList();
 // Terminations tab) instead of always landing on the tile menu.
 const requestedOpen = new URLSearchParams(window.location.search).get('open');
 const requestedDocId = new URLSearchParams(window.location.search).get('doc');
+const SIGNABLE_DOC_TYPES = ['timecard', 'mealpenalty', 'refusal', 'mealwaiver2', 'offer', 'pip', 'review', 'termination', 'incidentreport'];
 if (requestedOpen && GENERATORS.some((g) => g.key === requestedOpen)) {
   openGenerator(requestedOpen);
-  if (requestedDocId && (requestedOpen === 'timecard' || requestedOpen === 'mealpenalty')) {
+  if (requestedDocId && SIGNABLE_DOC_TYPES.includes(requestedOpen)) {
     await loadPendingSignatureDoc(requestedOpen, requestedDocId);
   }
 }
