@@ -141,7 +141,7 @@ import { db, storage } from './firebaseconfig.js';
 import { LOGO_DATA_URL, LOCATIONS, SCHEDULE_PRESETS, HR_SIGNER, ONBOARDING_CHECKLIST } from './letterhead-assets.js';
 import { JOB_DESCRIPTIONS } from './jobdescriptionsdata.js';
 import {
-  collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, writeBatch, serverTimestamp,
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, writeBatch, serverTimestamp, query, where,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 
@@ -2633,6 +2633,21 @@ async function saveIncidentReport(f, wantsSignatureTask = false) {
     if (pendingSigTaskId) {
       await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
       pendingSigDocId = null; pendingSigTaskId = null;
+    } else if (hasMgrSig && hasEmpSig) {
+      // Reached here without a task link -- e.g. the "Get signature" button
+      // on the incident's edit modal in Safety, not the task's own "Open
+      // document" link. Both signatures being on file now means any open
+      // signature-reminder task for this incident is done, so close it
+      // instead of leaving it stuck open with no way to complete it.
+      const openTasks = await getDocs(query(
+        collection(db, 'tasks'),
+        where('linked_doc_id', '==', incidentRef.id),
+        where('linked_doc_type', '==', 'incidentreport'),
+        where('status', '==', 'open'),
+      ));
+      for (const taskDoc of openTasks.docs) {
+        await updateDoc(taskDoc.ref, { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
+      }
     }
     if (wantsSignatureTask) {
       await addDoc(collection(db, 'tasks'), {

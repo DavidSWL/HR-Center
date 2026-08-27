@@ -649,6 +649,34 @@ document.getElementById('view-report-btn').addEventListener('click', () => {
 });
 document.getElementById('view-close').addEventListener('click', () => { document.getElementById('view-overlay').hidden = true; });
 document.getElementById('view-print-btn').addEventListener('click', () => window.print());
+
+// Someone can trigger printing (Ctrl/Cmd+P, the browser's own print
+// button) while the raw edit form is open instead of clicking "View
+// formatted report" first -- printed that way, it's the data-entry
+// form, not the actual report. Whenever print is about to happen with
+// the edit modal open, switch to the formatted report first so what
+// prints is always the report, then switch back after.
+let printAutoSwitched = false;
+window.addEventListener('beforeprint', () => {
+  const editOverlay = document.getElementById('modal-overlay');
+  const viewOverlay = document.getElementById('view-overlay');
+  if (!editOverlay.hidden && viewOverlay.hidden && editingIncidentId) {
+    const inc = incidents.find((x) => x.id === editingIncidentId);
+    if (inc) {
+      document.getElementById('view-sheet').innerHTML = renderIncidentReportHtml(inc);
+      viewOverlay.hidden = false;
+      editOverlay.hidden = true;
+      printAutoSwitched = true;
+    }
+  }
+});
+window.addEventListener('afterprint', () => {
+  if (printAutoSwitched) {
+    document.getElementById('view-overlay').hidden = true;
+    document.getElementById('modal-overlay').hidden = false;
+    printAutoSwitched = false;
+  }
+});
 document.getElementById('get-signature-btn').addEventListener('click', () => {
   if (!editingIncidentId) return;
   window.location.href = `docgen.html?open=incidentreport&doc=${editingIncidentId}`;
