@@ -19,7 +19,7 @@
   .app { display:none !important; }
   .form-doc { border:none !important; box-shadow:none !important; }
   #view-overlay { position:static !important; background:none !important; display:block !important; }
-  #view-overlay .modal { width:auto !important; max-width:none !important; box-shadow:none !important; border:none !important; margin:0 !important; }
+  #view-overlay .modal { width:auto !important; max-width:none !important; max-height:none !important; overflow:visible !important; box-shadow:none !important; border:none !important; margin:0 !important; }
   #view-overlay .modal-body { padding:0 !important; overflow:visible !important; max-height:none !important; }
   @page { size:letter; margin:0.5in; }
 }
@@ -406,6 +406,7 @@ function renderRefusalHtml(d) {
   const isEs = d.lang === 'es';
   const statements = isEs ? REFUSAL_STATEMENTS_ES : REFUSAL_STATEMENTS_EN;
   const checks = d.checks || {};
+  const initials = d.initials || {};
   return `
     <div class="form-doc-inner">
       <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
@@ -422,7 +423,14 @@ function renderRefusalHtml(d) {
       <div class="form-box">${escapeHtmlAttr(d.description) || '—'}</div>
       <div class="form-section">Employee Acknowledgment</div>
       <div class="form-box">
-        ${statements.map((s, i) => `<p style="margin:0 0 10px">${checks[`statement-${i}`] ? '☑' : '☐'} ${escapeHtmlAttr(s)}</p>`).join('')}
+        ${statements.map((s, i) => `
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 10px">
+            <p style="margin:0;flex:1;min-width:220px">${checks[`statement-${i}`] ? '☑' : '☐'} ${escapeHtmlAttr(s)}</p>
+            ${initials[`statement-${i}`]
+              ? `<img src="${initials[`statement-${i}`]}" alt="Initials" style="height:32px">`
+              : '<span class="dim" style="font-size:11px">No initials</span>'}
+          </div>
+        `).join('')}
       </div>
       <div class="form-section">Employee Electronic Signature</div>
       ${d.signature_data_url ? `<img src="${d.signature_data_url}" alt="Employee signature" style="max-height:90px;border-bottom:1px solid #333">` : `<div class="dim">${checks.declined_to_sign ? 'Employee declined to sign.' : 'Not signed.'}</div>`}

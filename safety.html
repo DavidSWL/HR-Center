@@ -21,7 +21,7 @@
   .app { display:none !important; }
   .form-doc { border:none !important; box-shadow:none !important; }
   #view-overlay { position:static !important; background:none !important; display:block !important; }
-  #view-overlay .modal { width:auto !important; max-width:none !important; box-shadow:none !important; border:none !important; margin:0 !important; }
+  #view-overlay .modal { width:auto !important; max-width:none !important; max-height:none !important; overflow:visible !important; box-shadow:none !important; border:none !important; margin:0 !important; }
   #view-overlay .modal-body { padding:0 !important; overflow:visible !important; max-height:none !important; }
   @page { size:letter; margin:0.5in; }
 }
@@ -80,6 +80,7 @@
               <th class="sortable" data-key="daysaway">Days out<span class="sort-arrow"></span></th>
               <th class="sortable" data-key="division">Division<span class="sort-arrow"></span></th>
               <th class="sortable" data-key="cost">Cost<span class="sort-arrow"></span></th>
+              <th>Signature</th>
             </tr>
           </thead>
           <tbody id="rows"></tbody>
@@ -488,12 +489,35 @@ function render() {
         <td class="mono">${i.days_away || 0}</td>
         <td class="mono dim">${i.division || '—'}</td>
         <td class="mono">${i.cost === null || i.cost === undefined ? '<span class="dim" title="Not yet reviewed">—</span>' : '$' + Number(i.cost).toLocaleString()}</td>
+        <td>${i.manager_signature_data_url && i.employee_signature_data_url
+          ? `<span class="pill ok">Complete</span> <button class="gh print-row-btn" data-id="${i.id}" type="button">Print</button>`
+          : `<span class="pill mid sig-collect-btn" data-id="${i.id}" style="cursor:pointer" title="Click to collect">${
+              !i.manager_signature_data_url && !i.employee_signature_data_url ? 'Needs manager + employee signature'
+              : !i.manager_signature_data_url ? 'Needs manager signature'
+              : 'Needs employee signature'
+            }</span>`}</td>
       </tr>
     `;
-  }).join('') : '<tr><td colspan="8" class="dim">No incidents logged yet.</td></tr>';
+  }).join('') : '<tr><td colspan="9" class="dim">No incidents logged yet.</td></tr>';
 
   document.querySelectorAll('#rows tr').forEach((tr) => {
     tr.addEventListener('click', () => openEdit(tr.dataset.id));
+  });
+  document.querySelectorAll('.sig-collect-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.location.href = `docgen.html?open=incidentreport&doc=${btn.dataset.id}`;
+    });
+  });
+  document.querySelectorAll('.print-row-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const inc = incidents.find((x) => x.id === btn.dataset.id);
+      if (!inc) return;
+      document.getElementById('view-sheet').innerHTML = renderIncidentReportHtml(inc);
+      document.getElementById('view-overlay').hidden = false;
+      window.print();
+    });
   });
 }
 
@@ -649,6 +673,34 @@ document.getElementById('view-report-btn').addEventListener('click', () => {
 });
 document.getElementById('view-close').addEventListener('click', () => { document.getElementById('view-overlay').hidden = true; });
 document.getElementById('view-print-btn').addEventListener('click', () => window.print());
+
+// Someone can trigger printing (Ctrl/Cmd+P, the browser's own print
+// button) while the raw edit form is open instead of clicking "View
+// formatted report" first -- printed that way, it's the data-entry
+// form, not the actual report. Whenever print is about to happen with
+// the edit modal open, switch to the formatted report first so what
+// prints is always the report, then switch back after.
+let printAutoSwitched = false;
+window.addEventListener('beforeprint', () => {
+  const editOverlay = document.getElementById('modal-overlay');
+  const viewOverlay = document.getElementById('view-overlay');
+  if (!editOverlay.hidden && viewOverlay.hidden && editingIncidentId) {
+    const inc = incidents.find((x) => x.id === editingIncidentId);
+    if (inc) {
+      document.getElementById('view-sheet').innerHTML = renderIncidentReportHtml(inc);
+      viewOverlay.hidden = false;
+      editOverlay.hidden = true;
+      printAutoSwitched = true;
+    }
+  }
+});
+window.addEventListener('afterprint', () => {
+  if (printAutoSwitched) {
+    document.getElementById('view-overlay').hidden = true;
+    document.getElementById('modal-overlay').hidden = false;
+    printAutoSwitched = false;
+  }
+});
 document.getElementById('get-signature-btn').addEventListener('click', () => {
   if (!editingIncidentId) return;
   window.location.href = `docgen.html?open=incidentreport&doc=${editingIncidentId}`;

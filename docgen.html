@@ -141,7 +141,7 @@ import { db, storage } from './firebaseconfig.js';
 import { LOGO_DATA_URL, LOCATIONS, SCHEDULE_PRESETS, HR_SIGNER, ONBOARDING_CHECKLIST } from './letterhead-assets.js';
 import { JOB_DESCRIPTIONS } from './jobdescriptionsdata.js';
 import {
-  collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, writeBatch, serverTimestamp,
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, writeBatch, serverTimestamp, query, where,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 
@@ -2084,6 +2084,7 @@ function renderRefusal(lang) {
   document.getElementById('gen-body').innerHTML = `
     <div class="card no-print" style="margin-bottom:16px">
       <div class="card-body">
+        ${incidentDraftForResume ? `<button class="gh" id="ref-resume-ir-btn" type="button" style="margin-bottom:14px">&larr; Back to the Incident Report draft</button>` : ''}
         ${empSearchFieldHtml('ref-emp', '<label class="f-lab">Employee</label>')}
         <div class="frow">
           <div class="field"><label class="f-lab">Date</label><input class="f-in" id="ref-date" type="date"></div>
@@ -2103,6 +2104,13 @@ function renderRefusal(lang) {
   `;
   wireEmpSearch('ref-emp');
 
+  if (incidentDraftForResume) {
+    document.getElementById('ref-resume-ir-btn').addEventListener('click', () => {
+      const draft = incidentDraftForResume;
+      openGenerator('incidentreport');
+      restoreIncidentReportDraft(draft);
+    });
+  }
   document.getElementById('ref-generate-btn').addEventListener('click', () => renderRefusalSheet(lang));
   document.getElementById('ref-sig-later-btn').addEventListener('click', () => saveRefusalForSignatureLater(lang));
   document.getElementById('ref-log-btn').addEventListener('click', async () => {
@@ -2206,7 +2214,19 @@ function renderRefusalSheet(lang) {
       <div class="form-box">${escapeHtml(description) || '—'}</div>
       <div class="form-section">${isEs ? 'Reconocimiento del Empleado — lea cada declaración y ponga sus iniciales' : 'Employee Acknowledgment — read each statement and initial'}</div>
       <div class="form-box">
-        ${statements.map((s, i) => `<p style="margin:0 0 10px"><label><input type="checkbox" class="ref-check no-print" data-key="statement-${i}"><span class="print-only">☐</span> ${s}</label> ${isEs ? 'Iniciales' : 'Initials'}: ____</p>`).join('')}
+        ${statements.map((s, i) => `
+          <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;margin:0 0 10px">
+            <label style="flex:1;min-width:220px"><input type="checkbox" class="ref-check no-print" data-key="statement-${i}"><span class="print-only">☐</span> ${s}</label>
+            <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap">
+              <span class="dim no-print" style="font-size:11px">${isEs ? 'Iniciales' : 'Initials'}:</span>
+              <span class="print-only" style="font-size:11px">${isEs ? 'Iniciales' : 'Initials'}:</span>
+              <span style="display:inline-block;border:1px solid #999;background:#fafafa;width:80px;height:32px">
+                <canvas id="ref-initial-${i}-pad" style="width:100%;height:100%;display:block;cursor:crosshair;touch-action:none"></canvas>
+              </span>
+              <button type="button" class="gh no-print" id="ref-initial-${i}-clear" style="padding:2px 8px;font-size:10px">${isEs ? 'Borrar' : 'Clear'}</button>
+            </span>
+          </div>
+        `).join('')}
       </div>
       <div class="form-section">${isEs ? 'Firmas' : 'Signatures'}</div>
       <div class="form-box">${isEs ? 'Firma Electrónica del Empleado' : 'Employee Electronic Signature'}</div>
@@ -2247,9 +2267,17 @@ function renderRefusalSheet(lang) {
   });
   setUpSignaturePad('ref-sig-pad', 'ref-sig-clear');
   setUpSignaturePad('ref-sup-sig-pad', 'ref-sup-sig-clear');
+  statements.forEach((s, i) => setUpSignaturePad(`ref-initial-${i}-pad`, `ref-initial-${i}-clear`));
   document.getElementById('ref-sig-save').addEventListener('click', async () => {
     const checks = {};
     document.querySelectorAll('.ref-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
+    const initials = {};
+    statements.forEach((s, i) => {
+      const padState = sigPads[`ref-initial-${i}-pad`];
+      if (padState && padState.hasStroke) {
+        initials[`statement-${i}`] = document.getElementById(`ref-initial-${i}-pad`).toDataURL('image/png');
+      }
+    });
     const state = sigPads['ref-sig-pad'];
     const supState = sigPads['ref-sup-sig-pad'];
     try {
@@ -2259,7 +2287,7 @@ function renderRefusalSheet(lang) {
         title: `Medical Treatment Refusal — ${emp.first_name} ${emp.last_name} (${formatDate(date)})`,
         emp_id: emp.id, emp_name: `${emp.first_name} ${emp.last_name}`,
         date, incident_datetime: incidentDateTime, supervisor, location, description,
-        checks, lang,
+        checks, initials, lang,
         signature_data_url: state && state.hasStroke ? document.getElementById('ref-sig-pad').toDataURL('image/png') : null,
         supervisor_signature_data_url: supState && supState.hasStroke ? document.getElementById('ref-sup-sig-pad').toDataURL('image/png') : null,
         signed_by: profile.uid, signed_at: serverTimestamp(),
@@ -2305,6 +2333,13 @@ function renderRefusalSheet(lang) {
 // incident" button now just opens this generator instead of its old
 // separate form. ----
 
+// Set right before jumping from the incident report draft to the Refusal
+// generator (via "Generate Refusal Form"), so the in-progress incident
+// report isn't lost -- the Refusal screen shows a button to come back
+// and restore it. Cleared once restored, or once either document is
+// actually saved, since there's nothing left to resume at that point.
+let incidentDraftForResume = null;
+
 function renderIncidentReport() {
   document.getElementById('gen-body').innerHTML = `
     <div class="card no-print" style="margin-bottom:16px">
@@ -2346,7 +2381,10 @@ function renderIncidentReport() {
             </select>
           </div>
           <div class="field" id="ir-refusal-field" hidden>
-            <label class="f-lab" for="ir-refusal-file">Medical Treatment Refusal form (signed copy)</label>
+            <label class="f-lab">Medical Treatment Refusal form</label>
+            <button class="gh" id="ir-generate-refusal-btn" type="button">Generate Refusal Form</button>
+            <div class="dim" style="font-size:11.5px;margin:6px 0 10px">Opens the Medical Treatment Refusal document, pre-filled from what's entered above, so it can be signed right here. Already have a signed copy from elsewhere instead? Upload it below.</div>
+            <label class="f-lab" for="ir-refusal-file">Or upload a signed copy</label>
             <input class="f-in" id="ir-refusal-file" type="file" accept="application/pdf,image/*">
           </div>
           <div class="frow">
@@ -2428,6 +2466,52 @@ function renderIncidentReport() {
     document.getElementById(id).addEventListener('change', updateRecordableHint);
   });
   document.getElementById('ir-generate-btn').addEventListener('click', () => renderIncidentReportSheet(document.getElementById('lang-select').value));
+  document.getElementById('ir-generate-refusal-btn').addEventListener('click', () => {
+    incidentDraftForResume = readIncidentReportForm();
+    const f = incidentDraftForResume;
+    openGenerator('refusal');
+    if (f.emp) setEmpField('ref-emp', f.emp.id);
+    document.getElementById('ref-date').value = f.date || '';
+    document.getElementById('ref-incident-datetime').value = f.date ? `${f.date}${f.time ? ', ' + f.time : ''}` : '';
+    document.getElementById('ref-supervisor').value = f.supervisor || '';
+    document.getElementById('ref-location').value = f.location || '';
+    document.getElementById('ref-description').value = f.whatHappened || '';
+  });
+}
+
+// Repopulates the raw incident report draft form from a snapshot taken
+// by readIncidentReportForm() -- used when someone comes back from
+// generating a Refusal form mid-draft via "Generate Refusal Form".
+function restoreIncidentReportDraft(f) {
+  if (f.emp) setEmpField('ir-emp', f.emp.id);
+  document.getElementById('ir-date').value = f.date || '';
+  document.getElementById('ir-time').value = f.time || '';
+  document.getElementById('ir-supervisor').value = f.supervisor || '';
+  document.getElementById('ir-department').value = f.department || '';
+  document.getElementById('ir-location').value = f.location || '';
+  document.getElementById('ir-type').value = f.incidentType || 'Injury';
+  document.getElementById('ir-what-happened').value = f.whatHappened || '';
+  document.getElementById('ir-injury-fields').hidden = f.incidentType !== 'Injury';
+  document.getElementById('ir-injury-type').value = f.injuryType || '';
+  document.getElementById('ir-body-part').value = f.bodyPart || '';
+  document.getElementById('ir-treatment-level').value = f.treatmentLevel || 'none';
+  document.getElementById('ir-refusal-field').hidden = f.treatmentLevel !== 'refused';
+  document.getElementById('ir-days-away').value = f.daysAway || 0;
+  document.getElementById('ir-restricted-days').value = f.restrictedDays || 0;
+  document.getElementById('ir-recordable').checked = !!f.recordable;
+  document.getElementById('ir-privacy-case').checked = !!f.privacyCase;
+  document.getElementById('ir-witnesses').value = f.witnesses || '';
+  document.getElementById('ir-describe').value = f.describe || '';
+  document.getElementById('ir-immediate-action').value = f.immediateAction || '';
+  document.getElementById('ir-cost').value = f.cost === null || f.cost === undefined ? '' : f.cost;
+  document.getElementById('ir-root-cause').value = f.rootCause || '';
+  document.getElementById('ir-corrective-action').value = f.correctiveAction || '';
+  document.getElementById('ir-corrective-owner').value = f.correctiveOwner || '';
+  document.getElementById('ir-corrective-due').value = f.correctiveDue || '';
+  document.getElementById('ir-discussed-staff-who').value = f.discussedStaffWho || '';
+  document.getElementById('ir-other-detail').value = f.otherDetail || '';
+  document.getElementById('ir-comments').value = f.comments || '';
+  incidentDraftForResume = null;
 }
 
 function readIncidentReportForm() {
@@ -2633,6 +2717,21 @@ async function saveIncidentReport(f, wantsSignatureTask = false) {
     if (pendingSigTaskId) {
       await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
       pendingSigDocId = null; pendingSigTaskId = null;
+    } else if (hasMgrSig && hasEmpSig) {
+      // Reached here without a task link -- e.g. the "Get signature" button
+      // on the incident's edit modal in Safety, not the task's own "Open
+      // document" link. Both signatures being on file now means any open
+      // signature-reminder task for this incident is done, so close it
+      // instead of leaving it stuck open with no way to complete it.
+      const openTasks = await getDocs(query(
+        collection(db, 'tasks'),
+        where('linked_doc_id', '==', incidentRef.id),
+        where('linked_doc_type', '==', 'incidentreport'),
+        where('status', '==', 'open'),
+      ));
+      for (const taskDoc of openTasks.docs) {
+        await updateDoc(taskDoc.ref, { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
+      }
     }
     if (wantsSignatureTask) {
       await addDoc(collection(db, 'tasks'), {
