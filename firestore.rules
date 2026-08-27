@@ -33,6 +33,14 @@ service cloud.firestore {
       return isHrUser() && role() == 'david';
     }
 
+    function isTanya() {
+      return isHrUser() && role() == 'tanya';
+    }
+
+    function canDeleteTasks() {
+      return isDavid() || isTanya();
+    }
+
     // Field names that must never be written, under any spelling. This is
     // the enforcement of the CLAUDE.md exclusion list — a pay rate or an
     // SSN cannot be saved even by an honest mistake in the UI code, because
@@ -260,7 +268,9 @@ service cloud.firestore {
     match /tasks/{taskId} {
       allow read: if isHrUser();
       allow create, update: if isHrUser() && isClean(request.resource.data);
-      allow delete: if false;
+      // Tasks are append-only for everyone else — only David or Tanya can
+      // remove one outright, per David's explicit instruction.
+      allow delete: if canDeleteTasks();
 
       match /reassignments/{id} {
         allow read: if isHrUser();

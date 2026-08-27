@@ -13,8 +13,12 @@
 @media print {
   .side, .bar, .no-print { display:none !important; }
   .print-only { display:inline !important; }
-  .app { display:block; }
-  .view { padding:0; }
+  /* The incident report print button opens window.print() while the
+     view-overlay modal is showing -- everything else on the page (the
+     incident list, cost cards, filters) sits outside that modal in the
+     DOM and must be hidden, or it prints alongside the report instead
+     of just the report. */
+  .app { display:none !important; }
   .form-doc { border:none !important; box-shadow:none !important; }
   #view-overlay { position:static !important; background:none !important; display:block !important; }
   #view-overlay .modal { width:auto !important; max-width:none !important; box-shadow:none !important; border:none !important; margin:0 !important; }
