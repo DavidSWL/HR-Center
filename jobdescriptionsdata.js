@@ -6,9 +6,13 @@
 // Known gaps in the source files (not something to silently fill in -- flagged for HR
 // to fix at the source and re-upload):
 //   - Enhancement Foreman 1: Spanish version has no Position Purpose paragraph and no
-//     Physical Demands table; English version has no Safety-Sensitive Position section.
-//   - Foreman 1 & 2 (Maintenance): English versions have no Safety-Sensitive Position
-//     section (Spanish versions do).
+//     Physical Demands table.
+//
+// The English Safety-Sensitive Position section that was previously missing for
+// Enhancement Foreman 1 and Foreman 1 & 2 (Maintenance) has been filled in using
+// SWL-Safety-Sensitive-Reference-Aug2026.docx (August 2026), which reproduces the
+// same hazard-duty list from each role's own job description and confirmed an exact
+// match against the Spanish text already on file for all three roles.
 export const JOB_DESCRIPTIONS = [
   {
     key: "enh_foreman_1",
@@ -105,6 +109,24 @@ export const JOB_DESCRIPTIONS = [
     qualifications_en: ["Minimum 4 years of commercial landscape installation experience across planting, irrigation, and hardscape.", "Full proficiency with skid steer, compact excavator, and all Landscaper Lead equipment.", "Demonstrated ability to read and apply landscape design plans and irrigation schematics.", "Valid California driver's license with clean driving record; ability to operate crew truck and trailer.", "Bilingual English/Spanish required.", "Ability to pass background check, MVR check, and pre-employment screening per SWL policy."],
     qualifications_es: ["Mínimo 4 años de experiencia en instalación paisajística comercial en plantación, riego y obra dura.", "Dominio completo de la minicargadora, la excavadora compacta y todo el equipo de Jardinero Líder.", "Capacidad demostrada para leer y aplicar planos de diseño paisajístico y esquemas de riego.", "Licencia de conducir vigente de California con historial de manejo limpio; capacidad para operar el camión y remolque de la cuadrilla.", "Se requiere bilingüe inglés/español.", "Capacidad para aprobar la verificación de antecedentes, la revisión del historial de manejo (MVR) y las pruebas previas al empleo conforme a la política de SWL."],
     safety_sensitive_en: [
+      { bold: false, text: "This position is designated by SouthWest Landscape as a safety-sensitive position. The essential duties of this role involve the operation of powered equipment and exposure to conditions where impairment from any substance could result in serious injury or death to the employee, coworkers, clients, or the public." },
+      { bold: true, text: "Safety-Sensitive Duties" },
+      { bold: false, text: "Operating a skid steer loader, compact excavator, and the full range of powered installation equipment." },
+      { bold: false, text: "Operating a paver wet saw and angle grinder during hardscape cutting, with responsibility for silica exposure controls." },
+      { bold: false, text: "Driving a crew truck and towing an equipment trailer on public roadways between job sites." },
+      { bold: false, text: "Directing crew during active excavation, trenching, compaction, and material handling operations." },
+      { bold: false, text: "Performing irrigation pressure testing and controller wiring on energized circuits." },
+      { bold: false, text: "Assessing job site hazards before work begins and holding stop-work authority for the crew." },
+      { bold: false, text: "Holding responsibility for crew PPE and respiratory protection compliance." },
+      { bold: false, text: "Working outdoors in heat conditions subject to Cal/OSHA Title 8 section 3395 heat illness prevention requirements." },
+      { bold: true, text: "Drug and Alcohol Screening" },
+      { bold: false, text: "SWL conducts drug and alcohol screening for this position following a conditional offer of employment and in accordance with the SWL Drug and Alcohol Policy. Consistent with California Government Code section 12954, cannabis screening is limited to scientifically valid testing that identifies psychoactive THC indicating recent use. SWL does not take adverse action based solely on a test result showing non-psychoactive cannabis metabolites." },
+      { bold: true, text: "Impairment-Free Duty Requirement" },
+      { bold: false, text: "The employee must report to work and remain free of impairment from alcohol, cannabis, illegal drugs, or any other substance for the entire duration of the shift, including while traveling to, from, and between job sites in a company vehicle. Possession or use of cannabis, alcohol, or illegal drugs on SWL property, in an SWL vehicle, or at any client site is prohibited. Nothing in California law permits an employee to possess, use, or be impaired by cannabis on the job." },
+      { bold: true, text: "Medication Fitness-for-Duty Notification" },
+      { bold: false, text: "The employee must notify their supervisor or Human Resources BEFORE beginning work if they are taking any medication, prescription or over-the-counter, that carries a warning against operating machinery or driving, or that may cause drowsiness, dizziness, delayed reaction time, or otherwise impair the safe performance of this role. The employee is not required to disclose the name of the medication or any underlying medical condition, only that a fitness-for-duty concern exists. SWL will evaluate temporary reassignment, modified duty, or other reasonable accommodation through the interactive process, consistent with the ADA and FEHA. Beginning work without providing this notification may result in disciplinary action." },
+      { bold: true, text: "ACCOUNTABILITY STANDARD:" },
+      { bold: false, text: "Employee reports fit for duty and unimpaired on every shift; medication fitness-for-duty concerns reported before work begins; zero instances of operating equipment or a company vehicle while impaired." },
     ],
     safety_sensitive_es: [
       { bold: false, text: "SouthWest Landscape designa este puesto como un puesto sensible en materia de seguridad. Las funciones esenciales de este puesto implican la operación de equipo motorizado y la exposición a condiciones en las que el deterioro causado por cualquier sustancia podría ocasionar lesiones graves o la muerte del empleado, de sus compañeros de trabajo, de los clientes o del público." },
@@ -398,6 +420,23 @@ export const JOB_DESCRIPTIONS = [
     qualifications_en: ["Minimum 2 years of commercial landscape maintenance experience; prior crew lead or supervisory experience preferred.", "Full proficiency with all Gardener Lead equipment without supervision.", "Valid California driver's license with clean, insurable driving record; must operate a company truck and trailer.", "Demonstrated ability to lead a crew, set a quality standard, and hold crew members accountable.", "Bilingual English/Spanish required.", "Ability to pass background check, MVR check, and pre-employment screening per SWL policy."],
     qualifications_es: ["Mínimo 2 años de experiencia en mantenimiento de jardinería comercial; se prefiere experiencia previa como líder de cuadrilla o supervisor.", "Dominio completo de todo el equipo de Jardinero Líder sin supervisión.", "Licencia de conducir vigente de California con historial de manejo limpio y asegurable; debe operar un camión y remolque de la empresa.", "Capacidad demostrada para dirigir una cuadrilla, establecer un estándar de calidad y responsabilizar a los miembros de la cuadrilla.", "Se requiere bilingüe inglés/español.", "Capacidad para aprobar la verificación de antecedentes, la revisión del historial de manejo (MVR) y las pruebas previas al empleo conforme a la política de SWL."],
     safety_sensitive_en: [
+      { bold: false, text: "This position is designated by SouthWest Landscape as a safety-sensitive position. The essential duties of this role involve the operation of powered equipment and exposure to conditions where impairment from any substance could result in serious injury or death to the employee, coworkers, clients, or the public." },
+      { bold: true, text: "Safety-Sensitive Duties" },
+      { bold: false, text: "Operating walk-behind, riding, and zero-turn mowers on slopes and uneven terrain." },
+      { bold: false, text: "Operating line trimmers, stick and powered edgers, hedge trimmers, and backpack and wheeled blowers." },
+      { bold: false, text: "Operating manual and powered pole saws and sharp hand pruning tools at height and overhead." },
+      { bold: false, text: "Driving a crew truck and towing enclosed and open trailers on public roadways between properties." },
+      { bold: false, text: "Loading, securing, and unloading equipment at each property." },
+      { bold: false, text: "Directing crew members on active commercial properties with vehicle traffic and members of the public present." },
+      { bold: false, text: "Working outdoors in heat conditions subject to Cal/OSHA Title 8 section 3395 heat illness prevention requirements." },
+      { bold: true, text: "Drug and Alcohol Screening" },
+      { bold: false, text: "SWL conducts drug and alcohol screening for this position following a conditional offer of employment and in accordance with the SWL Drug and Alcohol Policy. Consistent with California Government Code section 12954, cannabis screening is limited to scientifically valid testing that identifies psychoactive THC indicating recent use. SWL does not take adverse action based solely on a test result showing non-psychoactive cannabis metabolites." },
+      { bold: true, text: "Impairment-Free Duty Requirement" },
+      { bold: false, text: "The employee must report to work and remain free of impairment from alcohol, cannabis, illegal drugs, or any other substance for the entire duration of the shift, including while traveling to, from, and between job sites in a company vehicle. Possession or use of cannabis, alcohol, or illegal drugs on SWL property, in an SWL vehicle, or at any client site is prohibited. Nothing in California law permits an employee to possess, use, or be impaired by cannabis on the job." },
+      { bold: true, text: "Medication Fitness-for-Duty Notification" },
+      { bold: false, text: "The employee must notify their supervisor or Human Resources BEFORE beginning work if they are taking any medication, prescription or over-the-counter, that carries a warning against operating machinery or driving, or that may cause drowsiness, dizziness, delayed reaction time, or otherwise impair the safe performance of this role. The employee is not required to disclose the name of the medication or any underlying medical condition, only that a fitness-for-duty concern exists. SWL will evaluate temporary reassignment, modified duty, or other reasonable accommodation through the interactive process, consistent with the ADA and FEHA. Beginning work without providing this notification may result in disciplinary action." },
+      { bold: true, text: "ACCOUNTABILITY STANDARD:" },
+      { bold: false, text: "Employee reports fit for duty and unimpaired on every shift; medication fitness-for-duty concerns reported before work begins; zero instances of operating equipment or a company vehicle while impaired." },
     ],
     safety_sensitive_es: [
       { bold: false, text: "SouthWest Landscape designa este puesto como un puesto sensible en materia de seguridad. Las funciones esenciales de este puesto implican la operación de equipo motorizado y la exposición a condiciones en las que el deterioro causado por cualquier sustancia podría ocasionar lesiones graves o la muerte del empleado, de sus compañeros de trabajo, de los clientes o del público." },
@@ -537,6 +576,23 @@ export const JOB_DESCRIPTIONS = [
     qualifications_en: ["Minimum 4 years of commercial landscape maintenance experience; minimum 2 years in a crew leader or foreman role.", "Full proficiency with all Foreman 1 equipment; ability to train others on safe and correct operation.", "Demonstrated ability to manage complex commercial properties and multi-crew dynamics independently.", "Valid California driver's license with clean, insurable driving record.", "Bilingual English/Spanish required.", "Ability to pass background check, MVR check, and pre-employment screening per SWL policy."],
     qualifications_es: ["Mínimo 4 años de experiencia en mantenimiento de jardinería comercial; mínimo 2 años en un puesto de líder de cuadrilla o capataz.", "Dominio completo de todo el equipo de Capataz 1; capacidad para capacitar a otros en la operación segura y correcta.", "Capacidad demostrada para manejar propiedades comerciales complejas y la dinámica de varias cuadrillas de forma independiente.", "Licencia de conducir vigente de California con historial de manejo limpio y asegurable.", "Se requiere bilingüe inglés/español.", "Capacidad para aprobar la verificación de antecedentes, la revisión del historial de manejo (MVR) y las pruebas previas al empleo conforme a la política de SWL."],
     safety_sensitive_en: [
+      { bold: false, text: "This position is designated by SouthWest Landscape as a safety-sensitive position. The essential duties of this role involve the operation of powered equipment and exposure to conditions where impairment from any substance could result in serious injury or death to the employee, coworkers, clients, or the public." },
+      { bold: true, text: "Safety-Sensitive Duties" },
+      { bold: false, text: "Operating all walk-behind, riding, zero-turn, and large-area side-discharge mowers on slopes and uneven terrain." },
+      { bold: false, text: "Operating the full range of trimming, edging, and extended-reach hedge equipment." },
+      { bold: false, text: "Operating a ground-level chainsaw where licensed and trained." },
+      { bold: false, text: "Driving a crew truck and towing trailers in all configurations on public roadways." },
+      { bold: false, text: "Loading, securing, and unloading equipment at each property." },
+      { bold: false, text: "Directing crew members on active commercial properties with vehicle traffic and members of the public present." },
+      { bold: false, text: "Working outdoors in heat conditions subject to Cal/OSHA Title 8 section 3395 heat illness prevention requirements." },
+      { bold: true, text: "Drug and Alcohol Screening" },
+      { bold: false, text: "SWL conducts drug and alcohol screening for this position following a conditional offer of employment and in accordance with the SWL Drug and Alcohol Policy. Consistent with California Government Code section 12954, cannabis screening is limited to scientifically valid testing that identifies psychoactive THC indicating recent use. SWL does not take adverse action based solely on a test result showing non-psychoactive cannabis metabolites." },
+      { bold: true, text: "Impairment-Free Duty Requirement" },
+      { bold: false, text: "The employee must report to work and remain free of impairment from alcohol, cannabis, illegal drugs, or any other substance for the entire duration of the shift, including while traveling to, from, and between job sites in a company vehicle. Possession or use of cannabis, alcohol, or illegal drugs on SWL property, in an SWL vehicle, or at any client site is prohibited. Nothing in California law permits an employee to possess, use, or be impaired by cannabis on the job." },
+      { bold: true, text: "Medication Fitness-for-Duty Notification" },
+      { bold: false, text: "The employee must notify their supervisor or Human Resources BEFORE beginning work if they are taking any medication, prescription or over-the-counter, that carries a warning against operating machinery or driving, or that may cause drowsiness, dizziness, delayed reaction time, or otherwise impair the safe performance of this role. The employee is not required to disclose the name of the medication or any underlying medical condition, only that a fitness-for-duty concern exists. SWL will evaluate temporary reassignment, modified duty, or other reasonable accommodation through the interactive process, consistent with the ADA and FEHA. Beginning work without providing this notification may result in disciplinary action." },
+      { bold: true, text: "ACCOUNTABILITY STANDARD:" },
+      { bold: false, text: "Employee reports fit for duty and unimpaired on every shift; medication fitness-for-duty concerns reported before work begins; zero instances of operating equipment or a company vehicle while impaired." },
     ],
     safety_sensitive_es: [
       { bold: false, text: "SouthWest Landscape designa este puesto como un puesto sensible en materia de seguridad. Las funciones esenciales de este puesto implican la operación de equipo motorizado y la exposición a condiciones en las que el deterioro causado por cualquier sustancia podría ocasionar lesiones graves o la muerte del empleado, de sus compañeros de trabajo, de los clientes o del público." },
