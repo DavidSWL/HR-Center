@@ -8,6 +8,16 @@
 //   - Enhancement Foreman 1: Spanish version has no Position Purpose paragraph and no
 //     Physical Demands table.
 //
+// Roles added from the Aug 2026 job-description upload (Advanced Climber,
+// Irrigation Repairman, Irrigation Trainee, Branch Manager, Landscape Division
+// Manager, Landscaper 1/2/Lead, Pruner/Climber, Tree Groundsman 1/2, Tree
+// Supervisor) — all complete, unflagged pairs. Not added, pending HR resolution
+// of an unresolved "NOTE TO HR" legal/compliance flag in the source file:
+// Administrative Assistant (Las Vegas), Chipper Truck Driver, Irrigation
+// Supervisor, Senior Account Manager (Las Vegas). Also not added: Aerial Lift
+// Pruner (Spanish source only, no English file provided, and itself flagged
+// incomplete in the source README).
+//
 // The English Safety-Sensitive Position section that was previously missing for
 // Enhancement Foreman 1 and Foreman 1 & 2 (Maintenance) has been filled in using
 // SWL-Safety-Sensitive-Reference-Aug2026.docx (August 2026), which reproduces the
@@ -2992,5 +3002,153 @@ export const JOB_DESCRIPTIONS = [
     acknowledgment_es: "Reconozco que he recibido, leído y comprendido la Descripción del Puesto correspondiente a mi posición como Ayudante de Tierra de Árboles 2 en SouthWest Landscape.\n\nEste documento no constituye un contrato de empleo. El empleo con SouthWest Landscape continúa siendo de libre terminación (“at-will”). SouthWest Landscape se reserva el derecho de modificar las responsabilidades del puesto a su discreción según las necesidades del negocio.",
     footer_en: "SouthWest Landscape, Inc.  |  Tree Groundsman 2 — Job Description  |  Tree Care Division  |  Level 2  |  Version 1.1  |  August 2026  |  Human Resources",
     footer_es: "SouthWest Landscape, Inc.  |  Ayudante de Tierra de Árboles 2 — Descripción del Puesto  |  División de Cuidado de Árboles  |  Nivel 2  |  Versión 1.1  |  agosto de 2026  |  Recursos Humanos",
+  },
+  {
+    key: "tree_supervisor",
+    title: { en: "Tree Supervisor", es: "Supervisor de Árboles" },
+    meta_en: {
+      "Job Title": "Tree Supervisor",
+      "Division": "Tree Care Division",
+      "Reports To": "VP of Operations",
+      "Position Type": "Full-Time  ·  Non-Exempt",
+      "Compensation Level": "Level 4 — Specialist",
+      "Last Revised": "August 2026",
+      "Location": "OC / LA / IE (Division-Wide)",
+      "Prepared By": "Human Resources",
+    },
+    meta_es: {
+      "Título del Puesto": "Supervisor de Árboles",
+      "División": "División de Cuidado de Árboles",
+      "Reporta a": "Vicepresidente de Operaciones",
+      "Tipo de Puesto": "Tiempo Completo  ·  No Exento",
+      "Nivel de Compensación": "Nivel 4 — Especialista",
+      "Última Revisión": "agosto de 2026",
+      "Ubicación": "OC / LA / IE (Toda la División)",
+      "Preparado Por": "Recursos Humanos",
+    },
+    purpose_en: "The Tree Supervisor is the senior field leader of SouthWest Landscape's Tree Care Division and is the single accountable owner of all tree crew operations across the OC, LA, and Inland Empire service areas. Unlike branch-based roles, this position operates division-wide — deploying crews wherever tree work is needed without a fixed branch assignment.\n\nThe Tree Supervisor directly leads all tree trimmers, groundsmen, and crew leaders in the division and is responsible for safety compliance, service quality, production efficiency, and crew development. The Tree Care Division operates independently from the Maintenance Division branches; the Tree Supervisor reports directly to the VP of Operations and coordinates with Branch Managers and Client Representatives on scheduling and property access.",
+    purpose_es: "El Supervisor de Árboles es el líder de campo de mayor jerarquía de la División de Cuidado de Árboles de SouthWest Landscape y es el único responsable de todas las operaciones de las cuadrillas de árboles en las áreas de servicio de OC, LA e Inland Empire. A diferencia de los puestos asignados a una sucursal, esta posición opera en toda la división, desplegando cuadrillas donde se requiera trabajo en árboles sin una asignación fija de sucursal.\n\nEl Supervisor de Árboles dirige directamente a todos los podadores, ayudantes de tierra y líderes de cuadrilla de la división, y es responsable del cumplimiento en seguridad, la calidad del servicio, la eficiencia de producción y el desarrollo de la cuadrilla. La División de Cuidado de Árboles opera de forma independiente de las sucursales de la División de Mantenimiento; el Supervisor de Árboles reporta directamente al Vicepresidente de Operaciones y coordina con los Gerentes de Sucursal y los Representantes de Cliente la programación y el acceso a las propiedades.",
+    responsibilities_en: [
+      {
+        title: "TREE CREW LEADERSHIP & DAILY OPERATIONS",
+        standard: "All tree crews deployed on schedule with correct crew composition and equipment for every job; pre-job briefings conducted before every deployment; all field issues identified and addressed same day.",
+        bullets: ["Lead, deploy, and direct all tree crews across OC, LA, and IE; plan and sequence all tree work including trimming, removals, stump grinding, clearance work, and emergency response.", "Own crew scheduling and deployment — ensure the right crew size, equipment, and certifications are matched to every job before departure; adjust assignments in real time when site conditions, weather, or scope changes.", "Conduct pre-job briefings for every crew before departure; confirm job scope, safety requirements, site access, equipment needs, and client communication protocols.", "Monitor crew performance and productivity in the field throughout the day; address quality, safety, or efficiency issues immediately on-site.", "Coordinate with Branch Managers and Client Representatives on scheduling, property access, and client logistics when tree work is performed at Maintenance Division client properties."],
+      },
+      {
+        title: "SAFETY LEADERSHIP & ARBORICULTURAL COMPLIANCE",
+        standard: "ANSI A300 compliance maintained on all pruning work; biweekly safety meetings documented with zero missed cycles; all equipment inspected before use; zero lapsed crew certifications on active employees.",
+        bullets: ["Own the Tree Care Division's safety culture; enforce ANSI A300 pruning standards, OSHA 1910.269 line-clearance requirements, and all SWL safety protocols on every job without exception.", "Conduct and document biweekly safety tailgate meetings with all tree crew members; cover job-specific hazards, equipment safety, PPE requirements, and emergency procedures.", "Inspect all tree equipment — chippers, chainsaws, aerial lifts, ropes, rigging — before every use; remove defective equipment from service immediately.", "Respond to all tree-related incidents, near-misses, and property damage events immediately; complete required documentation and notify the VP of Operations same day.", "Ensure all crew members hold current required certifications; track expiration dates and partner with HR to initiate renewal before any certification lapses."],
+      },
+      {
+        title: "SERVICE QUALITY & TECHNICAL STANDARDS",
+        standard: "All tree work performed to ANSI A300 standards with zero documented violations; no out-of-scope work performed without prior approval; field quality inspections completed on a regular cadence.",
+        bullets: ["Set and enforce the technical standard for all tree work performed by SWL crews; conduct regular field inspections of completed work and provide immediate corrective feedback.", "Ensure all pruning, removal, and clearance work is performed to ANSI A300 standards and in accordance with the client's contract scope; no work outside scope is performed without client and VP approval.", "Partner with Client Representatives and Branch Managers when tree work quality issues are identified at client properties."],
+      },
+      {
+        title: "CREW DEVELOPMENT & SUCCESSION",
+        standard: "All crew members receiving documented coaching at minimum once per review period; at least one crew member actively pursuing ISA certification per year.",
+        bullets: ["Develop, coach, and train all tree crew members; identify skill gaps and implement on-the-job training to address them.", "Build a certification pipeline within the division; identify crew members with ISA Certified Arborist potential and support their credential achievement in partnership with HR.", "Identify high-potential crew members and bring them to the VP of Operations' attention for advancement consideration.", "Partner with HR on all disciplinary matters and termination decisions; never administer discipline above verbal coaching without HR involvement and VP approval."],
+      },
+      {
+        title: "TECHNOLOGY & REPORTING",
+        standard: "All required reports submitted to VP on schedule; safety and equipment records current and audit-ready; Aspire job data current for all tree division work.",
+        bullets: ["Use Aspire to review job assignments, production events, and work orders for all tree division work; coordinate with administrative support on any data updates or documentation requirements.", "Submit production reports, safety meeting records, equipment inspection logs, and crew certification records to the VP of Operations on the established reporting schedule.", "Use the Meeting Portal for all required internal meetings, VP reporting, and company-wide communications."],
+      },
+    ],
+    responsibilities_es: [
+      {
+        title: "LIDERAZGO DE CUADRILLAS Y OPERACIONES DIARIAS",
+        standard: "Todas las cuadrillas se despliegan según el calendario con la composición y el equipo correctos para cada trabajo; se realizan sesiones informativas antes de cada despliegue; todos los problemas de campo se identifican y atienden el mismo día.",
+        bullets: ["Dirigir, desplegar y coordinar todas las cuadrillas de árboles en OC, LA e IE; planificar y secuenciar todo el trabajo en árboles, incluidos poda, remociones, triturado de tocones, despeje y respuesta a emergencias.", "Ser responsable de la programación y el despliegue de las cuadrillas: asegurar que el tamaño de cuadrilla, el equipo y las certificaciones correspondan a cada trabajo antes de la salida; ajustar las asignaciones en tiempo real cuando cambien las condiciones del sitio, el clima o el alcance.", "Realizar sesiones informativas previas al trabajo con cada cuadrilla antes de la salida; confirmar el alcance del trabajo, los requisitos de seguridad, el acceso al sitio, las necesidades de equipo y los protocolos de comunicación con el cliente.", "Supervisar el desempeño y la productividad de las cuadrillas en campo durante todo el día; atender de inmediato en el sitio los problemas de calidad, seguridad o eficiencia.", "Coordinar con los Gerentes de Sucursal y los Representantes de Cliente la programación, el acceso a las propiedades y la logística con el cliente cuando el trabajo en árboles se realice en propiedades de la División de Mantenimiento."],
+      },
+      {
+        title: "LIDERAZGO EN SEGURIDAD Y CUMPLIMIENTO ARBORÍCOLA",
+        standard: "Se mantiene el cumplimiento de ANSI A300 en todo el trabajo de poda; las reuniones quincenales de seguridad se documentan sin ciclos omitidos; todo el equipo se inspecciona antes de su uso; cero certificaciones vencidas entre los empleados activos.",
+        bullets: ["Ser responsable de la cultura de seguridad de la División de Cuidado de Árboles; hacer cumplir las normas de poda ANSI A300, los requisitos de despeje de líneas de OSHA 1910.269 y todos los protocolos de seguridad de SWL en cada trabajo, sin excepción.", "Dirigir y documentar reuniones quincenales de seguridad con todos los miembros de las cuadrillas de árboles; cubrir los riesgos específicos del trabajo, la seguridad del equipo, los requisitos de EPP y los procedimientos de emergencia.", "Inspeccionar todo el equipo de árboles — astilladoras, motosierras, plataformas elevadoras, cuerdas y aparejos — antes de cada uso; retirar de servicio de inmediato el equipo defectuoso.", "Responder de inmediato a todos los incidentes, cuasi accidentes y daños a la propiedad relacionados con árboles; completar la documentación requerida y notificar al Vicepresidente de Operaciones el mismo día.", "Asegurar que todos los miembros de la cuadrilla cuenten con las certificaciones vigentes requeridas; dar seguimiento a las fechas de vencimiento y coordinar con Recursos Humanos la renovación antes de que alguna certificación caduque."],
+      },
+      {
+        title: "CALIDAD DEL SERVICIO Y ESTÁNDARES TÉCNICOS",
+        standard: "Todo el trabajo en árboles se realiza conforme a las normas ANSI A300 sin infracciones documentadas; no se realiza trabajo fuera del alcance sin aprobación previa; las inspecciones de calidad en campo se completan con una cadencia regular.",
+        bullets: ["Establecer y hacer cumplir el estándar técnico de todo el trabajo en árboles realizado por las cuadrillas de SWL; realizar inspecciones periódicas en campo del trabajo terminado y brindar retroalimentación correctiva inmediata.", "Asegurar que todo el trabajo de poda, remoción y despeje se realice conforme a las normas ANSI A300 y al alcance del contrato del cliente; no se realiza ningún trabajo fuera del alcance sin la aprobación del cliente y del Vicepresidente.", "Coordinar con los Representantes de Cliente y los Gerentes de Sucursal cuando se identifiquen problemas de calidad en el trabajo de árboles en las propiedades de los clientes."],
+      },
+      {
+        title: "DESARROLLO Y SUCESIÓN DE LA CUADRILLA",
+        standard: "Todos los miembros de la cuadrilla reciben orientación documentada al menos una vez por periodo de evaluación; al menos un miembro de cuadrilla busca activamente la certificación de la ISA cada año.",
+        bullets: ["Desarrollar, orientar y capacitar a todos los miembros de las cuadrillas de árboles; identificar brechas de habilidades e implementar capacitación en el trabajo para atenderlas.", "Construir una cantera de certificaciones dentro de la división; identificar a los miembros de cuadrilla con potencial para ser Arboristas Certificados por la ISA y apoyar la obtención de su credencial en coordinación con Recursos Humanos.", "Identificar a los miembros de cuadrilla de alto potencial y presentarlos al Vicepresidente de Operaciones para su consideración de ascenso.", "Coordinar con Recursos Humanos todos los asuntos disciplinarios y las decisiones de terminación; nunca aplique medidas disciplinarias más allá de la orientación verbal sin la participación de Recursos Humanos y la aprobación del Vicepresidente."],
+      },
+      {
+        title: "TECNOLOGÍA E INFORMES",
+        standard: "Todos los informes requeridos se entregan al Vicepresidente según el calendario; los registros de seguridad y equipo están actualizados y listos para auditoría; los datos de trabajo en Aspire están al día para toda la división de árboles.",
+        bullets: ["Utilizar Aspire para revisar las asignaciones de trabajo, los eventos de producción y las órdenes de trabajo de toda la división de árboles; coordinar con el apoyo administrativo cualquier actualización de datos o requisito de documentación.", "Entregar al Vicepresidente de Operaciones los informes de producción, los registros de reuniones de seguridad, las bitácoras de inspección de equipo y los registros de certificación de la cuadrilla conforme al calendario establecido.", "Utilizar el Portal de Reuniones para todas las reuniones internas requeridas, los informes al Vicepresidente y las comunicaciones de toda la empresa."],
+      },
+    ],
+    equipment_intro_en: "",
+    equipment_intro_es: "",
+    equipment_en: [
+    ],
+    equipment_es: [
+    ],
+    qualifications_en: ["Minimum 5 years of experience in commercial tree care operations including trimming, removal, and aerial lift operations.", "Minimum 2 years of experience leading tree crews in a supervisory or foreman capacity.", "Current OSHA 10 or 30 certification; working knowledge of OSHA 1910.269 and ANSI A300 standards.", "Valid California Class C driver's license with clean record; Class B preferred.", "Bilingual English/Spanish required.", "Ability to perform physically demanding outdoor work in all weather conditions.", "Ability to pass background check and pre-employment screening per SWL policy.", "ISA Tree Risk Assessment Qualification (TRAQ) or equivalent.", "Prior experience managing a tree care division across multiple service areas.", "Familiarity with Aspire or similar landscape management software."],
+    qualifications_es: ["Mínimo 5 años de experiencia en operaciones comerciales de cuidado de árboles, incluidas poda, remoción y operación de plataformas elevadoras.", "Mínimo 2 años de experiencia dirigiendo cuadrillas de árboles como supervisor o capataz.", "Certificación vigente OSHA 10 o 30; conocimiento práctico de las normas OSHA 1910.269 y ANSI A300.", "Licencia de conducir Clase C de California vigente con historial limpio; se prefiere Clase B.", "Se requiere bilingüe inglés/español.", "Capacidad para realizar trabajo al aire libre físicamente exigente en todas las condiciones climáticas.", "Capacidad para aprobar la verificación de antecedentes y las pruebas previas al empleo conforme a la política de SWL.", "Calificación de Evaluación de Riesgo Arbóreo (TRAQ) de la ISA o equivalente.", "Experiencia previa dirigiendo una división de cuidado de árboles en varias áreas de servicio.", "Familiaridad con Aspire o software similar de gestión de paisajismo."],
+    safety_sensitive_en: [
+      { bold: false, text: "This position is designated by SouthWest Landscape as a safety-sensitive position. The essential duties of this role involve the operation of powered equipment and exposure to conditions where impairment from any substance could result in serious injury or death to the employee, coworkers, clients, or the public." },
+      { bold: true, text: "Safety-Sensitive Duties" },
+      { bold: false, text: "Previewing job sites for structural, utility, and drop-zone hazards before crew arrival." },
+      { bold: false, text: "Directing aerial operations, rigging plans, and drop zones on active tree jobs." },
+      { bold: false, text: "Operating chainsaws, chippers, and stump grinders during crew coverage." },
+      { bold: false, text: "Driving a company truck and towing chipper and equipment trailers between job sites." },
+      { bold: false, text: "Working in proximity to energized overhead utility lines during job site assessment and crew direction." },
+      { bold: false, text: "Holding stop-work authority and responsibility for ANSI Z133 compliance on every crew." },
+      { bold: false, text: "Working outdoors in heat conditions subject to Cal/OSHA Title 8 section 3395 heat illness prevention requirements." },
+      { bold: true, text: "Drug and Alcohol Screening" },
+      { bold: false, text: "SWL conducts drug and alcohol screening for this position following a conditional offer of employment and in accordance with the SWL Drug and Alcohol Policy. Consistent with California Government Code section 12954, cannabis screening is limited to scientifically valid testing that identifies psychoactive THC indicating recent use. SWL does not take adverse action based solely on a test result showing non-psychoactive cannabis metabolites." },
+      { bold: true, text: "Impairment-Free Duty Requirement" },
+      { bold: false, text: "The employee must report to work and remain free of impairment from alcohol, cannabis, illegal drugs, or any other substance for the entire duration of the shift, including while traveling to, from, and between job sites in a company vehicle. Possession or use of cannabis, alcohol, or illegal drugs on SWL property, in an SWL vehicle, or at any client site is prohibited. Nothing in California law permits an employee to possess, use, or be impaired by cannabis on the job." },
+      { bold: true, text: "Medication Fitness-for-Duty Notification" },
+      { bold: false, text: "The employee must notify their supervisor or Human Resources BEFORE beginning work if they are taking any medication, prescription or over-the-counter, that carries a warning against operating machinery or driving, or that may cause drowsiness, dizziness, delayed reaction time, or otherwise impair the safe performance of this role. The employee is not required to disclose the name of the medication or any underlying medical condition, only that a fitness-for-duty concern exists. SWL will evaluate temporary reassignment, modified duty, or other reasonable accommodation through the interactive process, consistent with the ADA and FEHA. Beginning work without providing this notification may result in disciplinary action." },
+      { bold: true, text: "ACCOUNTABILITY STANDARD:" },
+      { bold: false, text: "Employee reports fit for duty and unimpaired on every shift; medication fitness-for-duty concerns reported before work begins; zero instances of operating equipment or a company vehicle while impaired." },
+    ],
+    safety_sensitive_es: [
+      { bold: false, text: "SouthWest Landscape designa este puesto como un puesto sensible en materia de seguridad. Las funciones esenciales de este puesto implican la operación de equipo motorizado y la exposición a condiciones en las que el deterioro causado por cualquier sustancia podría ocasionar lesiones graves o la muerte del empleado, de sus compañeros de trabajo, de los clientes o del público." },
+      { bold: true, text: "Funciones Sensibles en Materia de Seguridad" },
+      { bold: false, text: "Inspeccionar previamente los sitios de trabajo para detectar riesgos estructurales, de servicios públicos y de zona de caída antes de la llegada de la cuadrilla." },
+      { bold: false, text: "Dirigir las operaciones aéreas, los planes de aparejo y las zonas de caída en los trabajos activos de árboles." },
+      { bold: false, text: "Operar motosierras, astilladoras y trituradoras de tocones al dar cobertura a la cuadrilla." },
+      { bold: false, text: "Conducir un camión de la empresa y remolcar astilladoras y remolques de equipo entre sitios de trabajo." },
+      { bold: false, text: "Trabajar cerca de líneas aéreas de servicios públicos energizadas durante la evaluación del sitio y la dirección de la cuadrilla." },
+      { bold: false, text: "Ejercer la autoridad de detener el trabajo y la responsabilidad del cumplimiento de ANSI Z133 en cada cuadrilla." },
+      { bold: false, text: "Trabajar al aire libre en condiciones de calor sujetas a los requisitos de prevención de enfermedades por calor de Cal/OSHA, Título 8, sección 3395." },
+      { bold: true, text: "Pruebas de Drogas y Alcohol" },
+      { bold: false, text: "SWL realiza pruebas de drogas y alcohol para este puesto después de una oferta condicional de empleo y conforme a la Política de Drogas y Alcohol de SWL. De acuerdo con la sección 12954 del Código de Gobierno de California, las pruebas de cannabis se limitan a métodos científicamente válidos que identifican THC psicoactivo indicativo de uso reciente. SWL no toma medidas adversas basándose únicamente en un resultado que muestre metabolitos no psicoactivos de cannabis." },
+      { bold: true, text: "Requisito de Desempeño Libre de Deterioro" },
+      { bold: false, text: "El empleado debe presentarse a trabajar y permanecer libre de deterioro por alcohol, cannabis, drogas ilegales o cualquier otra sustancia durante toda la jornada, incluyendo los traslados hacia, desde y entre los sitios de trabajo en un vehículo de la empresa. Se prohíbe la posesión o el uso de cannabis, alcohol o drogas ilegales en propiedad de SWL, en un vehículo de SWL o en cualquier sitio de un cliente. Ninguna disposición de la ley de California permite que un empleado posea, use o se encuentre bajo los efectos del cannabis durante el trabajo." },
+      { bold: true, text: "Notificación de Aptitud para el Trabajo por Medicamentos" },
+      { bold: false, text: "El empleado debe notificar a su supervisor o a Recursos Humanos ANTES de comenzar a trabajar si está tomando algún medicamento, con o sin receta, que incluya una advertencia contra la operación de maquinaria o la conducción, o que pueda causar somnolencia, mareo, tiempo de reacción retardado o afectar de otro modo el desempeño seguro de este puesto. El empleado no está obligado a revelar el nombre del medicamento ni ninguna condición médica subyacente, únicamente que existe una inquietud sobre su aptitud para el trabajo. SWL evaluará una reasignación temporal, tareas modificadas u otra adaptación razonable mediante el proceso interactivo, conforme a la ADA y a FEHA. Comenzar a trabajar sin proporcionar esta notificación puede dar lugar a medidas disciplinarias." },
+      { bold: true, text: "ESTÁNDAR DE RESPONSABILIDAD:" },
+      { bold: false, text: "El empleado se presenta apto para el trabajo y sin deterioro en cada jornada; las inquietudes de aptitud por medicamentos se reportan antes de iniciar el trabajo; cero casos de operar equipo o un vehículo de la empresa bajo los efectos de alguna sustancia." },
+    ],
+    physical_demands_en: [
+      { req: "Lifting (up to 75 lbs.)", freq: "Continuously (67–100%)", notes: "Equipment, branches, logs, rigging gear" },
+      { req: "Standing / Walking", freq: "Continuously (67–100%)", notes: "Active field presence all day on job sites" },
+      { req: "Bending / Stooping / Kneeling", freq: "Continuously (67–100%)", notes: "Ground operations, rigging, equipment setup" },
+      { req: "Driving (company vehicle/truck)", freq: "Continuously (67–100%)", notes: "Daily travel between job sites across OC/LA/IE" },
+      { req: "Working Outdoors / Sun Exposure", freq: "Continuously (67–100%)", notes: "All work performed outdoors in all weather" },
+      { req: "Repetitive Hand / Arm Motion", freq: "Continuously (67–100%)", notes: "Chainsaw, rope, rigging, and equipment operation" },
+    ],
+    physical_demands_es: [
+      { req: "Levantar (hasta 75 lbs.)", freq: "Continuamente (67–100 %)", notes: "Equipo, ramas, troncos, aparejos" },
+      { req: "De Pie / Caminando", freq: "Continuamente (67–100 %)", notes: "Presencia activa en campo todo el día en los sitios de trabajo" },
+      { req: "Agacharse / Inclinarse / Arrodillarse", freq: "Continuamente (67–100 %)", notes: "Operaciones en tierra, aparejo, armado de equipo" },
+      { req: "Conducir (vehículo o camión de la empresa)", freq: "Continuamente (67–100 %)", notes: "Traslados diarios entre sitios de trabajo en OC/LA/IE" },
+      { req: "Trabajo al Aire Libre / Exposición al Sol", freq: "Continuamente (67–100 %)", notes: "Todo el trabajo se realiza al aire libre en cualquier clima" },
+      { req: "Movimiento Repetitivo de Manos / Brazos", freq: "Continuamente (67–100 %)", notes: "Operación de motosierra, cuerdas, aparejos y equipo" },
+    ],
+    ada_note_en: "Active outdoor field role with significant physical demands. Reasonable accommodations for qualified individuals with disabilities will be evaluated through the ADA interactive process in partnership with HR.",
+    ada_note_es: "Puesto de campo activo al aire libre con exigencias físicas considerables. Las adaptaciones razonables para personas calificadas con discapacidades se evaluarán mediante el proceso interactivo de la ADA en conjunto con Recursos Humanos.",
+    acknowledgment_en: "I acknowledge that I have received, read, and understand the Job Description for my position as Tree Supervisor at SouthWest Landscape.\n\nThis document does not constitute a contract of employment. Employment with SouthWest Landscape remains at-will. SouthWest Landscape reserves the right to modify role responsibilities at its discretion based on business needs.",
+    acknowledgment_es: "Reconozco que he recibido, leído y comprendido la Descripción del Puesto correspondiente a mi posición como Supervisor de Árboles en SouthWest Landscape.\n\nEste documento no constituye un contrato de empleo. El empleo con SouthWest Landscape continúa siendo de libre terminación (“at-will”). SouthWest Landscape se reserva el derecho de modificar las responsabilidades del puesto a su discreción según las necesidades del negocio.",
+    footer_en: "SouthWest Landscape, Inc.  |  Tree Supervisor — Job Description  |  Tree Care Division  |  Level 4  |  Version 1.1  |  August 2026  |  Human Resources",
+    footer_es: "SouthWest Landscape, Inc.  |  Supervisor de Árboles — Descripción del Puesto  |  División de Cuidado de Árboles  |  Nivel 4  |  Versión 1.1  |  agosto de 2026  |  Recursos Humanos",
   },
 ];
