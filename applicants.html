@@ -55,6 +55,12 @@
               </select>
             </div>
           </div>
+          <div class="field" id="new-app-referrer-field" hidden>
+            <label class="f-lab" for="new-app-referrer-search">Referred by</label>
+            <input class="f-in" id="new-app-referrer-search" list="new-app-referrer-opts" placeholder="Type an employee's name…" autocomplete="off">
+            <datalist id="new-app-referrer-opts"></datalist>
+            <input type="hidden" id="new-app-referrer">
+          </div>
           <button class="gh solid" id="add-applicant-btn" type="button">Add applicant</button>
         </div>
       </div>
@@ -68,6 +74,7 @@
             <option value="active">Active pipeline</option>
             <option value="not_passed">Did not pass interview</option>
             <option value="oriented">Orientation completed</option>
+            <option value="bonus_due">Referral bonus due</option>
           </select>
         </div>
         <div style="overflow-x:auto">
@@ -82,11 +89,17 @@
               <th>Physical / drug exam</th>
               <th>Orientation booked</th>
               <th>Orientation done</th>
+              <th>Referred by</th>
+              <th>Hired employee</th>
+              <th>Referral bonus due</th>
+              <th>Referrer paid</th>
+              <th>New hire paid</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="rows"></tbody>
         </table>
+        <datalist id="hired-emp-opts"></datalist>
         </div>
       </div>
     </section>
@@ -109,6 +122,8 @@ document.getElementById('header-date').textContent =
   new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
 
 const SOURCE_LABELS = { walk_in: 'Walk-in', referral: 'Referral', past_employee: 'Past employee', indeed: 'Indeed' };
+const REFERRAL_BONUS_DAYS = 90;
+const todayStr = new Date().toISOString().slice(0, 10);
 
 function escapeHtml(str) {
   const div = document.createElement('div');
@@ -116,7 +131,50 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// Referral bonus due date is computed from the linked employee's real
+// hire_date, never stored separately -- same "compute, don't store"
+// rule as every other due-date in this app.
+function addDays(dateStr, days) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 let applicants = [];
+let employees = [];
+
+async function loadEmployees() {
+  const snap = await getDocs(collection(db, 'employees'));
+  employees = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => e.status !== 'terminated');
+  const opts = employees.slice().sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''))
+    .map((e) => `<option value="${escapeHtml(`${e.first_name} ${e.last_name} (${e.id})`)}">`).join('');
+  document.getElementById('new-app-referrer-opts').innerHTML = opts;
+  document.getElementById('hired-emp-opts').innerHTML = opts;
+}
+
+// Small local copy of the employee-search pattern used elsewhere in the
+// app (type a name, resolve to the matching employee's id via a hidden
+// datalist-backed input) -- duplicated here rather than shared, same as
+// every other page.
+function wireEmpSearch(id, list = employees) {
+  const search = document.getElementById(`${id}-search`);
+  const hidden = document.getElementById(id);
+  if (!search || !hidden) return;
+  search.addEventListener('input', () => {
+    const m = search.value.match(/\(([^()]+)\)\s*$/);
+    const match = m && list.find((e) => e.id === m[1]);
+    hidden.value = match ? match.id : '';
+  });
+}
+function setEmpField(id, empId, list = employees) {
+  const emp = list.find((e) => e.id === empId);
+  const search = document.getElementById(`${id}-search`);
+  const hidden = document.getElementById(id);
+  if (!search || !hidden) return;
+  search.value = emp ? `${emp.first_name} ${emp.last_name} (${emp.id})` : '';
+  hidden.value = emp ? emp.id : '';
+}
 
 async function loadApplicants() {
   const snap = await getDocs(collection(db, 'applicants'));
@@ -124,6 +182,11 @@ async function loadApplicants() {
     .map((d) => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (b.entered_at?.seconds || 0) - (a.entered_at?.seconds || 0));
   render();
+}
+
+function empName(empId) {
+  const e = employees.find((x) => x.id === empId);
+  return e ? `${e.first_name} ${e.last_name}` : '';
 }
 
 function render() {
@@ -135,6 +198,10 @@ function render() {
     if (statusFilter === 'active' && a.interview_status === 'not_passed') return false;
     if (statusFilter === 'not_passed' && a.interview_status !== 'not_passed') return false;
     if (statusFilter === 'oriented' && !a.orientation_completed) return false;
+    if (statusFilter === 'bonus_due') {
+      if (a.source !== 'referral' || !a.hired_emp_id) return false;
+      if (a.referral_bonus_referrer_paid && a.referral_bonus_new_hire_paid) return false;
+    }
     return true;
   });
 
@@ -143,6 +210,11 @@ function render() {
 
   document.getElementById('rows').innerHTML = visible.length ? visible.map((a) => {
     const grayed = a.interview_status === 'not_passed';
+    const isReferral = a.source === 'referral';
+    const linkedEmp = a.hired_emp_id ? employees.find((e) => e.id === a.hired_emp_id) : null;
+    const bonusDue = linkedEmp ? addDays(linkedEmp.hire_date, REFERRAL_BONUS_DAYS) : '';
+    const bothPaid = !!(a.referral_bonus_referrer_paid && a.referral_bonus_new_hire_paid);
+    const overdue = bonusDue && !bothPaid && bonusDue < todayStr;
     return `
       <tr class="app-row${grayed ? ' grayed' : ''}" data-id="${a.id}">
         <td class="app-name-cell">${escapeHtml(a.name)}</td>
@@ -159,10 +231,21 @@ function render() {
         <td style="text-align:center"><input type="checkbox" class="app-cb physical-cb" data-id="${a.id}" ${a.physical_passed ? 'checked' : ''} ${grayed ? 'disabled' : ''}></td>
         <td><input class="inp orientation-date-in" data-id="${a.id}" type="date" value="${a.orientation_booked_date || ''}" style="height:32px" ${grayed ? 'disabled' : ''}></td>
         <td style="text-align:center"><input type="checkbox" class="app-cb orientation-cb" data-id="${a.id}" ${a.orientation_completed ? 'checked' : ''} ${grayed ? 'disabled' : ''}></td>
+        <td class="dim">${isReferral ? (a.referred_by_emp_id ? escapeHtml(empName(a.referred_by_emp_id) || 'Former employee') : '—') : '—'}</td>
+        <td>${isReferral
+          ? `<input class="inp hired-emp-search" data-id="${a.id}" list="hired-emp-opts" value="${linkedEmp ? escapeHtml(`${linkedEmp.first_name} ${linkedEmp.last_name} (${linkedEmp.id})`) : ''}" placeholder="Type a name once hired…" autocomplete="off" style="height:32px;font-size:12.5px;min-width:170px">`
+          : '<span class="dim">—</span>'}</td>
+        <td class="mono" style="${overdue ? 'color:var(--alertTx);font-weight:700' : ''}">${!isReferral ? '<span class="dim">—</span>' : bonusDue ? formatDate(bonusDue) + (overdue ? ' · overdue' : '') : '<span class="dim">Link hire to see</span>'}</td>
+        <td style="text-align:center">${isReferral && linkedEmp
+          ? `<input type="checkbox" class="app-cb referrer-paid-cb" data-id="${a.id}" ${a.referral_bonus_referrer_paid ? 'checked' : ''} title="${a.referral_bonus_referrer_paid_at ? 'Paid ' + formatDate(a.referral_bonus_referrer_paid_at) : 'Not yet paid'}">`
+          : '<span class="dim">—</span>'}</td>
+        <td style="text-align:center">${isReferral && linkedEmp
+          ? `<input type="checkbox" class="app-cb new-hire-paid-cb" data-id="${a.id}" ${a.referral_bonus_new_hire_paid ? 'checked' : ''} title="${a.referral_bonus_new_hire_paid_at ? 'Paid ' + formatDate(a.referral_bonus_new_hire_paid_at) : 'Not yet paid'}">`
+          : '<span class="dim">—</span>'}</td>
         <td style="text-align:right;white-space:nowrap"><button class="gh remove-btn" data-id="${a.id}" type="button">Remove</button></td>
       </tr>
     `;
-  }).join('') : '<tr><td colspan="9" class="dim">No applicants match.</td></tr>';
+  }).join('') : '<tr><td colspan="14" class="dim">No applicants match.</td></tr>';
 
   document.querySelectorAll('.prescreen-cb').forEach((cb) => {
     cb.addEventListener('change', () => updateApplicant(cb.dataset.id, { prescreen_passed: cb.checked }));
@@ -178,6 +261,27 @@ function render() {
   });
   document.querySelectorAll('.orientation-cb').forEach((cb) => {
     cb.addEventListener('change', () => updateApplicant(cb.dataset.id, { orientation_completed: cb.checked }));
+  });
+  document.querySelectorAll('.hired-emp-search').forEach((inp) => {
+    inp.addEventListener('change', () => {
+      const m = inp.value.match(/\(([^()]+)\)\s*$/);
+      const match = m && employees.find((e) => e.id === m[1]);
+      if (!inp.value.trim()) { updateApplicant(inp.dataset.id, { hired_emp_id: '' }); return; }
+      if (!match) { showToast('Pick a name from the list.', 'error'); render(); return; }
+      updateApplicant(inp.dataset.id, { hired_emp_id: match.id });
+    });
+  });
+  document.querySelectorAll('.referrer-paid-cb').forEach((cb) => {
+    cb.addEventListener('change', () => updateApplicant(cb.dataset.id, {
+      referral_bonus_referrer_paid: cb.checked,
+      referral_bonus_referrer_paid_at: cb.checked ? new Date().toISOString().slice(0, 10) : null,
+    }));
+  });
+  document.querySelectorAll('.new-hire-paid-cb').forEach((cb) => {
+    cb.addEventListener('change', () => updateApplicant(cb.dataset.id, {
+      referral_bonus_new_hire_paid: cb.checked,
+      referral_bonus_new_hire_paid_at: cb.checked ? new Date().toISOString().slice(0, 10) : null,
+    }));
   });
   document.querySelectorAll('.remove-btn').forEach((btn) => {
     btn.addEventListener('click', () => removeApplicant(btn.dataset.id));
@@ -214,19 +318,27 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
   const name = document.getElementById('new-app-name').value.trim();
   if (!name) { showToast('Enter a name.', 'error'); return; }
   const source = document.getElementById('new-app-source').value;
+  const referredByEmpId = document.getElementById('new-app-referrer').value;
+  if (source === 'referral' && !referredByEmpId) { showToast('Pick who referred them from the list.', 'error'); return; }
   try {
     await setDoc(doc(collection(db, 'applicants')), {
       name, source,
+      referred_by_emp_id: source === 'referral' ? referredByEmpId : '',
       applied_date: new Date().toISOString().slice(0, 10),
       prescreen_passed: false,
       interview_status: 'pending',
       physical_passed: false,
       orientation_booked_date: '',
       orientation_completed: false,
+      hired_emp_id: '',
+      referral_bonus_referrer_paid: false,
+      referral_bonus_new_hire_paid: false,
       entered_by: profile.uid,
       entered_at: serverTimestamp(),
     });
     document.getElementById('new-app-name').value = '';
+    document.getElementById('new-app-referrer-search').value = '';
+    document.getElementById('new-app-referrer').value = '';
     showToast('Applicant added.');
     await loadApplicants();
   } catch (err) {
@@ -235,9 +347,15 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
   }
 });
 
+document.getElementById('new-app-source').addEventListener('change', (e) => {
+  document.getElementById('new-app-referrer-field').hidden = e.target.value !== 'referral';
+});
+
 document.getElementById('search').addEventListener('input', render);
 document.getElementById('status-filter').addEventListener('change', render);
 
+wireEmpSearch('new-app-referrer');
+await loadEmployees();
 await loadApplicants();
 </script>
 </body>
