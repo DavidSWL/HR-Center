@@ -95,12 +95,16 @@ import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
 import { db } from './firebaseconfig.js';
 import {
-  collection, collectionGroup, doc, getDocs, setDoc, updateDoc, addDoc, serverTimestamp,
+  collection, collectionGroup, doc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
 initShell('tasks', profile);
+
+// Only David or Tanya can remove a task outright — everyone else can
+// complete or reassign, but the record itself is otherwise append-only.
+const canDeleteTasks = profile.role === 'david' || profile.role === 'tanya';
 
 document.getElementById('header-date').textContent =
   new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
@@ -114,6 +118,13 @@ const todayStr = new Date().toISOString().slice(0, 10);
 function staffName(uid) {
   const s = staff.find((x) => x.id === uid);
   return s ? s.name : uid;
+}
+// Every linked-doc task opens back into Document Generator except a
+// write-up, which lives on its own page (discipline.html), never inside
+// Document Generator's own generator list.
+function linkedDocUrl(type, docId, taskId) {
+  if (type === 'writeup') return `discipline.html?doc=${docId}&task=${taskId}`;
+  return `docgen.html?open=${type}&doc=${docId}&task=${taskId}`;
 }
 function empById(id) { return employees.find((e) => e.id === id); }
 
@@ -179,6 +190,7 @@ function render() {
             : t.linked_doc_id
             ? `<button class="gh solid open-doc-btn" data-id="${t.id}" data-doc="${t.linked_doc_id}" data-type="${t.linked_doc_type}" type="button">Open document</button>`
             : `<button class="gh complete-btn" data-id="${t.id}" type="button">Complete</button>`}
+          ${canDeleteTasks ? `<button class="gh delete-task-btn" data-id="${t.id}" type="button" style="color:var(--alertTx);margin-left:6px">Delete</button>` : ''}
         </td>
       </tr>
     `;
@@ -192,9 +204,26 @@ function render() {
   });
   document.querySelectorAll('.open-doc-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      window.location.href = `docgen.html?open=${btn.dataset.type}&doc=${btn.dataset.doc}&task=${btn.dataset.id}`;
+      window.location.href = linkedDocUrl(btn.dataset.type, btn.dataset.doc, btn.dataset.id);
     });
   });
+  document.querySelectorAll('.delete-task-btn').forEach((btn) => {
+    btn.addEventListener('click', () => deleteTask(btn.dataset.id));
+  });
+}
+
+async function deleteTask(id) {
+  const t = tasks.find((x) => x.id === id);
+  if (!t) return;
+  if (!confirm(`Delete this task? This cannot be undone.\n\n"${t.instructions}"`)) return;
+  try {
+    await deleteDoc(doc(db, 'tasks', id));
+    showToast('Task deleted.');
+    await loadTasks();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not delete — ' + err.message, 'error');
+  }
 }
 
 async function completeTask(id) {
@@ -365,7 +394,7 @@ async function toggleCalTask(id) {
   // Always go to the document instead; docgen.html sorts out whether it
   // still needs a signature or is already done (and fixes the task if so).
   if (t.linked_doc_id) {
-    window.location.href = `docgen.html?open=${t.linked_doc_type}&doc=${t.linked_doc_id}&task=${t.id}`;
+    window.location.href = linkedDocUrl(t.linked_doc_type, t.linked_doc_id, t.id);
     return;
   }
   if (t.status === 'complete') {

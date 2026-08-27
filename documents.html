@@ -9,6 +9,21 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
+<style>
+@media print {
+  .side, .bar, .no-print { display:none !important; }
+  /* Same pattern as safety.html: the view-print-btn triggers window.print()
+     while the view-overlay modal is showing, but everything else on the
+     page sits outside that modal in the DOM and must be hidden, or it
+     prints alongside the document instead of just the document. */
+  .app { display:none !important; }
+  .form-doc { border:none !important; box-shadow:none !important; }
+  #view-overlay { position:static !important; background:none !important; display:block !important; }
+  #view-overlay .modal { width:auto !important; max-width:none !important; box-shadow:none !important; border:none !important; margin:0 !important; }
+  #view-overlay .modal-body { padding:0 !important; overflow:visible !important; max-height:none !important; }
+  @page { size:letter; margin:0.5in; }
+}
+</style>
 </head>
 <body>
 
@@ -107,7 +122,7 @@
 </div>
 
 <!-- view text document -->
-<div class="modal-overlay no-print" id="view-overlay" hidden>
+<div class="modal-overlay" id="view-overlay" hidden>
   <div class="modal" style="width:850px">
     <div class="modal-h no-print"><h3>Document</h3><button class="modal-close" id="view-close" type="button">&times;</button></div>
     <div class="modal-body">
