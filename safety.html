@@ -80,6 +80,7 @@
               <th class="sortable" data-key="daysaway">Days out<span class="sort-arrow"></span></th>
               <th class="sortable" data-key="division">Division<span class="sort-arrow"></span></th>
               <th class="sortable" data-key="cost">Cost<span class="sort-arrow"></span></th>
+              <th></th>
             </tr>
           </thead>
           <tbody id="rows"></tbody>
@@ -488,12 +489,25 @@ function render() {
         <td class="mono">${i.days_away || 0}</td>
         <td class="mono dim">${i.division || '—'}</td>
         <td class="mono">${i.cost === null || i.cost === undefined ? '<span class="dim" title="Not yet reviewed">—</span>' : '$' + Number(i.cost).toLocaleString()}</td>
+        <td style="text-align:right">${i.manager_signature_data_url && i.employee_signature_data_url
+          ? `<button class="gh print-row-btn" data-id="${i.id}" type="button">Print</button>`
+          : ''}</td>
       </tr>
     `;
-  }).join('') : '<tr><td colspan="8" class="dim">No incidents logged yet.</td></tr>';
+  }).join('') : '<tr><td colspan="9" class="dim">No incidents logged yet.</td></tr>';
 
   document.querySelectorAll('#rows tr').forEach((tr) => {
     tr.addEventListener('click', () => openEdit(tr.dataset.id));
+  });
+  document.querySelectorAll('.print-row-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const inc = incidents.find((x) => x.id === btn.dataset.id);
+      if (!inc) return;
+      document.getElementById('view-sheet').innerHTML = renderIncidentReportHtml(inc);
+      document.getElementById('view-overlay').hidden = false;
+      window.print();
+    });
   });
 }
 
