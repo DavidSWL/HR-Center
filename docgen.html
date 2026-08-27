@@ -2439,6 +2439,11 @@ function renderIncidentReport() {
   document.getElementById('ir-type').addEventListener('change', (e) => {
     document.getElementById('ir-injury-fields').hidden = e.target.value !== 'Injury';
   });
+  // "Injury" is already the default selected option, so the change
+  // listener above never fires on a fresh form -- without this, the
+  // injury fields (including Treatment Level) never show up unless
+  // someone happens to switch the dropdown away and back to Injury.
+  document.getElementById('ir-injury-fields').hidden = document.getElementById('ir-type').value !== 'Injury';
   document.getElementById('ir-treatment-level').addEventListener('change', (e) => {
     document.getElementById('ir-refusal-field').hidden = e.target.value !== 'refused';
   });
