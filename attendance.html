@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
+<style>.view-type-btn.on{background:var(--accent);border-color:var(--accent);color:#fff}</style>
 </head>
 <body>
 
@@ -89,18 +90,31 @@
     </div>
     <div class="modal-body">
       <div class="frow">
-        <div class="field"><label class="f-lab">Employee</label><div id="view-emp" style="font-size:14px"></div></div>
-        <div class="field"><label class="f-lab">Date</label><div id="view-date" style="font-size:14px"></div></div>
+        <div class="field">
+          <label class="f-lab" for="view-emp-search">Employee</label>
+          <input class="f-in" id="view-emp-search" list="view-emp-opts" placeholder="Type a name…" autocomplete="off">
+          <datalist id="view-emp-opts"></datalist>
+          <input type="hidden" id="view-emp">
+        </div>
+        <div class="field"><label class="f-lab" for="view-date">Date</label><input class="f-in" id="view-date" type="date"></div>
       </div>
-      <div class="frow">
-        <div class="field"><label class="f-lab">Type</label><div id="view-type" style="font-size:14px"></div></div>
-        <div class="field"><label class="f-lab">Entered by</label><div id="view-by" style="font-size:14px"></div></div>
+      <div class="field">
+        <label class="f-lab">Type</label>
+        <div style="display:flex;gap:8px">
+          <button type="button" class="gh view-type-btn" data-type="ncns" style="flex:1">No Call No Show</button>
+          <button type="button" class="gh view-type-btn" data-type="other" style="flex:1">Other</button>
+        </div>
       </div>
-      <div class="field"><label class="f-lab">Reason</label><div id="view-reason" style="font-size:14px"></div></div>
+      <div class="field" id="view-reason-field">
+        <label class="f-lab" for="view-reason">Reason (required for Other)</label>
+        <input class="f-in" id="view-reason">
+      </div>
+      <div class="field"><label class="f-lab">Entered by</label><div id="view-by" style="font-size:14px"></div></div>
     </div>
     <div class="modal-actions">
       <button type="button" class="gh" id="void-btn" style="color:var(--alertTx)">Mark as entered in error</button>
-      <button type="button" class="gh solid" id="view-close-btn">Close</button>
+      <button type="button" class="gh" id="view-close-btn">Cancel</button>
+      <button type="button" class="gh solid" id="view-save-btn">Save changes</button>
     </div>
   </div>
 </div>
@@ -147,6 +161,14 @@ function wireEmpSearch(id, list) {
   search.addEventListener('input', resolve);
   search.addEventListener('change', resolve);
 }
+function setEmpField(id, empId, list) {
+  const emp = list.find((e) => e.id === empId);
+  const search = document.getElementById(`${id}-search`);
+  const hidden = document.getElementById(id);
+  if (!search || !hidden) return;
+  search.value = emp ? `${emp.first_name} ${emp.last_name} (${emp.id})` : '';
+  hidden.value = emp ? emp.id : '';
+}
 
 async function loadEmployees() {
   const snap = await getDocs(collection(db, 'employees'));
@@ -154,10 +176,13 @@ async function loadEmployees() {
     .map((d) => ({ id: d.id, ...d.data() }))
     .filter((e) => e.status !== 'terminated')
     .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
-  document.getElementById('emp-select-opts').innerHTML = employees
+  const empOptsHtml = employees
     .map((e) => `<option value="${escapeHtml(`${e.first_name} ${e.last_name} (${e.id})`)}">`)
     .join('');
+  document.getElementById('emp-select-opts').innerHTML = empOptsHtml;
+  document.getElementById('view-emp-opts').innerHTML = empOptsHtml;
   wireEmpSearch('emp-select', employees);
+  wireEmpSearch('view-emp', employees);
 }
 
 async function loadOccurrences() {
@@ -201,20 +226,50 @@ function renderLog() {
 }
 
 let viewingId = null;
+let viewType = 'ncns';
+function setViewType(type) {
+  viewType = type;
+  document.querySelectorAll('.view-type-btn').forEach((b) => b.classList.toggle('on', b.dataset.type === type));
+  document.getElementById('view-reason-field').style.display = type === 'other' ? 'block' : 'none';
+}
 function openView(id) {
   const o = occurrences.find((x) => x.id === id);
   if (!o) return;
   viewingId = id;
-  document.getElementById('view-emp').textContent = empName(o.emp_id);
-  document.getElementById('view-date').textContent = formatDate(o.date);
-  document.getElementById('view-type').textContent = o.type === 'ncns' ? 'No Call No Show' : 'Other';
+  setEmpField('view-emp', o.emp_id, employees);
+  document.getElementById('view-date').value = o.date || '';
+  setViewType(o.type === 'other' ? 'other' : 'ncns');
+  document.getElementById('view-reason').value = o.reason || '';
   document.getElementById('view-by').textContent = o.entered_by === profile.uid ? 'You' : o.entered_by;
-  document.getElementById('view-reason').textContent = o.reason || '—';
   document.getElementById('view-overlay').hidden = false;
 }
 function closeView() { document.getElementById('view-overlay').hidden = true; viewingId = null; }
 document.getElementById('view-close').addEventListener('click', closeView);
 document.getElementById('view-close-btn').addEventListener('click', closeView);
+document.querySelectorAll('.view-type-btn').forEach((btn) => {
+  btn.addEventListener('click', () => setViewType(btn.dataset.type));
+});
+document.getElementById('view-save-btn').addEventListener('click', async () => {
+  if (!viewingId) return;
+  const empId = document.getElementById('view-emp').value;
+  if (!empId) { showToast('Select an employee.', 'error'); return; }
+  const date = document.getElementById('view-date').value;
+  if (!date) { showToast('Pick a date.', 'error'); return; }
+  const reason = document.getElementById('view-reason').value.trim();
+  if (viewType === 'other' && !reason) { showToast('A reason is required for Other.', 'error'); return; }
+  try {
+    await updateDoc(doc(db, 'attendance', viewingId), {
+      emp_id: empId, date, type: viewType, reason: viewType === 'other' ? reason : '',
+      edited_by: profile.uid, edited_at: serverTimestamp(),
+    });
+    showToast('Occurrence updated.');
+    closeView();
+    await loadOccurrences();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+});
 document.getElementById('void-btn').addEventListener('click', async () => {
   if (!viewingId) return;
   const o = occurrences.find((x) => x.id === viewingId);
