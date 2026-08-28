@@ -86,6 +86,17 @@
 .accept-label-line .lbl{flex:1}
 .accept-label-line .lbl.short{flex:0 0 30%}
 
+/* ---- blank onboarding-packet reference forms — plain prose/grid
+   documents built from the real SWL packet text, printed blank (no
+   fields are ever saved) so HR can hand a full paper packet to a new
+   hire. Reuses the .form-doc family above; these are the extra bits
+   prose documents need that the write-up/termination forms didn't. */
+.fblank{display:inline-block;border-bottom:1px solid #333;min-width:130px;height:1em;vertical-align:bottom}
+.form-list{margin:0;padding-left:0;list-style:none;font-size:12px}
+.form-list li{padding:3px 0}
+.form-list.bullets li{padding-left:14px;position:relative}
+.form-list.bullets li:before{content:"•";position:absolute;left:0}
+
 .tabs{display:flex;gap:0;border:1px solid var(--line);width:fit-content;margin-bottom:14px}
 .tabs .tab{padding:8px 18px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;color:var(--faint);border-right:1px solid var(--line)}
 .tabs .tab:last-child{border-right:none}
@@ -140,6 +151,7 @@ import { initShell, showToast, formatDate, readSpreadsheetSheets, objectsFromRow
 import { db, storage } from './firebaseconfig.js';
 import { LOGO_DATA_URL, LOCATIONS, SCHEDULE_PRESETS, HR_SIGNER, ONBOARDING_CHECKLIST } from './letterhead-assets.js';
 import { JOB_DESCRIPTIONS } from './jobdescriptionsdata.js';
+import { ONBOARDING_FORMS } from './onboardingformsdata.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, writeBatch, serverTimestamp, query, where,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -1982,7 +1994,7 @@ async function renderOnboarding(lang) {
       <div class="card-body">
         ${empSearchFieldHtml('onb-emp', '<label class="f-lab">New hire</label>', employees.filter((e) => e.status === 'onboarding'))}
         ${employees.some((e) => e.status === 'onboarding') ? '' : '<p class="dim">No one is currently in onboarding status.</p>'}
-        <button class="gh solid" id="onb-load-btn" type="button">Load checklist</button>
+        <button class="gh solid" id="onb-load-btn" type="button">Load onboarding packet</button>
       </div>
     </div>
     <div class="form-doc" id="onb-sheet" hidden></div>
@@ -2021,24 +2033,19 @@ async function renderOnboarding(lang) {
           <div class="form-cell" style="grid-column:1/-1"><b>${isEs ? 'Dirección' : 'Address'}</b>&nbsp;</div>
         </div>
         <div class="form-section">${isEs ? 'Documentos de Incorporación' : 'Onboarding Documents'}</div>
-        <p class="dim no-print" style="font-size:11.5px;margin:-2px 0 6px">${isEs ? 'Haga clic en una fila para marcarla. "Abrir" genera el documento aquí mismo, en inglés o español.' : 'Click a row to check it off. "Open" generates that document right here, in English or Spanish.'}</p>
+        <p class="dim no-print" style="font-size:11.5px;margin:-2px 0 6px">${isEs ? 'Haga clic en una fila para marcarla como completada.' : 'Click a row to check it off.'}</p>
         <table class="form-notice-table">
-          <thead><tr><th>${isEs ? 'Formulario' : 'Form'}</th><th class="no-print"></th><th>${isEs ? 'Completado' : 'Completed'}</th></tr></thead>
+          <thead><tr><th>${isEs ? 'Formulario' : 'Form'}</th><th>${isEs ? 'Completado' : 'Completed'}</th></tr></thead>
           <tbody>
-            ${items.map((it, i) => {
-              const openTarget = ONBOARDING_CHECKLIST[i].en === 'Job Description' ? 'jobdesc'
-                : ONBOARDING_CHECKLIST[i].en === 'Offer Letter' ? 'offer' : null;
-              return `
+            ${items.map((it, i) => `
               <tr class="onb-row" data-id="${it.id}" data-index="${i}" style="cursor:pointer">
                 <td>${isEs ? ONBOARDING_CHECKLIST[i].es : it.title}</td>
-                <td class="no-print">${openTarget ? `<button type="button" class="gh onb-open-btn" data-target="${openTarget}" style="padding:2px 10px;font-size:10px">${isEs ? 'Abrir' : 'Open'}</button>` : ''}</td>
                 <td style="text-align:center">
                   <input type="checkbox" class="no-print onb-check" data-id="${it.id}" data-index="${i}" ${it.on_file ? 'checked' : ''}>
                   <span class="print-only">${it.on_file ? '☑' : '☐'}</span>
                 </td>
               </tr>
-            `;
-            }).join('')}
+            `).join('')}
           </tbody>
         </table>
         <div class="form-section">${isEs ? 'Certificación' : 'Certification'}</div>
@@ -2047,6 +2054,21 @@ async function renderOnboarding(lang) {
           <div>${isEs ? 'Fecha' : 'Date'}: ${formatDate(new Date().toISOString().slice(0, 10))}</div>
         </div>
       </div>
+      ${(() => {
+        // The rest of the packet -- the employee's actual Job Description,
+        // appended right after the checklist so Load + Print produces the
+        // whole orientation packet in one go, not just the checklist.
+        const role = JOB_DESCRIPTIONS.find((r) => r.title.en.toLowerCase() === (emp.position || '').trim().toLowerCase());
+        if (!role) {
+          return `<p class="no-print" style="background:#FDEDEC;border:1px solid #E0A8A0;color:#7A1F2B;font-size:11px;padding:8px 10px;margin:16px 0 0">${isEs
+            ? `No se encontró una Descripción del Puesto que coincida con "${escapeHtml(emp.position || '')}" — agréguela desde el generador de Descripción del Puesto si hace falta.`
+            : `No Job Description on file matching "${escapeHtml(emp.position || '')}" — add one from the Job Description generator if this role is missing.`}</p>`;
+        }
+        return `<div class="jd-doc form-page-break" style="margin-top:24px">${buildJobDescriptionHtml(role, isEs ? 'es' : 'en')}</div>`;
+      })()}
+      ${ONBOARDING_FORMS.map((form) => `
+        <div class="form-doc-inner form-page-break" style="margin-top:24px">${buildOnboardingFormHtml(form, isEs ? 'es' : 'en')}</div>
+      `).join('')}
     `;
 
     async function saveCheck(cb) {
@@ -2067,36 +2089,15 @@ async function renderOnboarding(lang) {
     document.querySelectorAll('.onb-check').forEach((cb) => {
       cb.addEventListener('change', () => saveCheck(cb));
     });
-    // Clicking anywhere on the row (not the checkbox or the Open button
-    // themselves, which already have their own handlers) toggles the
-    // checkbox too -- a bigger, easier target when checking things off
-    // fast during orientation.
+    // Clicking anywhere on the row (not the checkbox itself, which has
+    // its own handler) toggles it too -- a bigger, easier target when
+    // checking things off fast during orientation.
     document.querySelectorAll('.onb-row').forEach((tr) => {
       tr.addEventListener('click', (e) => {
-        if (e.target.closest('.onb-check, .onb-open-btn')) return;
+        if (e.target.closest('.onb-check')) return;
         const cb = tr.querySelector('.onb-check');
         cb.checked = !cb.checked;
         saveCheck(cb);
-      });
-    });
-    // "Open" jumps straight to the generator for the one or two checklist
-    // items this app can actually produce (everything else on the list
-    // is an external form kept elsewhere, so there's nothing to open).
-    document.querySelectorAll('.onb-open-btn').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (btn.dataset.target === 'jobdesc') {
-          openGenerator('jobdesc');
-          const role = JOB_DESCRIPTIONS.find((r) => r.title.en.toLowerCase() === (emp.position || '').trim().toLowerCase());
-          if (role) {
-            document.getElementById('jd-role').value = role.key;
-            document.getElementById('jd-load-btn').click();
-          } else {
-            showToast(`No job description on file titled "${emp.position}" — pick the closest match from the list.`, 'error');
-          }
-        } else if (btn.dataset.target === 'offer') {
-          openGenerator('offer');
-        }
       });
     });
   }
@@ -3007,7 +3008,11 @@ function jdField(role, base, lang) {
   return role[`${base}_${lang}`] ?? role[`${base}_en`] ?? '';
 }
 
-function renderJobDescriptionSheet(role, lang) {
+// Builds the job description document as an HTML string (the .jd-doc
+// wrapper's contents) so it can be dropped into the standalone Job
+// Description generator AND embedded inside the onboarding packet,
+// without duplicating this whole template in two places.
+function buildJobDescriptionHtml(role, lang) {
   const t = {
     en: { doctype: 'Job Description', sub: 'Employee Review & Signature Document', ack: 'Acknowledgment', equipTitle: 'Equipment — Must Operate Safely', category: 'Category',
           physReq: 'Physical Requirement', physNotes: 'Notes', ada: 'Reasonable accommodations will be evaluated through the ADA interactive process in partnership with HR.',
@@ -3052,10 +3057,7 @@ function renderJobDescriptionSheet(role, lang) {
     : `<div class="jd-box" style="padding-top:2px">${escapeHtml(s.text)}</div>`
   ).join('');
 
-  const sheet = document.getElementById('jd-sheet');
-  sheet.hidden = false;
-  sheet.scrollIntoView({ behavior: 'smooth' });
-  sheet.innerHTML = `
+  return `
     <div class="jd-topbar">
       <div class="wordmark">SouthWest Landscape</div>
       <div class="sub"><span class="doctype">${t.doctype}</span><span class="docmeta">${t.sub}${meta['Last Revised'] ? ' · ' + escapeHtml(meta['Last Revised']) : ''}</span></div>
@@ -3087,8 +3089,63 @@ function renderJobDescriptionSheet(role, lang) {
       </div>
       <div class="jd-footer">${escapeHtml(footer)}</div>
     </div>
+  `;
+}
+
+// ---- Blank onboarding reference forms (Emergency Form, Confidentiality
+// Agreement, GPS policy, etc.) — these are static, print-only documents
+// transcribed from the real SWL packet. Nothing on them is ever saved;
+// they exist purely so HR can print a full paper packet for a new hire.
+// ONBOARDING_FORMS supplies each document as a list of simple content
+// blocks (paragraph, grid, list, table, signature row...); this turns
+// those blocks into the same .form-doc visual language as the rest of
+// the app instead of every document hand-rolling its own markup.
+function fblank(width) {
+  return `<span class="fblank" style="min-width:${width || 130}px"></span>`;
+}
+function renderFormBlocks(blocks, lang) {
+  return blocks.map((b) => {
+    const en = b.en, es = b.es;
+    if (b.t === 'section') return `<div class="form-section">${lang === 'es' ? es : en}</div>`;
+    if (b.t === 'p') return `<p style="margin:0 0 9px;line-height:1.5">${b.bold ? `<b>${(lang === 'es' ? b.boldEs : b.boldEn)}</b> ` : ''}${lang === 'es' ? es : en}</p>`;
+    if (b.t === 'callout') return `<div class="form-callout">${lang === 'es' ? es : en}</div>`;
+    if (b.t === 'fine') return `<div class="form-fine">${lang === 'es' ? es : en}</div>`;
+    if (b.t === 'list') {
+      const items = lang === 'es' ? b.itemsEs : b.itemsEn;
+      return `<ul class="form-list${b.check ? '' : ' bullets'}">${items.map((it) => `<li>${b.check ? '□ ' : ''}${it}</li>`).join('')}</ul>`;
+    }
+    if (b.t === 'grid') {
+      const cells = lang === 'es' ? b.cellsEs : b.cellsEn;
+      return `<div class="form-grid ${b.cols === 3 ? 'c3' : b.cols === 1 ? 'c1' : 'c2'}" style="${b.cols === 1 ? 'grid-template-columns:1fr' : ''}">${cells.map((c) => `<div class="form-cell"${c.span ? ' style="grid-column:1/-1"' : ''}><b>${c.label}</b>${c.value || '&nbsp;'}</div>`).join('')}</div>`;
+    }
+    if (b.t === 'sig') {
+      const fields = lang === 'es' ? b.fieldsEs : b.fieldsEn;
+      return `<div class="form-grid ${fields.length === 3 ? 'c3' : 'c2'}">${fields.map((f) => `<div class="form-cell"><b>${f}</b>&nbsp;</div>`).join('')}</div>`;
+    }
+    if (b.t === 'table') {
+      const headers = lang === 'es' ? b.headersEs : b.headersEn;
+      return `<table class="form-notice-table"${b.small ? ' style="font-size:9.5px"' : ''}><thead><tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${b.rows.map((r) => `<tr>${(lang === 'es' ? r.es : r.en).map((c, i) => `<td${i === 0 ? '' : ' style="text-align:center;color:#bbb"'}>${i === 0 ? c : '&nbsp;'}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    }
+    return '';
+  }).join('');
+}
+function buildOnboardingFormHtml(form, lang) {
+  return `
+    <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+    <h1 class="form-title">${lang === 'es' ? form.title.es : form.title.en}</h1>
+    ${renderFormBlocks(form.blocks, lang)}
+  `;
+}
+
+function renderJobDescriptionSheet(role, lang) {
+  const backLabel = lang === 'es' ? '← Volver al generador de documentos' : '← Back to document generator';
+  const sheet = document.getElementById('jd-sheet');
+  sheet.hidden = false;
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  sheet.innerHTML = `
+    ${buildJobDescriptionHtml(role, lang)}
     <button class="gh no-print" id="jd-save-btn" type="button" style="margin:14px">Save to Documents</button>
-    <button class="gh no-print" id="jd-back-btn" type="button" style="margin:14px">${t.back}</button>
+    <button class="gh no-print" id="jd-back-btn" type="button" style="margin:14px">${backLabel}</button>
   `;
   document.getElementById('jd-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
   document.getElementById('jd-save-btn').addEventListener('click', () => saveJobDescription(role, lang));
