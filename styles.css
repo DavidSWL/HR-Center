@@ -25,10 +25,17 @@ body{font-family:var(--sans);font-size:14px;line-height:1.5;background:#000;colo
    leaves the rest of the printed page showing through as solid black. */
 @media print{
   body{background:#fff !important;color:#000 !important}
-  /* Keep each grid/box/table together rather than splitting mid-row
-     across a page boundary, and let a specific section force a clean
-     start on the next page via .form-page-break. */
-  .form-grid, .form-box, .form-checks, .form-notice-table, .form-sig { break-inside:avoid; }
+  /* Keep each grid/box together rather than splitting mid-row across a
+     page boundary, and let a specific section force a clean start on the
+     next page via .form-page-break. Tables are handled separately below:
+     a long one (the onboarding checklist, the pesticide training sheet)
+     has to be allowed to break BETWEEN rows across pages, or the whole
+     table gets shoved onto the next page the moment it doesn't fit in
+     whatever space is left on the current one — leaving a blank gap
+     under the section header and the table stranded on its own page. */
+  .form-grid, .form-box, .form-checks, .form-sig { break-inside:avoid; }
+  .form-notice-table tr { break-inside:avoid; }
+  .form-notice-table thead { display:table-header-group; }
   .form-page-break { break-before:page; }
 }
 
