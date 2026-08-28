@@ -10,6 +10,14 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 <style>
+/* Cost still unreviewed (null, not $0) -- flashes continuously (not a
+   one-shot pulse like the nav badges) since it's meant to stay visibly
+   flagged on the log until someone comes back with a number or marks
+   it "No cost incurred." Reuses the same alert-red rgba tint as the
+   nav-flash keyframe in styles.css, just looping instead of firing
+   a fixed number of times. */
+@keyframes cost-pending-flash{0%,100%{background:rgba(179,38,30,0)}50%{background:rgba(179,38,30,.32)}}
+.cost-pending{display:inline-block;padding:2px 8px;border:1px solid var(--alertTx);color:var(--alertTx);font-weight:700;font-size:11px;border-radius:2px;white-space:nowrap;animation:cost-pending-flash 1.3s ease-in-out infinite}
 @media print {
   .side, .bar, .no-print { display:none !important; }
   .print-only { display:inline !important; }
@@ -195,6 +203,9 @@
           <div class="field">
             <label class="f-lab" for="cost">Cost ($)</label>
             <input class="f-in" id="cost" type="number" min="0" step="0.01" placeholder="Leave blank if not yet reviewed">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-top:6px">
+              <input type="checkbox" id="no-cost"> No cost incurred — this incident cost the company nothing
+            </label>
           </div>
           <div class="field">
             <label class="f-lab" for="root-cause">Root cause</label>
@@ -488,7 +499,9 @@ function render() {
         <td>${i.treatment_level === 'refused' ? '<span class="pill mid">Refused</span>' : '<span class="dim">—</span>'}</td>
         <td class="mono">${i.days_away || 0}</td>
         <td class="mono dim">${i.division || '—'}</td>
-        <td class="mono">${i.cost === null || i.cost === undefined ? '<span class="dim" title="Not yet reviewed">—</span>' : '$' + Number(i.cost).toLocaleString()}</td>
+        <td class="mono">${i.cost === null || i.cost === undefined
+          ? '<span class="cost-pending" title="No cost has been entered yet — click the row to add it or mark No cost incurred">Needs cost</span>'
+          : i.cost === 0 ? '<span class="dim">No cost</span>' : '$' + Number(i.cost).toLocaleString()}</td>
         <td>${i.manager_signature_data_url && i.employee_signature_data_url
           ? `<span class="pill ok">Complete</span> <button class="gh print-row-btn" data-id="${i.id}" type="button">Print</button>`
           : `<span class="pill mid sig-collect-btn" data-id="${i.id}" style="cursor:pointer" title="Click to collect">${
@@ -584,6 +597,8 @@ function openEdit(id) {
   document.getElementById('recordable').checked = !!inc.recordable;
   document.getElementById('privacy-case').checked = !!inc.privacy_case;
   document.getElementById('cost').value = (inc.cost === null || inc.cost === undefined) ? '' : inc.cost;
+  document.getElementById('no-cost').checked = inc.cost === 0;
+  syncNoCost();
   document.getElementById('root-cause').value = inc.root_cause || '';
   document.getElementById('corrective-action').value = inc.corrective_action || '';
   document.getElementById('corrective-owner').value = inc.corrective_owner || '';
@@ -739,6 +754,19 @@ document.getElementById('treatment-level').addEventListener('change', (e) => {
   document.getElementById('refusal-field').hidden = e.target.value !== 'refused';
 });
 
+// "No cost incurred" is a distinct choice from "blank" -- blank means
+// nobody has come back with a number yet (still flashes red on the
+// log); this means HR reviewed it and confirmed it genuinely cost
+// nothing (saved as cost: 0, not left null).
+function syncNoCost() {
+  const noCost = document.getElementById('no-cost').checked;
+  const costInput = document.getElementById('cost');
+  costInput.disabled = noCost;
+  if (noCost) costInput.value = '0';
+  else if (costInput.value === '0') costInput.value = '';
+}
+document.getElementById('no-cost').addEventListener('change', syncNoCost);
+
 // Guided recordability -- suggests, never silently decides for you.
 function updateRecordableHint() {
   const level = document.getElementById('treatment-level').value;
@@ -807,7 +835,7 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
       restricted_days: isInjury ? parseInt(document.getElementById('restricted-days').value || '0', 10) : 0,
       recordable: isInjury ? document.getElementById('recordable').checked : false,
       privacy_case: isInjury ? document.getElementById('privacy-case').checked : false,
-      cost: document.getElementById('cost').value === '' ? null : parseFloat(document.getElementById('cost').value),
+      cost: document.getElementById('no-cost').checked ? 0 : (document.getElementById('cost').value === '' ? null : parseFloat(document.getElementById('cost').value)),
       root_cause: document.getElementById('root-cause').value.trim(),
       corrective_action: document.getElementById('corrective-action').value.trim(),
       corrective_owner: correctiveOwner,
