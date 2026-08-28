@@ -355,6 +355,45 @@ function renderTimecardHtml(d) {
   `;
 }
 
+// Mirrors docgen.html's renderMileageSheet, same read-only pattern.
+function renderMileageHtml(d) {
+  const rows = d.rows || [];
+  return `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">Mileage Reimbursement</h1>
+      <div class="form-section">Employee Information</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Employee Name</b>${escapeHtmlAttr(d.emp_name)}</div>
+        <div class="form-cell"><b>Employee ID</b>${escapeHtmlAttr(d.emp_id)}</div>
+        <div class="form-cell"><b>Division</b>${escapeHtmlAttr(d.division)}</div>
+        <div class="form-cell"><b>Pay Period</b>${d.period_start ? formatDate(d.period_start) : ''}${d.period_end ? ' – ' + formatDate(d.period_end) : ''}</div>
+      </div>
+      <div class="form-section">Trip Log</div>
+      <table class="form-notice-table">
+        <thead><tr><th>Date</th><th>From</th><th>To</th><th>Business Purpose</th><th>Miles</th></tr></thead>
+        <tbody>
+          ${rows.map((r) => `<tr><td>${r.date ? formatDate(r.date) : ''}</td><td>${escapeHtmlAttr(r.from)}</td><td>${escapeHtmlAttr(r.to)}</td><td>${escapeHtmlAttr(r.purpose)}</td><td style="text-align:right">${(r.miles || 0).toFixed(1)}</td></tr>`).join('')}
+        </tbody>
+      </table>
+      <div class="form-sig">
+        <div><b>Total Miles</b>${(d.total_miles || 0).toFixed(1)}</div>
+        <div><b>Rate per Mile</b>$${(d.rate || 0).toFixed(3)}</div>
+      </div>
+      <div class="form-sig">
+        <div><b>Total Reimbursement</b>$${(d.total_amount || 0).toFixed(2)}</div>
+        <div></div>
+      </div>
+      <div class="form-fine">This is a reimbursement for business use of a personal vehicle (California Labor Code §2802), calculated using the IRS standard mileage rate. It is not wage payment and does not affect the employee's regular pay rate.</div>
+      <div class="form-section">Employee Electronic Signature</div>
+      ${d.signature_data_url ? `<img src="${d.signature_data_url}" alt="Employee signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not yet signed.</div>'}
+      <div class="form-section">Supervisor or HR Electronic Signature</div>
+      ${d.supervisor_signature_data_url ? `<img src="${d.supervisor_signature_data_url}" alt="Supervisor signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not yet signed.</div>'}
+      <div class="form-fine" style="margin-top:10px">Signed ${formatDate(d.signed_at?.toDate ? d.signed_at.toDate().toISOString().slice(0, 10) : '')}.</div>
+    </div>
+  `;
+}
+
 // Mirrors docgen.html's renderMealPenaltySheet, same read-only pattern.
 function renderMealPenaltyHtml(d) {
   return `
@@ -567,6 +606,7 @@ function openView(d) {
   const isJobDesc = d.content_type === 'jobdesc';
   const isTimecard = d.content_type === 'timecard';
   const isMealPenalty = d.content_type === 'mealpenalty';
+  const isMileage = d.content_type === 'mileage';
   const isRefusal = d.content_type === 'refusal';
   const isMealWaiver2 = d.content_type === 'mealwaiver2';
   const isLetter = d.content_type === 'letter';
@@ -579,6 +619,8 @@ function openView(d) {
     ? renderTimecardHtml(d)
     : isMealPenalty
     ? renderMealPenaltyHtml(d)
+    : isMileage
+    ? renderMileageHtml(d)
     : isRefusal
     ? renderRefusalHtml(d)
     : isMealWaiver2
@@ -716,7 +758,7 @@ function render() {
   document.getElementById('docs-summary').textContent = `${visible.length} of ${docs.length}`;
   document.getElementById('doc-rows').innerHTML = visible.length ? visible.map((d) => `
     <tr>
-      <td>${d.content_type === 'text' || d.content_type === 'sop' || d.content_type === 'jobdesc' || d.content_type === 'timecard' || d.content_type === 'mealpenalty' || d.content_type === 'refusal' || d.content_type === 'mealwaiver2' || d.content_type === 'letter'
+      <td>${d.content_type === 'text' || d.content_type === 'sop' || d.content_type === 'jobdesc' || d.content_type === 'timecard' || d.content_type === 'mealpenalty' || d.content_type === 'mileage' || d.content_type === 'refusal' || d.content_type === 'mealwaiver2' || d.content_type === 'letter'
         ? `<a href="#" class="view-doc-link" data-id="${d.id}">${escapeHtmlAttr(d.title)}</a>`
         : `<a href="${d.file_url}" target="_blank" rel="noopener">${escapeHtmlAttr(d.title)}</a>`
       }${d.policy_doc_id ? ' <span class="pill ok">In Policy Compliance</span>' : ''}</td>

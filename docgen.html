@@ -204,6 +204,7 @@ const GENERATORS = [
 
   { key: 'termination', title: 'Termination', desc: 'Matches the SWL termination form — log, generate, and import', category: 'Separation' },
 
+  { key: 'mileage', title: 'Mileage reimbursement', desc: 'CA business-mileage reimbursement — log trips, calculate the total from the current IRS rate, employee-signed', category: 'Pay & time' },
   { key: 'timecard', title: 'Time card adjustment', desc: 'Employee-signed record of an Aspire punch correction — print, sign, file', category: 'Pay & time' },
   { key: 'mealpenalty', title: 'Missed meal period', desc: 'Documents a missed/delayed break, the CA meal premium owed, and whether a late lunch was still given', category: 'Pay & time' },
   { key: 'mealwaiver2', title: 'Second Meal Period Waiver', desc: 'For emergency-hours days past 10 hours — matches the SWL waiver form, English or Spanish, saves to Documents', category: 'Pay & time' },
@@ -361,7 +362,7 @@ function openGenerator(key) {
   // exactly as supplied — those forms are English-only, so the language
   // toggle only applies to PIP, Onboarding, and the letters (which manage
   // English/Spanish through their own letter-type list instead).
-  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty' || key === 'mealwaiver2' || key === 'review' || key === 'termination' || key === 'incidentreport') ? '' : 'none';
+  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty' || key === 'mealwaiver2' || key === 'mileage' || key === 'review' || key === 'termination' || key === 'incidentreport') ? '' : 'none';
   renderCurrent();
 }
 
@@ -375,6 +376,7 @@ function renderCurrent() {
   if (currentKey === 'refusal') renderRefusal(lang);
   if (currentKey === 'sop') renderSop();
   if (currentKey === 'jobdesc') renderJobDescription(lang);
+  if (currentKey === 'mileage') renderMileage(lang);
   if (currentKey === 'timecard') renderTimecard(lang);
   if (currentKey === 'mealpenalty') renderMealPenalty(lang);
   if (currentKey === 'mealwaiver2') renderMealWaiver2(lang);
@@ -3178,6 +3180,252 @@ function readTimecardForm() {
   return { emp, date: document.getElementById('tc-date').value, rows };
 }
 
+// ---- Mileage reimbursement — CA business-mileage reimbursement (Labor
+// Code 2802 requires necessary business expenses be reimbursed; the IRS
+// standard mileage rate is the commonly-accepted way employers satisfy
+// that for personal-vehicle use). The rate is NOT hardcoded as a fixed
+// fact — the IRS revises it, sometimes mid-year (2026 alone had a
+// January and a July rate) — it's an editable field defaulting to
+// today's rate with an on-screen reminder to confirm at irs.gov, and
+// whatever HR types in is remembered in this browser for next time via
+// localStorage (a convenience default only, never treated as current
+// truth). Miles × rate is a reimbursement of a business expense, not
+// compensation data (pay rate/salary/bonus) — it's fine to save like
+// timecard/mealpenalty's structured rows, which is exactly what
+// IRS accountable-plan recordkeeping (date, purpose, from/to, miles)
+// expects to exist somewhere anyway. ----
+
+const MILEAGE_RATE_KEY = 'swl_mileage_rate';
+let mileageTripRows = [];
+
+function newMileageRow() { return { date: '', from: '', to: '', purpose: '', miles: '' }; }
+
+function renderMileageRows() {
+  const isEs = document.getElementById('lang-select').value === 'es';
+  document.getElementById('mi-rows').innerHTML = mileageTripRows.map((r, i) => `
+    <tr>
+      <td><input class="f-in mi-row-in" data-i="${i}" data-f="date" type="date" value="${r.date}" style="height:32px"></td>
+      <td><input class="f-in mi-row-in" data-i="${i}" data-f="from" value="${escapeHtml(r.from)}" placeholder="${isEs ? 'Desde' : 'From'}" style="height:32px"></td>
+      <td><input class="f-in mi-row-in" data-i="${i}" data-f="to" value="${escapeHtml(r.to)}" placeholder="${isEs ? 'Hasta' : 'To'}" style="height:32px"></td>
+      <td><input class="f-in mi-row-in" data-i="${i}" data-f="purpose" value="${escapeHtml(r.purpose)}" placeholder="${isEs ? 'Motivo del viaje' : 'Business purpose'}" style="height:32px"></td>
+      <td><input class="f-in mi-row-in" data-i="${i}" data-f="miles" type="number" min="0" step="0.1" value="${r.miles}" style="height:32px;width:90px"></td>
+      <td><button class="gh mi-row-remove" data-i="${i}" type="button" ${mileageTripRows.length === 1 ? 'disabled' : ''}>&times;</button></td>
+    </tr>
+  `).join('');
+  document.querySelectorAll('.mi-row-in').forEach((inp) => {
+    inp.addEventListener('input', () => {
+      mileageTripRows[Number(inp.dataset.i)][inp.dataset.f] = inp.value;
+      syncMileageTotal();
+    });
+  });
+  document.querySelectorAll('.mi-row-remove').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      mileageTripRows.splice(Number(btn.dataset.i), 1);
+      renderMileageRows();
+      syncMileageTotal();
+    });
+  });
+  syncMileageTotal();
+}
+
+function syncMileageTotal() {
+  const rate = Number(document.getElementById('mi-rate').value) || 0;
+  const totalMiles = mileageTripRows.reduce((sum, r) => sum + (Number(r.miles) || 0), 0);
+  document.getElementById('mi-total').textContent =
+    `${totalMiles.toFixed(1)} mi × $${rate.toFixed(3)} = $${(totalMiles * rate).toFixed(2)}`;
+}
+
+function renderMileage(lang) {
+  const isEs = lang === 'es';
+  const savedRate = localStorage.getItem(MILEAGE_RATE_KEY) || '0.76';
+  mileageTripRows = [newMileageRow()];
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <div class="frow">
+          ${empSearchFieldHtml('mi-emp', '<label class="f-lab">Employee</label>')}
+          <div class="field"><label class="f-lab">Pay period covered</label>
+            <div style="display:flex;gap:8px">
+              <input class="f-in" id="mi-period-start" type="date">
+              <input class="f-in" id="mi-period-end" type="date">
+            </div>
+          </div>
+        </div>
+        <div class="field" style="max-width:220px">
+          <label class="f-lab">Rate per mile ($)</label>
+          <input class="f-in" id="mi-rate" type="number" min="0" step="0.001" value="${escapeHtml(savedRate)}">
+        </div>
+        <p class="dim" style="font-size:11px;margin:-4px 0 12px">
+          IRS standard mileage rate for 2026: 72.5¢/mi (Jan 1 – Jun 30), 76¢/mi (Jul 1 – Dec 31) — it changed mid-year.
+          Confirm the current rate at irs.gov/tax-professionals/standard-mileage-rates before generating; this field
+          won't update itself when the IRS revises it again.
+        </p>
+        <table>
+          <thead><tr><th>Date</th><th>From</th><th>To</th><th>Business purpose</th><th>Miles</th><th></th></tr></thead>
+          <tbody id="mi-rows"></tbody>
+        </table>
+        <button class="gh" id="mi-add-row-btn" type="button" style="margin-top:8px">+ Add trip</button>
+        <p style="margin:12px 0;font-family:var(--mono);font-size:13px" id="mi-total"></p>
+        <button class="gh solid" id="mi-generate-btn" type="button">Generate</button>
+        <button class="gh" id="mi-log-btn" type="button">Log to activity</button>
+        <div class="frow" style="margin-top:12px">
+          <div class="field"><label class="f-lab">Not signing right now? Save it and get the signature later — who should get it signed</label><select class="f-in" id="mi-sig-assignee">${staff.map((s) => `<option value="${s.id}">${s.name}</option>`).join('')}</select></div>
+          <div class="field"><label class="f-lab">By when</label><input class="f-in" id="mi-sig-due" type="date"></div>
+        </div>
+        <button class="gh" id="mi-save-later-btn" type="button">Save for signature later</button>
+      </div>
+    </div>
+    <div class="form-doc" id="mi-sheet" hidden></div>
+  `;
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('mi-sig-due').value = today;
+  wireEmpSearch('mi-emp');
+  renderMileageRows();
+  document.getElementById('mi-rate').addEventListener('input', syncMileageTotal);
+  document.getElementById('mi-add-row-btn').addEventListener('click', () => {
+    mileageTripRows.push(newMileageRow());
+    renderMileageRows();
+  });
+  document.getElementById('mi-generate-btn').addEventListener('click', () => renderMileageSheet(lang));
+  document.getElementById('mi-log-btn').addEventListener('click', async () => {
+    const emp = employees.find((e) => e.id === document.getElementById('mi-emp').value);
+    if (!emp) { showToast('Select an employee.', 'error'); return; }
+    try {
+      await addDoc(collection(db, 'activity'), {
+        module: 'documents', item: `Mileage reimbursement generated — ${emp.first_name} ${emp.last_name}`,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast('Logged to activity.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not log — ' + err.message, 'error');
+    }
+  });
+  document.getElementById('mi-save-later-btn').addEventListener('click', () => saveMileageForSignature());
+}
+
+function readMileageForm() {
+  const emp = employees.find((e) => e.id === document.getElementById('mi-emp').value);
+  if (!emp) { showToast('Select an employee.', 'error'); return null; }
+  const rate = Number(document.getElementById('mi-rate').value);
+  if (!rate || rate <= 0) { showToast('Enter a rate per mile.', 'error'); return null; }
+  const rows = mileageTripRows
+    .filter((r) => r.date || r.from || r.to || r.purpose || r.miles)
+    .map((r) => ({ date: r.date, from: r.from.trim(), to: r.to.trim(), purpose: r.purpose.trim(), miles: Number(r.miles) || 0 }));
+  if (!rows.length) { showToast('Add at least one trip.', 'error'); return null; }
+  const totalMiles = rows.reduce((sum, r) => sum + r.miles, 0);
+  return {
+    emp, rate, rows, totalMiles, totalAmount: totalMiles * rate,
+    periodStart: document.getElementById('mi-period-start').value,
+    periodEnd: document.getElementById('mi-period-end').value,
+  };
+}
+
+async function saveMileageForSignature() {
+  const f = readMileageForm();
+  if (!f) return;
+  const assigneeId = document.getElementById('mi-sig-assignee').value;
+  const dueDate = document.getElementById('mi-sig-due').value;
+  if (!assigneeId || !dueDate) { showToast('Pick who should get the signature and by when.', 'error'); return; }
+  const assignee = staff.find((s) => s.id === assigneeId);
+  localStorage.setItem(MILEAGE_RATE_KEY, String(f.rate));
+  try {
+    const docRef = doc(collection(db, 'training_documents'));
+    await setDoc(docRef, {
+      content_type: 'mileage', category: 'pay_time', status: 'pending_signature',
+      title: `Mileage Reimbursement — ${f.emp.first_name} ${f.emp.last_name}`,
+      emp_id: f.emp.id, emp_name: `${f.emp.first_name} ${f.emp.last_name}`,
+      division: f.emp.division || '', position: f.emp.position || '',
+      period_start: f.periodStart, period_end: f.periodEnd,
+      rate: f.rate, rows: f.rows, total_miles: f.totalMiles, total_amount: f.totalAmount,
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    const taskRef = doc(collection(db, 'tasks'));
+    await setDoc(taskRef, {
+      assigned_to: assigneeId, due_date: dueDate,
+      instructions: `Get signature — Mileage Reimbursement — ${f.emp.first_name} ${f.emp.last_name}`,
+      recurring: 'none', status: 'open', linked_doc_id: docRef.id, linked_doc_type: 'mileage',
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    await addDoc(collection(db, 'activity'), {
+      module: 'documents', item: `Mileage reimbursement saved for signature — ${f.emp.first_name} ${f.emp.last_name} — assigned to ${assignee?.name || assigneeId}`,
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    showToast('Saved. A task was created — open it from Tasks when the employee is ready to sign.');
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+}
+
+function renderMileageSheet(lang) {
+  const isEs = lang === 'es';
+  const f = readMileageForm();
+  if (!f) return;
+  localStorage.setItem(MILEAGE_RATE_KEY, String(f.rate));
+  const { emp, rate, rows, totalMiles, totalAmount, periodStart, periodEnd } = f;
+
+  const sheet = document.getElementById('mi-sheet');
+  sheet.hidden = false;
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  sheet.innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">${isEs ? 'Reembolso de Millaje' : 'Mileage Reimbursement'}</h1>
+      <div class="form-section">${isEs ? 'Información del Empleado' : 'Employee Information'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Nombre del Empleado' : 'Employee Name'}</b>${emp.first_name} ${emp.last_name}</div>
+        <div class="form-cell"><b>${isEs ? 'ID del Empleado' : 'Employee ID'}</b>${emp.id}</div>
+        <div class="form-cell"><b>${isEs ? 'División' : 'Division'}</b>${emp.division || ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Período de Pago' : 'Pay Period'}</b>${periodStart ? formatDate(periodStart) : ''}${periodEnd ? ' – ' + formatDate(periodEnd) : ''}</div>
+      </div>
+      <div class="form-section">${isEs ? 'Registro de Viajes' : 'Trip Log'}</div>
+      <table class="form-notice-table">
+        <thead><tr>
+          <th>${isEs ? 'Fecha' : 'Date'}</th><th>${isEs ? 'Desde' : 'From'}</th><th>${isEs ? 'Hasta' : 'To'}</th>
+          <th>${isEs ? 'Motivo del Viaje' : 'Business Purpose'}</th><th>${isEs ? 'Millas' : 'Miles'}</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map((r) => `<tr><td>${r.date ? formatDate(r.date) : ''}</td><td>${escapeHtml(r.from)}</td><td>${escapeHtml(r.to)}</td><td>${escapeHtml(r.purpose)}</td><td style="text-align:right">${r.miles.toFixed(1)}</td></tr>`).join('')}
+        </tbody>
+      </table>
+      <div class="form-sig">
+        <div><b>${isEs ? 'Total de Millas' : 'Total Miles'}</b>${totalMiles.toFixed(1)}</div>
+        <div><b>${isEs ? 'Tasa por Milla' : 'Rate per Mile'}</b>$${rate.toFixed(3)}</div>
+      </div>
+      <div class="form-sig">
+        <div><b>${isEs ? 'Reembolso Total' : 'Total Reimbursement'}</b>$${totalAmount.toFixed(2)}</div>
+        <div></div>
+      </div>
+      <div class="form-fine">${isEs
+        ? 'Este es un reembolso por el uso comercial de un vehículo personal (Código Laboral de California §2802), calculado con la tasa estándar de millaje del IRS. No es un pago salarial ni afecta la tasa de pago regular del empleado.'
+        : 'This is a reimbursement for business use of a personal vehicle (California Labor Code §2802), calculated using the IRS standard mileage rate. It is not wage payment and does not affect the employee\'s regular pay rate.'}</div>
+      <div class="form-section">${isEs ? 'Certificación del Empleado' : 'Employee Certification'}</div>
+      <div class="form-box">${isEs
+        ? 'Certifico que los viajes anteriores fueron para fines comerciales de la Compañía y que el millaje registrado es preciso.'
+        : 'I certify that the trips above were for Company business purposes and that the mileage recorded is accurate.'}</div>
+      <div class="form-section">${isEs ? 'Firma Electrónica del Empleado' : 'Employee Electronic Signature'}</div>
+      ${signaturePadHtml('mi-sig-pad', 'mi-sig-clear')}
+      <div class="form-section">${isEs ? 'Firma Electrónica del Supervisor o RH' : 'Supervisor or HR Electronic Signature'}</div>
+      ${signaturePadHtml('mi-sup-sig-pad', 'mi-sup-sig-clear')}
+      <button type="button" class="gh solid no-print" id="mi-sig-save" style="margin-top:10px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
+    </div>
+    <button class="gh no-print" id="mi-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
+  `;
+  document.getElementById('mi-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  document.getElementById('mi-sig-save').addEventListener('click', () => finalizeSignedDocument('mi-sig-pad', {
+    content_type: 'mileage', category: 'pay_time',
+    title: `Mileage Reimbursement — ${emp.first_name} ${emp.last_name}`,
+    emp_id: emp.id, emp_name: `${emp.first_name} ${emp.last_name}`,
+    division: emp.division || '', position: emp.position || '',
+    period_start: periodStart, period_end: periodEnd,
+    rate, rows, total_miles: totalMiles, total_amount: totalAmount,
+  }, 'mi-sup-sig-pad'));
+  setUpSignaturePad('mi-sig-pad', 'mi-sig-clear');
+  setUpSignaturePad('mi-sup-sig-pad', 'mi-sup-sig-clear');
+  sheetRerender = (l) => withPreservedSignature('mi-sup-sig-pad', () => withPreservedSignature('mi-sig-pad', () => renderMileageSheet(l)));
+}
+
 function renderTimecard(lang) {
   document.getElementById('gen-body').innerHTML = `
     <div class="card no-print" style="margin-bottom:16px">
@@ -3394,7 +3642,7 @@ async function loadPendingSignatureDoc(type, id) {
       return;
     }
 
-    // Training_documents-backed types: timecard, mealpenalty, refusal, mealwaiver2, letter
+    // Training_documents-backed types: timecard, mealpenalty, mileage, refusal, mealwaiver2, letter
     const snap = await getDoc(doc(db, 'training_documents', id));
     if (!snap.exists()) { showToast('That saved document could not be found.', 'error'); return; }
     const d = snap.data();
@@ -3436,6 +3684,15 @@ async function loadPendingSignatureDoc(type, id) {
         document.getElementById('mp-pay-date').value = d.pay_date || '';
       }
       renderMealPenaltySheet('en');
+    } else if (type === 'mileage') {
+      setEmpField('mi-emp', d.emp_id);
+      document.getElementById('mi-period-start').value = d.period_start || '';
+      document.getElementById('mi-period-end').value = d.period_end || '';
+      document.getElementById('mi-rate').value = d.rate || '';
+      mileageTripRows = (d.rows || []).map((r) => ({ date: r.date || '', from: r.from || '', to: r.to || '', purpose: r.purpose || '', miles: r.miles ?? '' }));
+      if (!mileageTripRows.length) mileageTripRows = [newMileageRow()];
+      renderMileageRows();
+      renderMileageSheet('en');
     } else if (type === 'refusal') {
       setEmpField('ref-emp', d.emp_id);
       document.getElementById('ref-date').value = d.date || '';
@@ -3510,8 +3767,9 @@ async function finalizeSignedDocument(canvasId, docData, supervisorCanvasId = nu
         status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid,
       });
     }
+    const signedLabel = { timecard: 'Time card adjustment', mealpenalty: 'Missed meal period record', mileage: 'Mileage reimbursement' }[docData.content_type] || 'Document';
     await addDoc(collection(db, 'activity'), {
-      module: 'documents', item: `${docData.content_type === 'timecard' ? 'Time card adjustment' : 'Missed meal period record'} signed — ${docData.emp_name}`,
+      module: 'documents', item: `${signedLabel} signed — ${docData.emp_name}`,
       entered_by: profile.uid, entered_at: serverTimestamp(),
     });
     showToast('Signed and saved — find it any time in Documents.');
@@ -4246,7 +4504,7 @@ await loadDepartmentList();
 // Terminations tab) instead of always landing on the tile menu.
 const requestedOpen = new URLSearchParams(window.location.search).get('open');
 const requestedDocId = new URLSearchParams(window.location.search).get('doc');
-const SIGNABLE_DOC_TYPES = ['timecard', 'mealpenalty', 'refusal', 'mealwaiver2', 'offer', 'pip', 'review', 'termination', 'incidentreport'];
+const SIGNABLE_DOC_TYPES = ['timecard', 'mealpenalty', 'mileage', 'refusal', 'mealwaiver2', 'offer', 'pip', 'review', 'termination', 'incidentreport'];
 if (requestedOpen && GENERATORS.some((g) => g.key === requestedOpen)) {
   openGenerator(requestedOpen);
   if (requestedDocId && SIGNABLE_DOC_TYPES.includes(requestedOpen)) {
