@@ -2021,18 +2021,24 @@ async function renderOnboarding(lang) {
           <div class="form-cell" style="grid-column:1/-1"><b>${isEs ? 'Dirección' : 'Address'}</b>&nbsp;</div>
         </div>
         <div class="form-section">${isEs ? 'Documentos de Incorporación' : 'Onboarding Documents'}</div>
+        <p class="dim no-print" style="font-size:11.5px;margin:-2px 0 6px">${isEs ? 'Haga clic en una fila para marcarla. "Abrir" genera el documento aquí mismo, en inglés o español.' : 'Click a row to check it off. "Open" generates that document right here, in English or Spanish.'}</p>
         <table class="form-notice-table">
-          <thead><tr><th>${isEs ? 'Formulario' : 'Form'}</th><th>${isEs ? 'Completado' : 'Completed'}</th></tr></thead>
+          <thead><tr><th>${isEs ? 'Formulario' : 'Form'}</th><th class="no-print"></th><th>${isEs ? 'Completado' : 'Completed'}</th></tr></thead>
           <tbody>
-            ${items.map((it, i) => `
-              <tr>
+            ${items.map((it, i) => {
+              const openTarget = ONBOARDING_CHECKLIST[i].en === 'Job Description' ? 'jobdesc'
+                : ONBOARDING_CHECKLIST[i].en === 'Offer Letter' ? 'offer' : null;
+              return `
+              <tr class="onb-row" data-id="${it.id}" data-index="${i}" style="cursor:pointer">
                 <td>${isEs ? ONBOARDING_CHECKLIST[i].es : it.title}</td>
+                <td class="no-print">${openTarget ? `<button type="button" class="gh onb-open-btn" data-target="${openTarget}" style="padding:2px 10px;font-size:10px">${isEs ? 'Abrir' : 'Open'}</button>` : ''}</td>
                 <td style="text-align:center">
                   <input type="checkbox" class="no-print onb-check" data-id="${it.id}" data-index="${i}" ${it.on_file ? 'checked' : ''}>
                   <span class="print-only">${it.on_file ? '☑' : '☐'}</span>
                 </td>
               </tr>
-            `).join('')}
+            `;
+            }).join('')}
           </tbody>
         </table>
         <div class="form-section">${isEs ? 'Certificación' : 'Certification'}</div>
@@ -2043,20 +2049,53 @@ async function renderOnboarding(lang) {
       </div>
     `;
 
+    async function saveCheck(cb) {
+      try {
+        await setDoc(doc(db, 'employees', empId, 'onboarding_docs', cb.dataset.id), {
+          title: ONBOARDING_CHECKLIST[cb.dataset.index].en,
+          on_file: cb.checked,
+          entered_by: profile.uid,
+          updated_at: serverTimestamp(),
+        }, { merge: true });
+        cb.closest('td').querySelector('.print-only').textContent = cb.checked ? '☑' : '☐';
+      } catch (err) {
+        console.error(err);
+        showToast('Could not save — ' + err.message, 'error');
+        cb.checked = !cb.checked;
+      }
+    }
     document.querySelectorAll('.onb-check').forEach((cb) => {
-      cb.addEventListener('change', async () => {
-        try {
-          await setDoc(doc(db, 'employees', empId, 'onboarding_docs', cb.dataset.id), {
-            title: ONBOARDING_CHECKLIST[cb.dataset.index].en,
-            on_file: cb.checked,
-            entered_by: profile.uid,
-            updated_at: serverTimestamp(),
-          }, { merge: true });
-          cb.closest('td').querySelector('.print-only').textContent = cb.checked ? '☑' : '☐';
-        } catch (err) {
-          console.error(err);
-          showToast('Could not save — ' + err.message, 'error');
-          cb.checked = !cb.checked;
+      cb.addEventListener('change', () => saveCheck(cb));
+    });
+    // Clicking anywhere on the row (not the checkbox or the Open button
+    // themselves, which already have their own handlers) toggles the
+    // checkbox too -- a bigger, easier target when checking things off
+    // fast during orientation.
+    document.querySelectorAll('.onb-row').forEach((tr) => {
+      tr.addEventListener('click', (e) => {
+        if (e.target.closest('.onb-check, .onb-open-btn')) return;
+        const cb = tr.querySelector('.onb-check');
+        cb.checked = !cb.checked;
+        saveCheck(cb);
+      });
+    });
+    // "Open" jumps straight to the generator for the one or two checklist
+    // items this app can actually produce (everything else on the list
+    // is an external form kept elsewhere, so there's nothing to open).
+    document.querySelectorAll('.onb-open-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (btn.dataset.target === 'jobdesc') {
+          openGenerator('jobdesc');
+          const role = JOB_DESCRIPTIONS.find((r) => r.title.en.toLowerCase() === (emp.position || '').trim().toLowerCase());
+          if (role) {
+            document.getElementById('jd-role').value = role.key;
+            document.getElementById('jd-load-btn').click();
+          } else {
+            showToast(`No job description on file titled "${emp.position}" — pick the closest match from the list.`, 'error');
+          }
+        } else if (btn.dataset.target === 'offer') {
+          openGenerator('offer');
         }
       });
     });
@@ -2979,7 +3018,7 @@ function renderJobDescriptionSheet(role, lang) {
   }[lang];
 
   const meta = role[`meta_${lang}`] || {};
-  const titleBar = jdField(role, 'title', lang) ? `${escapeHtml(jdField(role, 'title', lang))}` : '';
+  const titleBar = (role.title?.[lang] || role.title?.en) ? escapeHtml(role.title[lang] || role.title.en) : '';
   const purpose = jdField(role, 'purpose', lang);
   const responsibilities = role[`responsibilities_${lang}`]?.length ? role[`responsibilities_${lang}`] : role.responsibilities_en;
   const equipIntro = jdField(role, 'equipment_intro', lang);

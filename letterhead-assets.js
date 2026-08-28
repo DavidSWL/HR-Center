@@ -27,6 +27,7 @@ export const HR_SIGNER = {
 // (both English and Spanish versions share this same 24-item list).
 export const ONBOARDING_CHECKLIST = [
   { en: 'Offer Letter', es: 'Carta de Oferta' },
+  { en: 'Job Description', es: 'Descripción del Puesto' },
   { en: 'Resume', es: 'Currículum' },
   { en: 'Application', es: 'Solicitud' },
   { en: 'Emergency Contact', es: 'Contacto de Emergencia' },
