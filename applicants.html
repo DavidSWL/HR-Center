@@ -90,7 +90,8 @@
               <th>Orientation booked</th>
               <th>Orientation done</th>
               <th>Referred by</th>
-              <th>Hired employee</th>
+              <th>Hired</th>
+              <th>Roster</th>
               <th>Referral bonus due</th>
               <th>Referrer paid</th>
               <th>New hire paid</th>
@@ -106,12 +107,78 @@
   </div>
 </div>
 
+<!-- Add to Roster modal -->
+<div class="modal-overlay" id="roster-overlay" hidden>
+  <div class="modal">
+    <div class="modal-h">
+      <h3>Add to roster</h3>
+      <button class="modal-close" id="roster-close" type="button">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="dim" style="margin-bottom:10px">Creates the employee record, the 30/60/90 review schedule (assigned to David), and the onboarding checklist — same as adding them directly in Roster.</p>
+      <div class="field">
+        <label class="f-lab" for="roster-emp-id">Employee ID</label>
+        <input class="f-in" id="roster-emp-id" placeholder="e.g. SWL-1041">
+      </div>
+      <div class="frow">
+        <div class="field">
+          <label class="f-lab" for="roster-first-name">First name</label>
+          <input class="f-in" id="roster-first-name">
+        </div>
+        <div class="field">
+          <label class="f-lab" for="roster-last-name">Last name</label>
+          <input class="f-in" id="roster-last-name">
+        </div>
+      </div>
+      <div class="frow">
+        <div class="field">
+          <label class="f-lab" for="roster-division">Division</label>
+          <input class="f-in" id="roster-division" list="roster-division-options" autocomplete="off">
+          <datalist id="roster-division-options"></datalist>
+        </div>
+        <div class="field">
+          <label class="f-lab" for="roster-position">Job title</label>
+          <input class="f-in" id="roster-position">
+        </div>
+      </div>
+      <div class="frow">
+        <div class="field">
+          <label class="f-lab" for="roster-location">Location</label>
+          <select class="f-in" id="roster-location">
+            <option value="">Select…</option>
+            <option value="OC">OC</option>
+            <option value="LA">LA</option>
+            <option value="IE">IE</option>
+            <option value="Trees">Trees</option>
+            <option value="Enhancements">Enhancements</option>
+            <option value="Corporate">Corporate</option>
+            <option value="Yard">Yard</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="f-lab" for="roster-hire-date">Hire date</label>
+          <input class="f-in" id="roster-hire-date" type="date">
+        </div>
+      </div>
+      <div class="field">
+        <label class="f-lab" for="roster-phone">Phone</label>
+        <input class="f-in" id="roster-phone" type="tel">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="gh" id="roster-cancel-btn">Cancel</button>
+      <button type="button" class="gh solid" id="roster-save-btn">Add to roster</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
 import { db } from './firebaseconfig.js';
+import { ONBOARDING_CHECKLIST } from './letterhead-assets.js';
 import {
-  collection, doc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp,
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
@@ -143,14 +210,32 @@ function addDays(dateStr, days) {
 
 let applicants = [];
 let employees = [];
+let allEmployeesEver = []; // includes terminated -- only for the Add to Roster Employee ID uniqueness check, so a reused ID can never silently overwrite someone's old record
+let departmentList = [];
+let davidUid = null;
 
 async function loadEmployees() {
   const snap = await getDocs(collection(db, 'employees'));
-  employees = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => e.status !== 'terminated');
+  allEmployeesEver = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  employees = allEmployeesEver.filter((e) => e.status !== 'terminated');
   const opts = employees.slice().sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''))
     .map((e) => `<option value="${escapeHtml(`${e.first_name} ${e.last_name} (${e.id})`)}">`).join('');
   document.getElementById('new-app-referrer-opts').innerHTML = opts;
   document.getElementById('hired-emp-opts').innerHTML = opts;
+}
+
+async function loadDepartmentList() {
+  const snap = await getDoc(doc(db, 'settings', 'departments'));
+  departmentList = snap.exists() ? (snap.data().values || []).filter((v) => v.active !== false).map((v) => v.label) : [];
+  document.getElementById('roster-division-options').innerHTML = departmentList.map((d) => `<option value="${escapeHtml(d)}">`).join('');
+}
+
+// David's uid is resolved by role, not hardcoded -- if his account is
+// ever recreated the uid changes, but the role field doesn't.
+async function loadDavidUid() {
+  const snap = await getDocs(collection(db, 'users'));
+  const david = snap.docs.map((d) => ({ id: d.id, ...d.data() })).find((u) => u.role === 'david');
+  davidUid = david ? david.id : null;
 }
 
 // Small local copy of the employee-search pattern used elsewhere in the
@@ -232,8 +317,12 @@ function render() {
         <td><input class="inp orientation-date-in" data-id="${a.id}" type="date" value="${a.orientation_booked_date || ''}" style="height:32px" ${grayed ? 'disabled' : ''}></td>
         <td style="text-align:center"><input type="checkbox" class="app-cb orientation-cb" data-id="${a.id}" ${a.orientation_completed ? 'checked' : ''} ${grayed ? 'disabled' : ''}></td>
         <td class="dim">${isReferral ? (a.referred_by_emp_id ? escapeHtml(empName(a.referred_by_emp_id) || 'Former employee') : '—') : '—'}</td>
-        <td>${isReferral
-          ? `<input class="inp hired-emp-search" data-id="${a.id}" list="hired-emp-opts" value="${linkedEmp ? escapeHtml(`${linkedEmp.first_name} ${linkedEmp.last_name} (${linkedEmp.id})`) : ''}" placeholder="Type a name once hired…" autocomplete="off" style="height:32px;font-size:12.5px;min-width:170px">`
+        <td style="text-align:center"><input type="checkbox" class="app-cb hired-cb" data-id="${a.id}" ${a.hired ? 'checked' : ''}></td>
+        <td style="min-width:190px">${linkedEmp
+          ? `<b>${escapeHtml(`${linkedEmp.first_name} ${linkedEmp.last_name}`)}</b> <span class="dim mono" style="font-size:11px">(${linkedEmp.id})</span><br><button class="gh unlink-roster-btn" data-id="${a.id}" type="button" style="margin-top:4px;font-size:11px;padding:2px 8px">Unlink</button>`
+          : a.hired
+          ? `<button class="gh solid add-to-roster-btn" data-id="${a.id}" type="button" style="font-size:11.5px;padding:4px 10px">+ Add to Roster</button>
+             <div style="margin-top:4px"><input class="inp hired-emp-search" data-id="${a.id}" list="hired-emp-opts" placeholder="…or link an existing employee" autocomplete="off" style="height:28px;font-size:11px;min-width:170px"></div>`
           : '<span class="dim">—</span>'}</td>
         <td class="mono" style="${overdue ? 'color:var(--alertTx);font-weight:700' : ''}">${!isReferral ? '<span class="dim">—</span>' : bonusDue ? formatDate(bonusDue) + (overdue ? ' · overdue' : '') : '<span class="dim">Link hire to see</span>'}</td>
         <td style="text-align:center">${isReferral && linkedEmp
@@ -245,8 +334,23 @@ function render() {
         <td style="text-align:right;white-space:nowrap"><button class="gh remove-btn" data-id="${a.id}" type="button">Remove</button></td>
       </tr>
     `;
-  }).join('') : '<tr><td colspan="14" class="dim">No applicants match.</td></tr>';
+  }).join('') : '<tr><td colspan="15" class="dim">No applicants match.</td></tr>';
 
+  document.querySelectorAll('.hired-cb').forEach((cb) => {
+    cb.addEventListener('change', () => updateApplicant(cb.dataset.id, {
+      hired: cb.checked,
+      hired_at: cb.checked ? new Date().toISOString().slice(0, 10) : null,
+    }));
+  });
+  document.querySelectorAll('.unlink-roster-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!confirm('Unlink this applicant from that employee record? The employee record itself is not affected.')) return;
+      updateApplicant(btn.dataset.id, { hired_emp_id: '' });
+    });
+  });
+  document.querySelectorAll('.add-to-roster-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openAddToRoster(btn.dataset.id));
+  });
   document.querySelectorAll('.prescreen-cb').forEach((cb) => {
     cb.addEventListener('change', () => updateApplicant(cb.dataset.id, { prescreen_passed: cb.checked }));
   });
@@ -330,6 +434,8 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
       physical_passed: false,
       orientation_booked_date: '',
       orientation_completed: false,
+      hired: false,
+      hired_at: null,
       hired_emp_id: '',
       referral_bonus_referrer_paid: false,
       referral_bonus_new_hire_paid: false,
@@ -354,8 +460,118 @@ document.getElementById('new-app-source').addEventListener('change', (e) => {
 document.getElementById('search').addEventListener('input', render);
 document.getElementById('status-filter').addEventListener('change', render);
 
+// ---- Add to Roster -- creates the real employee record from a hired
+// applicant, plus the same 30/60/90 review schedule and onboarding
+// checklist a brand-new hire gets from Roster directly. Reviews are
+// assigned to David specifically (by role, not by whoever is logged in
+// doing the hiring) so his New Hire follow-ups land on him regardless
+// of which HR staffer processes the hire. ----
+
+let rosterTargetApplicantId = null;
+
+function splitName(fullName) {
+  const parts = (fullName || '').trim().split(/\s+/);
+  return { first: parts[0] || '', last: parts.slice(1).join(' ') || '' };
+}
+
+function openAddToRoster(applicantId) {
+  const a = applicants.find((x) => x.id === applicantId);
+  if (!a) return;
+  rosterTargetApplicantId = applicantId;
+  const { first, last } = splitName(a.name);
+  document.getElementById('roster-emp-id').value = '';
+  document.getElementById('roster-first-name').value = first;
+  document.getElementById('roster-last-name').value = last;
+  document.getElementById('roster-division').value = '';
+  document.getElementById('roster-position').value = '';
+  document.getElementById('roster-location').value = '';
+  document.getElementById('roster-hire-date').value = todayStr;
+  document.getElementById('roster-phone').value = '';
+  document.getElementById('roster-overlay').hidden = false;
+}
+function closeAddToRoster() {
+  document.getElementById('roster-overlay').hidden = true;
+  rosterTargetApplicantId = null;
+}
+document.getElementById('roster-close').addEventListener('click', closeAddToRoster);
+document.getElementById('roster-cancel-btn').addEventListener('click', closeAddToRoster);
+
+document.getElementById('roster-save-btn').addEventListener('click', async () => {
+  const applicantId = rosterTargetApplicantId;
+  const a = applicants.find((x) => x.id === applicantId);
+  if (!a) { showToast('That applicant could not be found.', 'error'); closeAddToRoster(); return; }
+
+  const newId = document.getElementById('roster-emp-id').value.trim();
+  const firstName = document.getElementById('roster-first-name').value.trim();
+  const lastName = document.getElementById('roster-last-name').value.trim();
+  const division = document.getElementById('roster-division').value.trim();
+  const position = document.getElementById('roster-position').value.trim();
+  const hireDate = document.getElementById('roster-hire-date').value;
+  if (!newId || !firstName || !lastName || !division || !position || !hireDate) {
+    showToast('Employee ID, name, division, job title, and hire date are all required.', 'error');
+    return;
+  }
+  if (allEmployeesEver.some((e) => e.id === newId)) {
+    showToast(`Employee ID ${newId} is already in use.`, 'error');
+    return;
+  }
+
+  const saveBtn = document.getElementById('roster-save-btn');
+  saveBtn.disabled = true;
+  try {
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'employees', newId), {
+      first_name: firstName, last_name: lastName, division, position,
+      location: document.getElementById('roster-location').value,
+      phone: document.getElementById('roster-phone').value.trim(),
+      hire_date: hireDate,
+      status: 'onboarding',
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+
+    const reviewAssignee = davidUid || profile.uid;
+    if (!davidUid) showToast('Could not find David\'s user account — 30/60/90 reviews were assigned to you instead.', 'error');
+    const hireDateObj = new Date(hireDate + 'T00:00:00');
+    [30, 60, 90].forEach((days) => {
+      const due = new Date(hireDateObj);
+      due.setDate(due.getDate() + days);
+      batch.set(doc(db, 'employees', newId, 'reviews', String(days)), {
+        milestone: days,
+        due_date: due.toISOString().slice(0, 10),
+        review_completed: false,
+        form_received: false,
+        assigned_to: reviewAssignee,
+        entered_by: profile.uid,
+      });
+    });
+
+    ONBOARDING_CHECKLIST.forEach((docItem, i) => {
+      batch.set(doc(db, 'employees', newId, 'onboarding_docs', String(i)), {
+        title: docItem.en, on_file: false, entered_by: profile.uid,
+      });
+    });
+
+    await batch.commit();
+    await updateDoc(doc(db, 'applicants', applicantId), {
+      hired_emp_id: newId, entered_by: profile.uid, updated_at: serverTimestamp(),
+    });
+
+    showToast('Added to roster — 30/60/90 reviews and onboarding checklist created.');
+    closeAddToRoster();
+    await loadEmployees();
+    await loadApplicants();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not add to roster — ' + err.message, 'error');
+  } finally {
+    saveBtn.disabled = false;
+  }
+});
+
 wireEmpSearch('new-app-referrer');
 await loadEmployees();
+await loadDepartmentList();
+await loadDavidUid();
 await loadApplicants();
 </script>
 </body>
