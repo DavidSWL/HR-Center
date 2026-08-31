@@ -74,6 +74,18 @@
         </div>
       </div>
 
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>Office employees</h3><span id="office-summary">—</span></div>
+        <div class="tools">
+          <input class="inp" id="office-search" placeholder="Search employees" style="min-width:220px">
+        </div>
+        <table>
+          <thead><tr><th>Employee</th><th>Division</th><th>Title</th><th></th></tr></thead>
+          <tbody id="office-rows"></tbody>
+        </table>
+        <div class="legend"><span>Used to group employees for Harassment Training filtering (Manager / Office / Field) — doesn't change the 2-hr/1-hr legal requirement, which is still based on the Managers list above. Anyone not checked here (and not a manager) is treated as Field.</span></div>
+      </div>
+
       <div class="card">
         <div class="card-h"><h3>HR team &amp; access</h3><span>Read-only here</span></div>
         <table>
@@ -250,6 +262,46 @@ function renderManagers() {
 }
 document.getElementById('managers-search').addEventListener('input', renderManagers);
 
+let officeIds = new Set();
+
+async function loadOfficeEmployees() {
+  const snap = await getDoc(doc(db, 'settings', 'office_employees'));
+  officeIds = new Set(snap.exists() ? (snap.data().employee_ids || []) : []);
+  renderOffice();
+}
+
+function renderOffice() {
+  const q = document.getElementById('office-search').value.trim().toLowerCase();
+  const visible = allEmployees.filter((e) => !q || `${e.first_name} ${e.last_name}`.toLowerCase().includes(q));
+  document.getElementById('office-summary').textContent = `${officeIds.size} marked as office`;
+  document.getElementById('office-rows').innerHTML = visible.length ? visible.map((e) => `
+    <tr>
+      <td>${e.first_name} ${e.last_name}</td>
+      <td class="mono dim">${e.division || '—'}</td>
+      <td class="dim">${e.position || '—'}</td>
+      <td style="text-align:right"><input type="checkbox" class="office-check" data-id="${e.id}" ${officeIds.has(e.id) ? 'checked' : ''}></td>
+    </tr>
+  `).join('') : '<tr><td colspan="4" class="dim">No employees match.</td></tr>';
+
+  document.querySelectorAll('.office-check').forEach((cb) => {
+    cb.addEventListener('change', async () => {
+      if (cb.checked) officeIds.add(cb.dataset.id);
+      else officeIds.delete(cb.dataset.id);
+      try {
+        await setDoc(doc(db, 'settings', 'office_employees'), {
+          employee_ids: [...officeIds], entered_by: profile.uid, updated_at: serverTimestamp(),
+        });
+        document.getElementById('office-summary').textContent = `${officeIds.size} marked as office`;
+      } catch (err) {
+        console.error(err);
+        showToast('Could not update — ' + err.message, 'error');
+        cb.checked = !cb.checked;
+      }
+    });
+  });
+}
+document.getElementById('office-search').addEventListener('input', renderOffice);
+
 document.getElementById('add-manager-btn').addEventListener('click', async () => {
   const id = document.getElementById('new-mgr-id').value.trim();
   const first = document.getElementById('new-mgr-first').value.trim();
@@ -306,6 +358,7 @@ async function loadStaff() {
 renderTabs();
 await loadList();
 await loadManagers();
+await loadOfficeEmployees();
 await loadStaff();
 </script>
 </body>
