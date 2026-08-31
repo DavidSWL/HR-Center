@@ -38,8 +38,9 @@
         <div><div class="v hot" id="sum-overdue">—</div><div class="k">Overdue</div></div>
         <div><div class="v n" id="sum-duesoon">—</div><div class="k">Due within 60 days</div></div>
         <div><div class="v" id="sum-ontrack">—</div><div class="k">On track</div></div>
-        <div><div class="v n" id="sum-managers">—</div><div class="k">Managers · 2-hr requirement</div></div>
-        <div><div class="v n" id="sum-nonmanagers">—</div><div class="k">Non-managers · 1-hr requirement</div></div>
+        <div><div class="v n" id="sum-managers">—</div><div class="k">Managers · 2-hr</div></div>
+        <div><div class="v n" id="sum-office">—</div><div class="k">Office · 1-hr</div></div>
+        <div><div class="v n" id="sum-field">—</div><div class="k">Field · 1-hr</div></div>
       </div>
 
       <div class="card">
@@ -49,7 +50,8 @@
           <select class="inp" id="role-filter">
             <option value="">Everyone</option>
             <option value="manager">Managers (2-hr)</option>
-            <option value="nonmanager">Non-managers (1-hr)</option>
+            <option value="office">Office (1-hr)</option>
+            <option value="field">Field (1-hr)</option>
           </select>
           <select class="inp" id="status-filter">
             <option value="">Any status</option>
@@ -146,6 +148,7 @@ function addMonths(dateStr, months) {
 
 let employees = [];
 let managerIds = new Set();
+let officeIds = new Set();
 let records = {}; // empId -> {completed_date, due_date, entered_by, entered_at}
 let staff = [];
 let sortKey = 'due';
@@ -157,9 +160,10 @@ function staffName(uid) {
 }
 
 async function loadAll() {
-  const [empSnap, mgrSnap, recSnap, staffSnap] = await Promise.all([
+  const [empSnap, mgrSnap, officeSnap, recSnap, staffSnap] = await Promise.all([
     getDocs(collection(db, 'employees')),
     getDoc(doc(db, 'settings', 'managers')),
+    getDoc(doc(db, 'settings', 'office_employees')),
     getDocs(collectionGroup(db, 'harassment_training')),
     getDocs(collection(db, 'users')),
   ]);
@@ -170,6 +174,7 @@ async function loadAll() {
     .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
 
   managerIds = new Set(mgrSnap.exists() ? (mgrSnap.data().employee_ids || []) : []);
+  officeIds = new Set(officeSnap.exists() ? (officeSnap.data().employee_ids || []) : []);
 
   records = {};
   recSnap.forEach((d) => { records[d.ref.parent.parent.id] = d.data(); });
@@ -178,6 +183,17 @@ async function loadAll() {
 
   render();
 }
+
+// Manager status decides the legal 2-hr/1-hr requirement -- unchanged.
+// Office/Field is a separate, non-legal grouping (set in Settings) only
+// used to filter this list; someone marked both a manager and office
+// still counts as "manager" here so the three groups don't overlap.
+function groupFor(empId) {
+  if (managerIds.has(empId)) return 'manager';
+  if (officeIds.has(empId)) return 'office';
+  return 'field';
+}
+const GROUP_LABEL = { manager: 'Manager', office: 'Office', field: 'Field' };
 
 // A row's due date -- computed from the stored cycle if one exists,
 // otherwise the initial 6-months-from-hire deadline SB 1343 sets for
@@ -201,11 +217,12 @@ function render() {
   const statusFilter = document.getElementById('status-filter').value;
 
   let rows = employees.map((emp) => {
-    const isManager = managerIds.has(emp.id);
+    const group = groupFor(emp.id);
+    const isManager = group === 'manager';
     const rec = records[emp.id];
     const due = dueDateFor(emp);
     const status = statusFor(due);
-    return { emp, isManager, rec, due, status };
+    return { emp, group, isManager, rec, due, status };
   });
 
   const overdue = rows.filter((r) => r.status === 'overdue').length;
@@ -214,13 +231,13 @@ function render() {
   document.getElementById('sum-overdue').textContent = overdue;
   document.getElementById('sum-duesoon').textContent = dueSoon;
   document.getElementById('sum-ontrack').textContent = onTrack;
-  document.getElementById('sum-managers').textContent = rows.filter((r) => r.isManager).length;
-  document.getElementById('sum-nonmanagers').textContent = rows.filter((r) => !r.isManager).length;
+  document.getElementById('sum-managers').textContent = rows.filter((r) => r.group === 'manager').length;
+  document.getElementById('sum-office').textContent = rows.filter((r) => r.group === 'office').length;
+  document.getElementById('sum-field').textContent = rows.filter((r) => r.group === 'field').length;
 
   let visible = rows.filter((r) => {
     if (q && !`${r.emp.first_name} ${r.emp.last_name}`.toLowerCase().includes(q)) return false;
-    if (roleFilter === 'manager' && !r.isManager) return false;
-    if (roleFilter === 'nonmanager' && r.isManager) return false;
+    if (roleFilter && r.group !== roleFilter) return false;
     if (statusFilter && r.status !== statusFilter) return false;
     return true;
   });
@@ -241,7 +258,7 @@ function render() {
     <tr class="row-clickable" data-id="${r.emp.id}" style="cursor:pointer">
       <td style="text-align:center"><input type="checkbox" class="row-cb" data-id="${r.emp.id}"></td>
       <td><b>${r.emp.first_name} ${r.emp.last_name}</b></td>
-      <td class="dim">${r.isManager ? 'Manager' : 'Non-manager'}</td>
+      <td class="dim">${GROUP_LABEL[r.group]}</td>
       <td class="mono dim">${r.isManager ? '2 hr' : '1 hr'}</td>
       <td class="mono">${r.rec?.completed_date ? formatDate(r.rec.completed_date) : '<span class="dim">Never</span>'}</td>
       <td class="mono">${r.due ? formatDate(r.due) : '<span class="dim">—</span>'}</td>
@@ -326,11 +343,12 @@ function openModal(empId) {
   const emp = employees.find((e) => e.id === empId);
   if (!emp) return;
   modalEmpId = empId;
-  const isManager = managerIds.has(empId);
+  const group = groupFor(empId);
+  const isManager = group === 'manager';
   const rec = records[empId];
   const due = dueDateFor(emp);
   document.getElementById('modal-title').textContent = `${emp.first_name} ${emp.last_name}`;
-  document.getElementById('modal-role').textContent = `${isManager ? 'Manager — 2 hour requirement' : 'Non-manager — 1 hour requirement'}`;
+  document.getElementById('modal-role').textContent = `${GROUP_LABEL[group]} — ${isManager ? '2 hour' : '1 hour'} requirement`;
   document.getElementById('modal-due').textContent = due ? formatDate(due) : 'No hire date on file — can\'t compute a due date';
   const lastField = document.getElementById('modal-last-field');
   if (rec?.completed_date) {
