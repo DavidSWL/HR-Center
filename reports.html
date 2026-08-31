@@ -77,7 +77,7 @@
 import { requireAuth } from './auth.js';
 import { initShell, formatDate } from './app.js';
 import { db } from './firebaseconfig.js';
-import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { collection, collectionGroup, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
@@ -94,7 +94,7 @@ const REPORTS = [
   { key: 'safety', title: 'Safety and cost', desc: 'Cost by type, incident rankings' },
   { key: 'compliance', title: 'Policy compliance', desc: 'Current snapshot — missing by document' },
   { key: 'reviews', title: 'New hires and reviews', desc: 'Onboarding volume, overdue reviews' },
-  { key: 'applicants', title: 'Applicants', desc: 'Applicants vs. passed interview vs. hired, by source' },
+  { key: 'applicants', title: 'Applicants', desc: 'Pipeline funnel, outcomes, source, and role applied for' },
   { key: 'recurring', title: 'Recurring issues', desc: 'Employees showing up across multiple modules' },
   { key: 'output', title: 'Team output', desc: 'Completed work by person, from the activity log' },
 ];
@@ -642,9 +642,17 @@ async function renderReport(key) {
   else if (key === 'applicants') {
     await ensureLoaded(['applicants']);
     const apps = data.applicants.filter((a) => inRange(a.applied_date, range));
-    const passed = apps.filter((a) => a.interview_status === 'passed').length;
-    const notPassed = apps.filter((a) => a.interview_status === 'not_passed').length;
-    const hired = apps.filter((a) => a.orientation_completed).length;
+
+    // Same definitions the Applicants tab itself uses (outcome is the
+    // real signal now — hired/orientation_completed used to stand in
+    // for it before the outcome field existed).
+    const CLOSED_OUT = ['rejected', 'not_selected', 'resume_on_file', 'not_interested'];
+    const hired = apps.filter((a) => a.outcome === 'hired').length;
+    const rejected = apps.filter((a) => a.outcome === 'rejected' || a.interview_status === 'not_passed').length;
+    const notSelected = apps.filter((a) => a.outcome === 'not_selected').length;
+    const resumeOnFile = apps.filter((a) => a.outcome === 'resume_on_file').length;
+    const notInterested = apps.filter((a) => a.outcome === 'not_interested').length;
+    const stillActive = apps.filter((a) => a.interview_status !== 'not_passed' && a.outcome !== 'hired' && !CLOSED_OUT.includes(a.outcome)).length;
 
     const SOURCE_LABELS = { walk_in: 'Walk-in', referral: 'Referral', past_employee: 'Past employee', indeed: 'Indeed' };
     const bySource = {};
@@ -652,21 +660,64 @@ async function renderReport(key) {
       const label = SOURCE_LABELS[a.source] || a.source || 'Unspecified';
       bySource[label] = (bySource[label] || 0) + 1;
     });
+    const byRole = {};
+    apps.forEach((a) => {
+      const label = a.position_applied || 'Not specified';
+      byRole[label] = (byRole[label] || 0) + 1;
+    });
+
+    const funnelPairs = [
+      ['Applied', apps.length],
+      ['Pre-screen passed', apps.filter((a) => a.prescreen_passed).length],
+      ['Interview passed', apps.filter((a) => a.interview_status === 'passed').length],
+      ['Physical / drug exam passed', apps.filter((a) => a.physical_passed).length],
+      ['Orientation completed', apps.filter((a) => a.orientation_completed).length],
+      ['Hired', hired],
+    ];
+    const outcomePairs = [
+      ['Still active', stillActive],
+      ['Hired', hired],
+      ['Rejected', rejected],
+      ['Not selected to move forward', notSelected],
+      ['Resume on file', resumeOnFile],
+      [`Manager wasn't interested`, notInterested],
+    ];
 
     body.innerHTML = statLine(range, `denominator: ${apps.length} applicants added in range`) + `
       <div class="big">
         <div><div class="v n">${apps.length}</div><div class="k">Applicants</div></div>
-        <div><div class="v n">${passed}</div><div class="k">Passed interview</div></div>
-        <div><div class="v hot">${notPassed}</div><div class="k">Did not pass</div></div>
-        <div><div class="v n">${hired}</div><div class="k">Hired (orientation done)</div></div>
+        <div><div class="v n">${stillActive}</div><div class="k">Still active</div></div>
+        <div><div class="v n">${hired}</div><div class="k">Hired</div></div>
+        <div><div class="v hot">${rejected}</div><div class="k">Rejected</div></div>
       </div>
-      <div class="card">
-        <div class="card-h"><h3>By how they applied</h3><span></span></div>
-        <table><tbody>${Object.entries(bySource).map(([s, c]) => `<tr><td>${s}</td><td class="mono" style="text-align:right">${c}</td></tr>`).join('') || '<tr><td class="dim">No applicants in range.</td></tr>'}</tbody></table>
+      <div class="two">
+        <div class="card">
+          <div class="card-h"><h3>Pipeline funnel</h3><span></span></div>
+          ${rankHtmlOrdered(funnelPairs, 'No applicants in range.')}
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Outcome</h3><span></span></div>
+          ${rankHtmlOrdered(outcomePairs, 'No applicants in range.')}
+        </div>
       </div>
-      <p class="dim" style="margin-top:10px;font-size:12px">Range is by date applied. Full tracker with names lives on the Applicants tab.</p>
+      <div class="two">
+        <div class="card">
+          <div class="card-h"><h3>By how they applied</h3><span></span></div>
+          ${rankHtml(topN(bySource, 6), 'No applicants in range.')}
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>By role applied for</h3><span></span></div>
+          ${rankHtml(topN(byRole, 8), 'No applicants in range.')}
+        </div>
+      </div>
+      <p class="dim" style="margin-top:10px;font-size:12px">Range is by date applied — an applicant with no known applied date (N/A) falls outside any dated range. Full tracker with names lives on the Applicants tab.</p>
     `;
-    lastCsv = [['Metric', 'Count'], ['Applicants', apps.length], ['Passed interview', passed], ['Did not pass', notPassed], ['Hired', hired], ...Object.entries(bySource)];
+    lastCsv = [
+      ['Metric', 'Count'],
+      ['Applicants', apps.length], ['Still active', stillActive], ['Hired', hired], ['Rejected', rejected],
+      ['Not selected to move forward', notSelected], ['Resume on file', resumeOnFile], [`Manager wasn't interested`, notInterested],
+      ...funnelPairs, ...Object.entries(bySource), ...Object.entries(byRole),
+    ];
   }
 
   else if (key === 'recurring') {

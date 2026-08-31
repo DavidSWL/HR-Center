@@ -16,6 +16,8 @@
 .app-cb{width:17px;height:17px;cursor:pointer}
 .app-cb:disabled{cursor:not-allowed}
 .app-name-cell{font-weight:600}
+.app-name-btn{background:none;border:none;padding:0;margin:0;font:inherit;font-weight:600;color:inherit;cursor:pointer;text-decoration:underline;text-decoration-color:var(--faint);text-underline-offset:2px}
+.app-name-btn:hover{color:var(--accentTx);text-decoration-color:var(--accentTx)}
 </style>
 </head>
 <body>
@@ -40,6 +42,8 @@
       <div class="card" style="margin-bottom:16px">
         <div class="card-h"><h3>Pipeline</h3><span id="pipeline-summary">—</span></div>
         <div class="card-body" id="pipeline-body"></div>
+        <div class="card-h" style="border-top:1px solid var(--line)"><h3>Resume on file pool</h3><span>Worth a call the next time a role opens</span></div>
+        <div class="card-body" id="pipeline-resume-pool"></div>
       </div>
 
       <div class="card" style="margin-bottom:16px">
@@ -95,6 +99,7 @@
             <option value="hired">Hired</option>
             <option value="not_passed">Did not pass interview</option>
             <option value="rejected">Rejected</option>
+            <option value="not_selected">Not selected to move forward</option>
             <option value="resume_on_file">Resume on file</option>
             <option value="not_interested">Manager wasn't interested</option>
             <option value="oriented">Orientation completed</option>
@@ -205,7 +210,7 @@
 <div class="modal-overlay" id="edit-app-overlay" hidden>
   <div class="modal">
     <div class="modal-h">
-      <h3>Edit applicant</h3>
+      <h3>Applicant details</h3>
       <button class="modal-close" id="edit-app-close" type="button">&times;</button>
     </div>
     <div class="modal-body">
@@ -239,6 +244,10 @@
         <select class="f-in" id="edit-app-position"></select>
         <input class="f-in" id="edit-app-position-other" placeholder="Role title" style="margin-top:6px" hidden>
       </div>
+
+      <div style="margin:16px 0 10px;padding-top:14px;border-top:1px solid var(--line);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)">Where they are</div>
+      <div id="edit-app-progress-summary" style="margin-bottom:12px"></div>
+      <div id="edit-app-progress-fields"></div>
     </div>
     <div class="modal-actions">
       <button type="button" class="gh" id="edit-app-cancel-btn">Cancel</button>
@@ -455,7 +464,7 @@ const FUNNEL_STAGES = [
 ];
 function renderPipeline() {
   const stillMoving = applicants.filter((a) => a.interview_status !== 'not_passed'
-    && !['rejected', 'resume_on_file', 'not_interested', 'hired'].includes(a.outcome));
+    && !['rejected', 'not_selected', 'resume_on_file', 'not_interested', 'hired'].includes(a.outcome));
   const stageCounts = FUNNEL_STAGES.map((s) => ({ label: s.label, count: stillMoving.filter(s.test).length }));
   const max = Math.max(1, stageCounts[0].count);
   document.getElementById('pipeline-body').innerHTML = stageCounts.map((s) => `
@@ -468,10 +477,25 @@ function renderPipeline() {
 
   const hiredCount = applicants.filter((a) => a.outcome === 'hired').length;
   const rejectedCount = applicants.filter((a) => a.outcome === 'rejected' || a.interview_status === 'not_passed').length;
-  const resumeCount = applicants.filter((a) => a.outcome === 'resume_on_file').length;
+  const notSelectedCount = applicants.filter((a) => a.outcome === 'not_selected').length;
+  const resumePool = applicants.filter((a) => a.outcome === 'resume_on_file');
   const notInterestedCount = applicants.filter((a) => a.outcome === 'not_interested').length;
   document.getElementById('pipeline-summary').textContent =
-    `${stillMoving.length} still moving — ${hiredCount} hired, ${rejectedCount} rejected, ${resumeCount} resume on file, ${notInterestedCount} not interested`;
+    `${stillMoving.length} still moving — ${hiredCount} hired, ${rejectedCount} rejected, ${notSelectedCount} not selected to move forward, ${resumePool.length} resume on file, ${notInterestedCount} not interested`;
+
+  // Resume on file isn't a dead end like Rejected -- it's a bench of
+  // people worth a call the next time a role opens up, so it gets its
+  // own browsable pool here instead of just a number in the tally above.
+  document.getElementById('pipeline-resume-pool').innerHTML = resumePool.length
+    ? resumePool.map((a) => `
+        <button type="button" class="gh pool-app-btn" data-id="${a.id}" style="font-size:11.5px;padding:4px 10px;margin:0 6px 6px 0">
+          ${escapeHtml(a.name)}${a.position_applied ? ` <span class="dim">— ${escapeHtml(a.position_applied)}</span>` : ''}
+        </button>
+      `).join('')
+    : '<span class="dim" style="font-size:12.5px">Nobody in the resume pool right now.</span>';
+  document.querySelectorAll('.pool-app-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openEditApplicant(btn.dataset.id));
+  });
 }
 
 function empName(empId) {
@@ -485,7 +509,7 @@ function render() {
   const appliedFrom = document.getElementById('applied-from').value;
   const appliedTo = document.getElementById('applied-to').value;
 
-  const CLOSED_OUT_OUTCOMES = ['rejected', 'resume_on_file', 'not_interested'];
+  const CLOSED_OUT_OUTCOMES = ['rejected', 'not_selected', 'resume_on_file', 'not_interested'];
   const visible = applicants.filter((a) => {
     if (q && !(a.name || '').toLowerCase().includes(q)) return false;
     // Active pipeline: once someone's Hired, they've graduated to the
@@ -497,6 +521,7 @@ function render() {
     if (statusFilter === 'hired' && a.outcome !== 'hired') return false;
     if (statusFilter === 'not_passed' && a.interview_status !== 'not_passed') return false;
     if (statusFilter === 'rejected' && a.outcome !== 'rejected') return false;
+    if (statusFilter === 'not_selected' && a.outcome !== 'not_selected') return false;
     if (statusFilter === 'resume_on_file' && a.outcome !== 'resume_on_file') return false;
     if (statusFilter === 'not_interested' && a.outcome !== 'not_interested') return false;
     if (statusFilter === 'oriented' && !a.orientation_completed) return false;
@@ -533,7 +558,7 @@ function render() {
     const overdue = bonusDue && !bothPaid && bonusDue < todayStr;
     return `
       <tr class="app-row${grayed ? ' grayed' : ''}" data-id="${a.id}">
-        <td class="app-name-cell">${escapeHtml(a.name)}</td>
+        <td class="app-name-cell"><button type="button" class="app-name-btn edit-app-btn" data-id="${a.id}">${escapeHtml(a.name)}</button></td>
         <td class="dim">${SOURCE_LABELS[a.source] || a.source}</td>
         <td class="dim">${escapeHtml(a.position_applied) || '—'}</td>
         <td class="mono dim">${a.applied_date === 'N/A' ? 'N/A' : formatDate(a.applied_date)}</td>
@@ -554,6 +579,7 @@ function render() {
             <option value="" ${!a.outcome ? 'selected' : ''}>— Active —</option>
             <option value="hired" ${a.outcome === 'hired' ? 'selected' : ''}>Hired</option>
             <option value="rejected" ${a.outcome === 'rejected' ? 'selected' : ''}>Rejected</option>
+            <option value="not_selected" ${a.outcome === 'not_selected' ? 'selected' : ''}>Not selected to move forward</option>
             <option value="resume_on_file" ${a.outcome === 'resume_on_file' ? 'selected' : ''}>Resume on file</option>
             <option value="not_interested" ${a.outcome === 'not_interested' ? 'selected' : ''}>Manager wasn't interested</option>
           </select>
@@ -847,14 +873,105 @@ document.getElementById('roster-save-btn').addEventListener('click', async () =>
   }
 });
 
-// ---- Edit applicant -- name, source/referrer, applied-for role, and
-// applied date are only ever set once on the "New applicant" form above;
-// this reopens those same fields for an applicant already in the
-// tracker instead of leaving them stuck once a typo or a role guess
-// needs fixing. Everything else (pre-screen, interview, outcome, etc.)
-// is already editable inline in the table row itself. ----
+// ---- Edit applicant -- click a name (or the Edit button) to open this.
+// Name, source/referrer, applied-for role, and applied date only ever
+// got set once on the "New applicant" form above, with no way back in
+// once a typo or a role guess needed fixing -- those live at the top,
+// saved together via the Save button. Everything below "Where they
+// are" (pre-screen, interview, physical, orientation, outcome) is the
+// same live per-field editing the table row already does -- it saves
+// itself the moment you change it, same as clicking those same
+// checkboxes/selects out in the tracker, just gathered in one place
+// alongside the progress readout instead of scattered across columns. ----
 
 let editTargetApplicantId = null;
+
+function progressSummaryHtml(a) {
+  const stages = [
+    { label: 'Pre-screen', done: !!a.prescreen_passed },
+    { label: 'Interview', done: a.interview_status === 'passed', failed: a.interview_status === 'not_passed' },
+    { label: 'Physical / drug exam', done: !!a.physical_passed },
+    { label: 'Orientation', done: !!a.orientation_completed },
+    { label: 'Hired', done: a.outcome === 'hired' },
+  ];
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap">${stages.map((s) => `
+    <span class="pill ${s.done ? 'ok' : s.failed ? 'bad' : ''}">${s.done ? '✓' : s.failed ? '✕' : '○'} ${s.label}</span>
+  `).join('')}</div>`;
+}
+
+function progressFieldsHtml(a) {
+  return `
+    <div class="frow">
+      <div class="field">
+        <label class="f-lab">Pre-screen</label>
+        <label style="display:block;font-size:12.5px"><input type="checkbox" id="edit-app-prescreen" ${a.prescreen_passed ? 'checked' : ''}> Passed</label>
+      </div>
+      <div class="field">
+        <label class="f-lab" for="edit-app-interview">1st round interview</label>
+        <select class="f-in" id="edit-app-interview">
+          <option value="pending" ${a.interview_status === 'pending' || !a.interview_status ? 'selected' : ''}>Pending</option>
+          <option value="passed" ${a.interview_status === 'passed' ? 'selected' : ''}>Passed</option>
+          <option value="not_passed" ${a.interview_status === 'not_passed' ? 'selected' : ''}>Did not pass</option>
+        </select>
+      </div>
+    </div>
+    <div class="frow">
+      <div class="field">
+        <label class="f-lab">Physical / drug exam</label>
+        <label style="display:block;font-size:12.5px"><input type="checkbox" id="edit-app-physical" ${a.physical_passed ? 'checked' : ''}> Passed</label>
+      </div>
+      <div class="field">
+        <label class="f-lab" for="edit-app-orientation-date">Orientation booked</label>
+        <input class="f-in" id="edit-app-orientation-date" type="date" value="${a.orientation_booked_date || ''}">
+      </div>
+    </div>
+    <div class="field">
+      <label class="f-lab">Orientation</label>
+      <label style="display:block;font-size:12.5px"><input type="checkbox" id="edit-app-orientation-done" ${a.orientation_completed ? 'checked' : ''}> Completed</label>
+    </div>
+    <div class="field">
+      <label class="f-lab" for="edit-app-outcome">Outcome</label>
+      <select class="f-in" id="edit-app-outcome">
+        <option value="" ${!a.outcome ? 'selected' : ''}>— Active —</option>
+        <option value="hired" ${a.outcome === 'hired' ? 'selected' : ''}>Hired</option>
+        <option value="rejected" ${a.outcome === 'rejected' ? 'selected' : ''}>Rejected</option>
+        <option value="not_selected" ${a.outcome === 'not_selected' ? 'selected' : ''}>Not selected to move forward</option>
+        <option value="resume_on_file" ${a.outcome === 'resume_on_file' ? 'selected' : ''}>Resume on file</option>
+        <option value="not_interested" ${a.outcome === 'not_interested' ? 'selected' : ''}>Manager wasn't interested</option>
+      </select>
+      ${a.outcome === 'rejected' && profile.role === 'david'
+        ? `<button type="button" class="gh" id="edit-app-reason-btn" style="margin-top:6px;font-size:11px;padding:2px 8px">Reason (private)</button>`
+        : ''}
+    </div>
+  `;
+}
+
+// Redraws both the summary pills and the live fields from current data,
+// and rewires the fields' change listeners -- called on open and again
+// after every live save so the summary reflects what was just changed
+// without having to close and reopen the modal.
+function renderEditAppProgress(applicantId) {
+  const a = applicants.find((x) => x.id === applicantId);
+  if (!a) return;
+  document.getElementById('edit-app-progress-summary').innerHTML = progressSummaryHtml(a);
+  document.getElementById('edit-app-progress-fields').innerHTML = progressFieldsHtml(a);
+
+  const liveUpdate = (fields) => updateApplicant(applicantId, fields).then(() => renderEditAppProgress(applicantId));
+  document.getElementById('edit-app-prescreen').addEventListener('change', (e) => liveUpdate({ prescreen_passed: e.target.checked }));
+  document.getElementById('edit-app-interview').addEventListener('change', (e) => liveUpdate({ interview_status: e.target.value }));
+  document.getElementById('edit-app-physical').addEventListener('change', (e) => liveUpdate({ physical_passed: e.target.checked }));
+  document.getElementById('edit-app-orientation-date').addEventListener('change', (e) => liveUpdate({ orientation_booked_date: e.target.value }));
+  document.getElementById('edit-app-orientation-done').addEventListener('change', (e) => liveUpdate({ orientation_completed: e.target.checked }));
+  document.getElementById('edit-app-outcome').addEventListener('change', (e) => {
+    const value = e.target.value;
+    const fields = { outcome: value };
+    if (value === 'hired') { fields.hired = true; fields.hired_at = new Date().toISOString().slice(0, 10); }
+    else if (a.outcome === 'hired') { fields.hired = false; fields.hired_at = null; }
+    liveUpdate(fields);
+  });
+  const reasonBtn = document.getElementById('edit-app-reason-btn');
+  if (reasonBtn) reasonBtn.addEventListener('click', () => openRejectReason(applicantId));
+}
 
 function openEditApplicant(applicantId) {
   const a = applicants.find((x) => x.id === applicantId);
@@ -869,6 +986,7 @@ function openEditApplicant(applicantId) {
   const isOther = !!a.position_applied && !ROLE_TITLES.includes(a.position_applied);
   document.getElementById('edit-app-position-other').hidden = !isOther;
   document.getElementById('edit-app-position-other').value = isOther ? a.position_applied : '';
+  renderEditAppProgress(applicantId);
   document.getElementById('edit-app-overlay').hidden = false;
 }
 function closeEditApplicant() {
