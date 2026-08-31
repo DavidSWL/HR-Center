@@ -713,7 +713,8 @@ function renderReview() {
 
       try {
         await setDoc(doc(db, 'employees', empId, 'reviews', String(milestone)), {
-          ...data, review_completed: true, entered_by: profile.uid, updated_at: serverTimestamp(),
+          ...data, review_completed: true, form_received: true, completed_at: serverTimestamp(),
+          entered_by: profile.uid, updated_at: serverTimestamp(),
         }, { merge: true });
         await addDoc(collection(db, 'activity'), {
           module: 'reviews', item: `${milestone}-day review generated — ${emp.first_name} ${emp.last_name}`,
