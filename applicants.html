@@ -236,6 +236,29 @@
   </div>
 </div>
 
+<!-- Rejection reason modal — David only, enforced in firestore.rules
+     (a separate /private subcollection only his account can read or
+     write), not just hidden from other staff here. -->
+<div class="modal-overlay" id="reject-reason-overlay" hidden>
+  <div class="modal">
+    <div class="modal-h">
+      <h3>Reason for rejection</h3>
+      <button class="modal-close" id="reject-reason-close" type="button">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="dim" style="margin-bottom:10px">Only your account can see or edit this — nobody else on staff has access to it.</p>
+      <div class="field">
+        <label class="f-lab" for="reject-reason-text">Reason</label>
+        <textarea class="f-in" id="reject-reason-text" rows="4" style="resize:vertical" placeholder="Why this candidate wasn't moved forward…"></textarea>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="gh" id="reject-reason-cancel-btn">Cancel</button>
+      <button type="button" class="gh solid" id="reject-reason-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
@@ -418,6 +441,9 @@ function render() {
             <option value="resume_on_file" ${a.outcome === 'resume_on_file' ? 'selected' : ''}>Resume on file</option>
             <option value="not_interested" ${a.outcome === 'not_interested' ? 'selected' : ''}>Manager wasn't interested</option>
           </select>
+          ${a.outcome === 'rejected' && profile.role === 'david'
+            ? `<button type="button" class="gh reject-reason-btn" data-id="${a.id}" style="margin-top:4px;font-size:11px;padding:2px 8px">Reason (private)</button>`
+            : ''}
         </td>
         <td style="text-align:center"><input type="checkbox" class="app-cb hired-cb" data-id="${a.id}" ${a.hired ? 'checked' : ''}></td>
         <td style="min-width:190px">${linkedEmp
@@ -457,6 +483,9 @@ function render() {
   });
   document.querySelectorAll('.edit-app-btn').forEach((btn) => {
     btn.addEventListener('click', () => openEditApplicant(btn.dataset.id));
+  });
+  document.querySelectorAll('.reject-reason-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openRejectReason(btn.dataset.id));
   });
   document.querySelectorAll('.unlink-roster-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -746,6 +775,52 @@ document.getElementById('edit-app-save-btn').addEventListener('click', async () 
   });
   showToast('Applicant updated.');
   closeEditApplicant();
+});
+
+// ---- Rejection reason -- David's own private note on why a candidate
+// was turned down. Gated on profile.role === 'david' here so nobody
+// else even sees the button, but the real boundary is firestore.rules:
+// the note lives in applicants/{id}/private/rejection, a subcollection
+// only his account can read or write, so this isn't just a UI hide. ----
+
+let rejectReasonTargetId = null;
+
+function openRejectReason(applicantId) {
+  rejectReasonTargetId = applicantId;
+  const text = document.getElementById('reject-reason-text');
+  text.value = '';
+  text.disabled = true;
+  document.getElementById('reject-reason-overlay').hidden = false;
+  getDoc(doc(db, 'applicants', applicantId, 'private', 'rejection')).then((snap) => {
+    if (rejectReasonTargetId !== applicantId) return; // closed before this resolved
+    text.value = snap.exists() ? (snap.data().reason || '') : '';
+    text.disabled = false;
+  }).catch((err) => {
+    console.error(err);
+    showToast('Could not load — ' + err.message, 'error');
+    closeRejectReason();
+  });
+}
+function closeRejectReason() {
+  document.getElementById('reject-reason-overlay').hidden = true;
+  rejectReasonTargetId = null;
+}
+document.getElementById('reject-reason-close').addEventListener('click', closeRejectReason);
+document.getElementById('reject-reason-cancel-btn').addEventListener('click', closeRejectReason);
+document.getElementById('reject-reason-save-btn').addEventListener('click', async () => {
+  const applicantId = rejectReasonTargetId;
+  if (!applicantId) return;
+  try {
+    await setDoc(doc(db, 'applicants', applicantId, 'private', 'rejection'), {
+      reason: document.getElementById('reject-reason-text').value.trim(),
+      entered_by: profile.uid, updated_at: serverTimestamp(),
+    });
+    showToast('Reason saved.');
+    closeRejectReason();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
 });
 
 wireEmpSearch('new-app-referrer');
