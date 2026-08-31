@@ -6273,6 +6273,7 @@ async function renderAdmin() {
             <label class="btn sm" style="cursor:pointer" title="Upload photo">
               📷 <input type="file" accept="image/*" style="display:none" onchange="uploadUserPhoto('${d.id}',this)">
             </label>
+            <button class="btn sm" onclick="renameUser('${d.id}','${esc(u.name)}')">✎ Name</button>
             <button class="btn sm" onclick="showChangeRole('${d.id}','${u.role}','${esc(u.name)}')">⚙ Role</button>
             <button class="btn sm" onclick="toggleUser('${d.id}',${u.active})">${u.active?'Disable':'Enable'}</button>
           </div>
@@ -6471,6 +6472,27 @@ async function toggleUser(uid, active) {
     });
   } catch(e) { /* audit log failure is non-critical */ }
   toast('User ' + (active ? 'disabled' : 'enabled')); renderAdmin();
+}
+
+// One-click rename straight from the user row — no need to look up
+// their Firebase UID and go through the separate "Update Existing
+// Profile" form just to fix a name. Same audit-log pattern as
+// enabling/disabling a user, so a rename is traceable too.
+async function renameUser(uid, currentName) {
+  const newName = prompt('New name for this user:', currentName || '');
+  if (newName === null) return;
+  const trimmed = newName.trim();
+  if (!trimmed || trimmed === currentName) return;
+  try {
+    await db.collection('users').doc(uid).update({ name: trimmed });
+    await db.collection('sync_log').add({
+      action: 'user_renamed', targetUid: uid, targetName: trimmed, previousName: currentName,
+      by: CD.name, byUid: CU.uid, byRole: CD.role,
+      at: new Date().toISOString(), ts: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(() => {});
+    toast('✓ Name updated to ' + trimmed);
+    renderAdmin();
+  } catch (e) { toast('Error: ' + e.message, 'err'); }
 }
 
 async function createUserProfile() {
@@ -11773,7 +11795,12 @@ function shopPaintTicketProgress() {
           + (t.pickupDate ? '<span>·</span><span>🕐 ' + T('Pickup','Recogida') + ' ' + shopFmtDateOnly(t.pickupDate) + (t.pickupTime ? ' ' + shopFmtTimeOnly(t.pickupTime) : '') + '</span>'
               : (t.estimatedPickupDate ? '<span>·</span><span>🕐 ' + T('Est. pickup','Recogida est.') + ' ' + shopFmtDateOnly(t.estimatedPickupDate) + '</span>' : ''))
           + (t.deleted ? '<span>·</span><span style="color:var(--danger)">' + T('Deleted by','Eliminado por') + ' ' + esc(t.deletedByName || '—') + ' ' + shopFmtWhen(t.deletedAt) + '</span>' : '')
-          + '</div></div>'
+          + '</div>'
+          // Quick reference so a manager can tell where things stand
+          // without opening the ticket — the newest note or photo
+          // caption, whoever left it and when.
+          + (t.lastNoteText ? '<div style="font-size:11.5px;color:var(--text2);background:var(--surface2);border-radius:6px;padding:5px 8px;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">💬 ' + esc(t.lastNoteText) + ' <span style="color:var(--text3)">— ' + esc(t.lastNoteBy || '') + ' · ' + shopFmtWhen(t.lastNoteAt) + '</span></div>' : '')
+          + '</div>'
           + '<span style="font-size:9.5px;font-weight:700;padding:3px 9px;border-radius:20px;color:' + shopTicketStatusColor(t.status) + ';background:' + shopTicketStatusBg(t.status) + ';white-space:nowrap">' + shopTicketStatusLabel(t.status) + '</span>'
           + '</div>'
           + (t.deleted ? '' : shopProgressTracker(t))
@@ -12938,6 +12965,10 @@ async function shopPaintYardConfirm(ticketId, kind) {
     body.innerHTML = shopYardReadyMenuHtml(ticketId, t);
     return;
   }
+  if (kind === 'ready' && window._syReadyMode === 'note') {
+    body.innerHTML = shopYardAddNoteMenuHtml(ticketId, t);
+    return;
+  }
 
   let events = [];
   try {
@@ -13027,7 +13058,14 @@ function shopYardReadyMenuHtml(ticketId, t) {
     + '</div>'
     + '<div style="display:flex;flex-direction:column;gap:10px;margin-top:20px">'
     + '<button onclick="shopYardShowProgressView(\'' + ticketId + '\')" style="width:100%;padding:18px;font-size:16px;font-weight:700;background:var(--surface2);color:var(--text);border:none;border-radius:12px;cursor:pointer">👁 Ver Progreso</button>'
-    + '<button onclick="shopYardShowProgressUpdate(\'' + ticketId + '\')" style="width:100%;padding:18px;font-size:16px;font-weight:700;background:var(--surface2);color:var(--text);border:none;border-radius:12px;cursor:pointer">✎ Actualizar Progreso</button>'
+    + '<div style="display:flex;gap:10px">'
+    + '<button onclick="shopYardShowAddNote(\'' + ticketId + '\')" style="flex:1;padding:18px 10px;font-size:15px;font-weight:700;background:var(--surface2);color:var(--text);border:none;border-radius:12px;cursor:pointer">📝 Agregar Nota</button>'
+    + '<button onclick="shopYardAddPhoto(\'' + ticketId + '\',\'ready\')" style="flex:1;padding:18px 10px;font-size:15px;font-weight:700;background:var(--surface2);color:var(--text);border:none;border-radius:12px;cursor:pointer">📷 Agregar Foto</button>'
+    + '</div>'
+    // "Actualizar Progreso" removed from the menu per David — Nota/Foto
+    // now cover it directly. The screen and its functions (dates, parts
+    // pending, outsourced, not-repairable, mid-repair loaner) are still
+    // in the code, just not linked from here anymore.
     + '<button onclick="shopYardQuickMarkReady(\'' + ticketId + '\')" style="width:100%;padding:20px;font-size:18px;font-weight:800;background:var(--swl-green);color:#fff;border:none;border-radius:14px;cursor:pointer">✅ Listo para Recoger</button>'
     + '</div>';
 }
@@ -13062,6 +13100,49 @@ async function shopYardQuickMarkReady(ticketId) {
   if (!confirm('¿Confirmar que está listo para recoger?')) return;
   await shopYardDoConfirm(ticketId, 'ready');
 }
+// Dedicated one-tap paths for the two most common quick updates — a
+// note or a photo shouldn't require opening the full Actualizar
+// Progreso screen (dates, parts pending, loaner, etc.) just to log
+// them. Both still land in the same events subcollection, so they show
+// up in Ticket Progress's timeline exactly like anything else.
+function shopYardShowAddNote(ticketId) {
+  window._syReadyMode = 'note';
+  shopPaintYardConfirm(ticketId, 'ready');
+}
+function shopYardAddNoteMenuHtml(ticketId, t) {
+  return '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'
+    + '<button onclick="shopYardBackToMenu(\'' + ticketId + '\')" style="background:none;border:none;font-size:14px;font-weight:700;cursor:pointer;color:var(--text2)">← Atrás</button>'
+    + '<button onclick="document.getElementById(\'shop-yard-modal\').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text3)">✕</button></div>'
+    + '<div style="text-align:center;font-size:22px;font-weight:800;margin-bottom:18px">' + esc(t.unitNumber || '—') + '</div>'
+    + '<textarea id="syd-note-' + ticketId + '" rows="5" placeholder="Nota para la cuadrilla o admin…" style="width:100%;font-size:16px;padding:14px 16px;border:1.5px solid var(--border2);border-radius:12px;background:var(--surface);color:var(--text);font-family:inherit;resize:vertical;margin-bottom:16px"></textarea>'
+    + '<button onclick="shopYardAddNoteQuick(\'' + ticketId + '\')" style="width:100%;padding:16px;font-size:16px;font-weight:800;background:var(--burg);color:#fff;border:none;border-radius:12px;cursor:pointer">Guardar</button>';
+}
+// Ticket Progress lists tickets from a single doc fetch, not each one's
+// full events subcollection — so without this, the newest note/photo
+// was invisible until a manager opened the actual ticket. Denormalizing
+// the latest one onto the ticket doc itself lets the list show a quick-
+// reference preview with zero extra reads. Best-effort: never blocks
+// the real save if this secondary update fails for some reason.
+function shopUpdateLastNote(ticketId, text, byName) {
+  return db.collection('shop_tickets').doc(ticketId).update({
+    lastNoteText: text, lastNoteBy: byName, lastNoteAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).catch(() => {});
+}
+async function shopYardAddNoteQuick(ticketId) {
+  const ta = document.getElementById('syd-note-' + ticketId);
+  const text = ta ? ta.value.trim() : '';
+  if (!text) { toast('Escribe una nota', 'err'); return; }
+  try {
+    await db.collection('shop_tickets').doc(ticketId).collection('events').add({
+      type: 'note', text, userId: CU.uid, userName: CD.name,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await shopUpdateLastNote(ticketId, text, CD.name);
+    toast('✓ Nota agregada');
+    window._syReadyMode = 'menu';
+    await shopPaintYardConfirm(ticketId, 'ready');
+  } catch (e) { toast('No se pudo agregar — ' + e.message, 'err'); }
+}
 
 // Translates in place — no navigating away from the kiosk. Uses Google's
 // public (unofficial, no-key-needed) translate endpoint, the same one
@@ -13090,6 +13171,7 @@ async function shopYardAddNote(ticketId, kind) {
       type: 'note', text, userId: CU.uid, userName: CD.name,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+    await shopUpdateLastNote(ticketId, text, CD.name);
     await shopPaintYardConfirm(ticketId, kind);
   } catch (e) { toast('No se pudo agregar — ' + e.message, 'err'); }
 }
@@ -13129,27 +13211,39 @@ async function shopYardAddPhoto(ticketId, kind) {
   let inp = document.getElementById('syd-photo-input');
   if (!inp) {
     inp = document.createElement('input');
-    inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment';
+    inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment'; inp.multiple = true;
     inp.id = 'syd-photo-input'; inp.style.display = 'none';
     document.body.appendChild(inp);
   }
   inp.onchange = async () => {
-    const file = inp.files && inp.files[0];
+    const picked = Array.from(inp.files || []);
+    const files = picked.slice(0, 3);
     inp.value = '';
-    if (!file) return;
+    if (!files.length) return;
+    if (picked.length > 3) toast('Solo se guardan las primeras 3 fotos', 'err');
+    const ta = document.getElementById('syd-note-' + ticketId);
+    const caption = ta ? ta.value.trim() : '';
     try {
-      toast('Procesando foto…');
-      let dataUrl = await shopCompressImageFile(file, 1000, 0.65);
-      if (dataUrl.length > 700000) dataUrl = await shopCompressImageFile(file, 800, 0.5);
-      if (dataUrl.length > 900000) { toast('La foto sigue siendo muy grande — intenta con otra', 'err'); return; }
-      const ta = document.getElementById('syd-note-' + ticketId);
-      const caption = ta ? ta.value.trim() : '';
-      await db.collection('shop_tickets').doc(ticketId).collection('events').add({
-        type: 'photo', photoData: dataUrl, text: caption || null,
-        userId: CU.uid, userName: CD.name, createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
+      toast('Procesando ' + files.length + ' foto' + (files.length > 1 ? 's' : '') + '…');
+      let saved = 0;
+      for (const file of files) {
+        let dataUrl = await shopCompressImageFile(file, 1000, 0.65);
+        if (dataUrl.length > 700000) dataUrl = await shopCompressImageFile(file, 800, 0.5);
+        if (dataUrl.length > 900000) { toast('Una foto era muy grande y se omitió', 'err'); continue; }
+        // Same caption on every photo from this one batch — simplest
+        // reading of "add up to 3 photos" without a per-photo caption
+        // step slowing the mechanic down.
+        await db.collection('shop_tickets').doc(ticketId).collection('events').add({
+          type: 'photo', photoData: dataUrl, text: caption || null,
+          userId: CU.uid, userName: CD.name, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        saved++;
+      }
       if (ta) ta.value = '';
-      toast('✓ Foto agregada');
+      if (saved) {
+        await shopUpdateLastNote(ticketId, (caption ? caption + ' ' : '') + '📷 ' + saved + ' foto' + (saved > 1 ? 's' : ''), CD.name);
+        toast('✓ ' + saved + ' foto' + (saved > 1 ? 's agregadas' : ' agregada'));
+      }
       await shopPaintYardConfirm(ticketId, kind);
     } catch (e) { toast('No se pudo agregar la foto — ' + e.message, 'err'); }
   };

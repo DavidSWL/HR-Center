@@ -24,6 +24,7 @@ export const NAV_SECTIONS = [
       { key: 'roster', label: 'Employee roster', href: 'employees.html', built: true },
       { key: 'applicants', label: 'Applicants', href: 'applicants.html', built: true },
       { key: 'comp', label: 'Policy compliance', href: 'compliance.html', built: true },
+      { key: 'harassment_training', label: 'Harassment training', href: 'harassmenttraining.html', built: true },
       { key: 'attendance', label: 'Attendance', href: 'attendance.html', built: true },
       { key: 'reviews', label: 'New hires & reviews', href: 'reviews.html', built: true },
       { key: 'discipline', label: 'Disciplinary actions', href: 'discipline.html', built: true },
@@ -246,6 +247,18 @@ export function formatDate(value) {
   const d = typeof value === 'string' ? new Date(value + 'T00:00:00') : value;
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+// For a Firestore Timestamp (server-set entered_at/edited_at fields) --
+// formatDate above is for plain 'YYYY-MM-DD' calendar-date strings and
+// can't read a Timestamp directly, and callers that need the time of
+// day (not just the day) were dropping it by slicing down to a date
+// string first. This reads a Timestamp (or a plain Date) straight.
+export function formatDateTime(value) {
+  if (!value) return '—';
+  const d = value?.toDate ? value.toDate() : value;
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '—';
+  return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}, ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
 }
 
 export function yearsSince(dateStr) {

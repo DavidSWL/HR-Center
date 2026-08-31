@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harassment training — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1>Harassment training</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+      <p class="dim" style="margin-bottom:16px">
+        California SB 1343: supervisory employees need 2 hours, non-supervisory employees need 1 hour, both renewed
+        every 2 years. A new hire's first cycle is due within 6 months of their hire date. "Supervisory" here means
+        the same manager list used for "Reports to" elsewhere in this app — update it in Settings if it's wrong.
+      </p>
+
+      <div class="big" id="summary-cards">
+        <div><div class="v hot" id="sum-overdue">—</div><div class="k">Overdue</div></div>
+        <div><div class="v n" id="sum-duesoon">—</div><div class="k">Due within 60 days</div></div>
+        <div><div class="v" id="sum-ontrack">—</div><div class="k">On track</div></div>
+        <div><div class="v n" id="sum-managers">—</div><div class="k">Managers · 2-hr requirement</div></div>
+        <div><div class="v n" id="sum-nonmanagers">—</div><div class="k">Non-managers · 1-hr requirement</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>Training log</h3><span id="log-summary">—</span></div>
+        <div class="tools">
+          <input class="inp" id="search" placeholder="Search employee" style="min-width:190px">
+          <select class="inp" id="role-filter">
+            <option value="">Everyone</option>
+            <option value="manager">Managers (2-hr)</option>
+            <option value="nonmanager">Non-managers (1-hr)</option>
+          </select>
+          <select class="inp" id="status-filter">
+            <option value="">Any status</option>
+            <option value="overdue">Overdue</option>
+            <option value="duesoon">Due within 60 days</option>
+            <option value="ontrack">On track</option>
+          </select>
+        </div>
+        <div class="tools" id="bulk-bar" hidden style="border-top:0">
+          <span class="dim" id="bulk-count" style="font-size:12.5px"></span>
+          <input class="inp" id="bulk-date" type="date">
+          <button class="gh solid" id="bulk-complete-btn" type="button">Mark checked as completed</button>
+        </div>
+        <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:34px"><input type="checkbox" id="check-all"></th>
+              <th class="sortable" data-key="name">Employee<span class="sort-arrow"></span></th>
+              <th>Role</th>
+              <th>Hours</th>
+              <th class="sortable" data-key="completed">Last completed<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="due">Due<span class="sort-arrow"></span></th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- mark-complete modal -->
+<div class="modal-overlay" id="modal-overlay" hidden>
+  <div class="modal">
+    <div class="modal-h">
+      <h3 id="modal-title">—</h3>
+      <button class="modal-close" id="modal-close" type="button">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field"><label class="f-lab">Role</label><div id="modal-role" style="font-size:14px"></div></div>
+      <div class="field"><label class="f-lab">Currently due</label><div id="modal-due" style="font-size:14px"></div></div>
+      <div class="field" id="modal-last-field" hidden>
+        <label class="f-lab">Last completed</label>
+        <div id="modal-last" style="font-size:14px"></div>
+      </div>
+      <div class="field">
+        <label class="f-lab" for="modal-date">Completed on</label>
+        <input class="f-in" id="modal-date" type="date">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="gh" id="modal-cancel">Cancel</button>
+      <button type="button" class="gh solid" id="modal-save">Mark completed</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, showToast, formatDate, formatDateTime } from './app.js';
+import { db } from './firebaseconfig.js';
+import {
+  collection, collectionGroup, doc, getDoc, getDocs, setDoc, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('harassment_training', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+const todayStr = new Date().toISOString().slice(0, 10);
+const DUE_SOON_DAYS = 60;
+const dueSoonCutoff = (() => {
+  const d = new Date();
+  d.setDate(d.getDate() + DUE_SOON_DAYS);
+  return d.toISOString().slice(0, 10);
+})();
+
+function addYears(dateStr, years) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setFullYear(d.getFullYear() + years);
+  return d.toISOString().slice(0, 10);
+}
+function addMonths(dateStr, months) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().slice(0, 10);
+}
+
+let employees = [];
+let managerIds = new Set();
+let records = {}; // empId -> {completed_date, due_date, entered_by, entered_at}
+let staff = [];
+let sortKey = 'due';
+let sortDir = 'asc';
+
+function staffName(uid) {
+  const s = staff.find((x) => x.id === uid);
+  return s ? s.name : (uid || '—');
+}
+
+async function loadAll() {
+  const [empSnap, mgrSnap, recSnap, staffSnap] = await Promise.all([
+    getDocs(collection(db, 'employees')),
+    getDoc(doc(db, 'settings', 'managers')),
+    getDocs(collectionGroup(db, 'harassment_training')),
+    getDocs(collection(db, 'users')),
+  ]);
+
+  employees = empSnap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((e) => e.status !== 'terminated' && !e.is_test)
+    .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
+
+  managerIds = new Set(mgrSnap.exists() ? (mgrSnap.data().employee_ids || []) : []);
+
+  records = {};
+  recSnap.forEach((d) => { records[d.ref.parent.parent.id] = d.data(); });
+
+  staff = staffSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  render();
+}
+
+// A row's due date -- computed from the stored cycle if one exists,
+// otherwise the initial 6-months-from-hire deadline SB 1343 sets for
+// someone who has never completed a cycle in this system. Nothing here
+// is written until a completion is actually logged.
+function dueDateFor(emp) {
+  const rec = records[emp.id];
+  if (rec?.due_date) return rec.due_date;
+  return emp.hire_date ? addMonths(emp.hire_date, 6) : null;
+}
+function statusFor(dueDate) {
+  if (!dueDate) return 'unknown';
+  if (dueDate < todayStr) return 'overdue';
+  if (dueDate <= dueSoonCutoff) return 'duesoon';
+  return 'ontrack';
+}
+
+function render() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const roleFilter = document.getElementById('role-filter').value;
+  const statusFilter = document.getElementById('status-filter').value;
+
+  let rows = employees.map((emp) => {
+    const isManager = managerIds.has(emp.id);
+    const rec = records[emp.id];
+    const due = dueDateFor(emp);
+    const status = statusFor(due);
+    return { emp, isManager, rec, due, status };
+  });
+
+  const overdue = rows.filter((r) => r.status === 'overdue').length;
+  const dueSoon = rows.filter((r) => r.status === 'duesoon').length;
+  const onTrack = rows.filter((r) => r.status === 'ontrack').length;
+  document.getElementById('sum-overdue').textContent = overdue;
+  document.getElementById('sum-duesoon').textContent = dueSoon;
+  document.getElementById('sum-ontrack').textContent = onTrack;
+  document.getElementById('sum-managers').textContent = rows.filter((r) => r.isManager).length;
+  document.getElementById('sum-nonmanagers').textContent = rows.filter((r) => !r.isManager).length;
+
+  let visible = rows.filter((r) => {
+    if (q && !`${r.emp.first_name} ${r.emp.last_name}`.toLowerCase().includes(q)) return false;
+    if (roleFilter === 'manager' && !r.isManager) return false;
+    if (roleFilter === 'nonmanager' && r.isManager) return false;
+    if (statusFilter && r.status !== statusFilter) return false;
+    return true;
+  });
+
+  const accessor = {
+    name: (r) => `${r.emp.first_name} ${r.emp.last_name}`.toLowerCase(),
+    completed: (r) => r.rec?.completed_date || '',
+    due: (r) => r.due || '',
+  }[sortKey] || ((r) => '');
+  visible = visible.slice().sort((a, b) => {
+    const cmp = String(accessor(a)).localeCompare(String(accessor(b)));
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  document.getElementById('log-summary').textContent = `${visible.length} of ${rows.length}`;
+
+  document.getElementById('rows').innerHTML = visible.length ? visible.map((r) => `
+    <tr class="row-clickable" data-id="${r.emp.id}" style="cursor:pointer">
+      <td style="text-align:center"><input type="checkbox" class="row-cb" data-id="${r.emp.id}"></td>
+      <td><b>${r.emp.first_name} ${r.emp.last_name}</b></td>
+      <td class="dim">${r.isManager ? 'Manager' : 'Non-manager'}</td>
+      <td class="mono dim">${r.isManager ? '2 hr' : '1 hr'}</td>
+      <td class="mono">${r.rec?.completed_date ? formatDate(r.rec.completed_date) : '<span class="dim">Never</span>'}</td>
+      <td class="mono">${r.due ? formatDate(r.due) : '<span class="dim">—</span>'}</td>
+      <td>${
+        r.status === 'overdue' ? '<span class="pill bad">Overdue</span>'
+        : r.status === 'duesoon' ? '<span class="pill mid">Due soon</span>'
+        : r.status === 'ontrack' ? '<span class="pill ok">On track</span>'
+        : '<span class="pill">No hire date</span>'
+      }</td>
+    </tr>
+  `).join('') : '<tr><td colspan="7" class="dim">No employees match.</td></tr>';
+
+  document.querySelectorAll('#rows tr[data-id]').forEach((tr) => {
+    tr.addEventListener('click', () => openModal(tr.dataset.id));
+  });
+  document.querySelectorAll('.row-cb').forEach((cb) => {
+    cb.addEventListener('click', (e) => e.stopPropagation());
+    cb.addEventListener('change', syncBulkBar);
+  });
+  document.getElementById('check-all').checked = false;
+  syncBulkBar();
+}
+
+document.querySelectorAll('th.sortable').forEach((th) => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.key;
+    if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    else { sortKey = key; sortDir = 'asc'; }
+    updateSortIndicators();
+    render();
+  });
+});
+function updateSortIndicators() {
+  document.querySelectorAll('th.sortable').forEach((th) => {
+    th.querySelector('.sort-arrow').textContent = th.dataset.key === sortKey ? (sortDir === 'asc' ? '↑' : '↓') : '';
+  });
+}
+
+document.getElementById('check-all').addEventListener('change', (e) => {
+  document.querySelectorAll('.row-cb').forEach((cb) => { cb.checked = e.target.checked; });
+  syncBulkBar();
+});
+
+function syncBulkBar() {
+  const checked = document.querySelectorAll('.row-cb:checked');
+  const bar = document.getElementById('bulk-bar');
+  bar.hidden = checked.length === 0;
+  document.getElementById('bulk-count').textContent = `${checked.length} selected`;
+}
+
+document.getElementById('bulk-date').value = todayStr;
+document.getElementById('bulk-complete-btn').addEventListener('click', async () => {
+  const ids = [...document.querySelectorAll('.row-cb:checked')].map((cb) => cb.dataset.id);
+  const completedDate = document.getElementById('bulk-date').value;
+  if (!ids.length) return;
+  if (!completedDate) { showToast('Pick the completion date.', 'error'); return; }
+  const btn = document.getElementById('bulk-complete-btn');
+  btn.disabled = true;
+  try {
+    await Promise.all(ids.map((empId) => saveCompletion(empId, completedDate)));
+    showToast(`Marked ${ids.length} employee${ids.length === 1 ? '' : 's'} as completed.`);
+    await loadAll();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+async function saveCompletion(empId, completedDate) {
+  await setDoc(doc(db, 'employees', empId, 'harassment_training', 'current'), {
+    completed_date: completedDate,
+    due_date: addYears(completedDate, 2),
+    entered_by: profile.uid,
+    entered_at: serverTimestamp(),
+  });
+}
+
+let modalEmpId = null;
+function openModal(empId) {
+  const emp = employees.find((e) => e.id === empId);
+  if (!emp) return;
+  modalEmpId = empId;
+  const isManager = managerIds.has(empId);
+  const rec = records[empId];
+  const due = dueDateFor(emp);
+  document.getElementById('modal-title').textContent = `${emp.first_name} ${emp.last_name}`;
+  document.getElementById('modal-role').textContent = `${isManager ? 'Manager — 2 hour requirement' : 'Non-manager — 1 hour requirement'}`;
+  document.getElementById('modal-due').textContent = due ? formatDate(due) : 'No hire date on file — can\'t compute a due date';
+  const lastField = document.getElementById('modal-last-field');
+  if (rec?.completed_date) {
+    lastField.hidden = false;
+    document.getElementById('modal-last').textContent = `${formatDate(rec.completed_date)} — recorded by ${staffName(rec.entered_by)}, ${formatDateTime(rec.entered_at)}`;
+  } else {
+    lastField.hidden = true;
+  }
+  document.getElementById('modal-date').value = todayStr;
+  document.getElementById('modal-overlay').hidden = false;
+}
+function closeModal() { document.getElementById('modal-overlay').hidden = true; modalEmpId = null; }
+document.getElementById('modal-close').addEventListener('click', closeModal);
+document.getElementById('modal-cancel').addEventListener('click', closeModal);
+document.getElementById('modal-save').addEventListener('click', async () => {
+  if (!modalEmpId) return;
+  const completedDate = document.getElementById('modal-date').value;
+  if (!completedDate) { showToast('Pick the completion date.', 'error'); return; }
+  const btn = document.getElementById('modal-save');
+  btn.disabled = true;
+  try {
+    await saveCompletion(modalEmpId, completedDate);
+    showToast('Marked completed.');
+    closeModal();
+    await loadAll();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('search').addEventListener('input', render);
+document.getElementById('role-filter').addEventListener('change', render);
+document.getElementById('status-filter').addEventListener('change', render);
+
+updateSortIndicators();
+await loadAll();
+</script>
+</body>
+</html>

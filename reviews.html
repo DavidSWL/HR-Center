@@ -33,7 +33,7 @@
         <div class="card-h"><h3>New hire board</h3><span id="board-summary">—</span></div>
         <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Click a milestone to check off the review and paperwork for that employee.</p>
         <table>
-          <thead><tr><th>Employee</th><th>Division</th><th>Day</th><th>Next milestone</th><th>Paperwork</th></tr></thead>
+          <thead><tr><th>Employee</th><th>Division</th><th>Day</th><th>Next milestone</th><th>Paperwork</th><th>Sick time</th></tr></thead>
           <tbody id="board-rows"></tbody>
         </table>
       </div>
@@ -92,6 +92,35 @@ function staffName(uid) {
   return s ? s.name : uid;
 }
 function daysBetween(a, b) { return Math.round((a - b) / (1000 * 60 * 60 * 24)); }
+
+// New-hire front-loaded sick time schedule -- not the standard 24-hr/
+// year policy every employee gets (see the Paid Sick Leave Notice in
+// onboarding), a separate ramp SWL uses only during a new hire's first
+// ~7 months: 24 hrs at 90 days (completing probation), +8 at 150 days,
+// +8 at 210 days, totaling 40 hrs. Computed only, same as the "Day"
+// column next to it -- nothing about this is written to Firestore, and
+// it tracks what's been GRANTED on this schedule, not a running
+// balance net of anything actually used.
+const SICK_TIME_SCHEDULE = [
+  { atDay: 90, hours: 24 },
+  { atDay: 150, hours: 8 },
+  { atDay: 210, hours: 8 },
+];
+function addDaysToDate(dateObj, days) {
+  const d = new Date(dateObj);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+function sickTimeInfo(hireDate, day) {
+  let available = 0;
+  let next = null;
+  for (const t of SICK_TIME_SCHEDULE) {
+    if (day >= t.atDay) available += t.hours;
+    else { next = t; break; }
+  }
+  const nextUnlockDate = next ? addDaysToDate(hireDate, next.atDay) : null;
+  return { available, next, nextUnlockDate };
+}
 
 async function loadEmployees() {
   const snap = await getDocs(collection(db, 'employees'));
@@ -153,7 +182,7 @@ function renderBoard() {
     const currentAssignee = empReviews[0]?.assigned_to || '';
     const expandRow = expanded ? `
       <tr>
-        <td colspan="5" style="background:var(--hover);padding:10px 14px">
+        <td colspan="6" style="background:var(--hover);padding:10px 14px">
           <label style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:10px">
             <span class="dim" style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase">All 3 reviews assigned to</span>
             <select class="inp assignee-select" data-emp="${emp.id}" style="max-width:220px">
@@ -178,6 +207,10 @@ function renderBoard() {
       </tr>
     ` : '';
     const paperworkCount = paperworkCountByEmp[emp.id] || 0;
+    const sick = sickTimeInfo(new Date(emp.hire_date + 'T00:00:00'), day);
+    const sickCell = sick.next
+      ? `<b>${sick.available} hrs</b><br><span class="dim" style="font-size:11px">+${sick.next.hours} hrs on ${formatDate(sick.nextUnlockDate.toISOString().slice(0, 10))}</span>`
+      : `<b>${sick.available} hrs</b><br><span class="dim" style="font-size:11px">Fully vested</span>`;
     return `
     <tr>
       <td><b>${emp.first_name} ${emp.last_name}</b> <span class="mono dim">${emp.id}</span></td>
@@ -185,10 +218,11 @@ function renderBoard() {
       <td class="mono">${day}${day > 90 ? ' <span class="pill bad">Past 90</span>' : ''}</td>
       <td>${milestoneCell}</td>
       <td><a class="gh" href="docgen.html?open=onboarding&emp=${emp.id}" style="font-size:12px;padding:4px 10px;display:inline-block;text-decoration:none">${paperworkCount}/${ONBOARDING_CHECKLIST.length} on file →</a></td>
+      <td class="mono">${sickCell}</td>
     </tr>
     ${expandRow}
   `;
-  }).join('') : '<tr><td colspan="5" class="dim">No one currently in onboarding.</td></tr>';
+  }).join('') : '<tr><td colspan="6" class="dim">No one currently in onboarding.</td></tr>';
 
   document.querySelectorAll('.milestone-toggle').forEach((btn) => {
     btn.addEventListener('click', () => {
