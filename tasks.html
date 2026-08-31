@@ -112,7 +112,7 @@ document.getElementById('header-date').textContent =
 let staff = [];
 let tasks = [];
 let employees = [];
-let pendingReviews = []; // 30/60/90 reviews still due — calendar only, not part of the tasks list/table below
+let pendingReviews = []; // 30/60/90 reviews still due — shown on the calendar and mixed into the tasks list below, but never written as their own task doc
 const todayStr = new Date().toISOString().slice(0, 10);
 
 function staffName(uid) {
@@ -172,9 +172,18 @@ function render() {
     return true;
   });
 
-  document.getElementById('tasks-summary').textContent = `${visible.length} of ${tasks.length}`;
+  // 30/60/90 reviews still due flag here too, not just on the calendar --
+  // pendingReviews is already "still due" only, so there's no completed
+  // state to filter on; same unassigned-still-shows rule as the calendar.
+  const visibleReviews = pendingReviews.filter((r) => {
+    if (personFilter && r.assigned_to && r.assigned_to !== personFilter) return false;
+    return true;
+  }).sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''));
 
-  document.getElementById('rows').innerHTML = visible.length ? visible.map((t) => {
+  document.getElementById('tasks-summary').textContent =
+    `${visible.length} of ${tasks.length}` + (visibleReviews.length ? ` · ${visibleReviews.length} review${visibleReviews.length === 1 ? '' : 's'} due` : '');
+
+  const taskRows = visible.map((t) => {
     const overdue = t.status !== 'complete' && t.due_date && t.due_date < todayStr;
     return `
       <tr>
@@ -194,7 +203,24 @@ function render() {
         </td>
       </tr>
     `;
-  }).join('') : '<tr><td colspan="5" class="dim">No tasks match.</td></tr>';
+  }).join('');
+
+  const reviewRows = visibleReviews.map((r) => {
+    const emp = empById(r.empId);
+    const overdue = r.due_date && r.due_date < todayStr;
+    const name = emp ? `${emp.first_name} ${emp.last_name}` : r.empId;
+    return `
+      <tr style="border-left:3px solid #7C5CBF">
+        <td class="mono" style="${overdue ? 'color:var(--alertTx);font-weight:700' : ''}">${formatDate(r.due_date)}${overdue ? ' · overdue' : ''}</td>
+        <td><select class="inp review-assignee-select" data-emp="${r.empId}" data-milestone="${r.milestone}" style="height:32px;font-size:12.5px"><option value="">Unassigned</option>${staff.map((s) => `<option value="${s.id}"${s.id === r.assigned_to ? ' selected' : ''}>${s.name}</option>`).join('')}</select></td>
+        <td>${r.milestone}-day review — ${name}</td>
+        <td class="dim">—</td>
+        <td style="text-align:right;white-space:nowrap"><a class="gh solid" href="docgen.html?open=review&emp=${r.empId}&milestone=${r.milestone}" style="text-decoration:none;display:inline-block">Submit review →</a></td>
+      </tr>
+    `;
+  }).join('');
+
+  document.getElementById('rows').innerHTML = (taskRows + reviewRows) || '<tr><td colspan="5" class="dim">No tasks match.</td></tr>';
 
   document.querySelectorAll('.complete-btn').forEach((btn) => {
     btn.addEventListener('click', () => completeTask(btn.dataset.id));
@@ -210,6 +236,23 @@ function render() {
   document.querySelectorAll('.delete-task-btn').forEach((btn) => {
     btn.addEventListener('click', () => deleteTask(btn.dataset.id));
   });
+  document.querySelectorAll('.review-assignee-select').forEach((sel) => {
+    sel.addEventListener('change', () => reassignReview(sel.dataset.emp, sel.dataset.milestone, sel.value));
+  });
+}
+
+async function reassignReview(empId, milestone, newUid) {
+  try {
+    await updateDoc(doc(db, 'employees', empId, 'reviews', milestone), { assigned_to: newUid, entered_by: profile.uid });
+    const r = pendingReviews.find((x) => x.empId === empId && String(x.milestone) === String(milestone));
+    if (r) r.assigned_to = newUid;
+    showToast('Review reassigned.');
+    render();
+    renderCalendar();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not reassign — ' + err.message, 'error');
+  }
 }
 
 async function deleteTask(id) {
