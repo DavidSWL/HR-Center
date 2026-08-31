@@ -40,7 +40,7 @@
       <div class="card" style="margin-bottom:16px">
         <div class="card-h"><h3>New applicant</h3><span>Name and how they applied — everything else is tracked below</span></div>
         <div class="card-body">
-          <div class="frow">
+          <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr 1.4fr;gap:12px">
             <div class="field">
               <label class="f-lab" for="new-app-name">Name</label>
               <input class="f-in" id="new-app-name" placeholder="First and last name">
@@ -54,17 +54,26 @@
                 <option value="indeed">Indeed</option>
               </select>
             </div>
+            <div class="field">
+              <label class="f-lab" for="new-app-applied-date">Applied</label>
+              <input class="f-in" id="new-app-applied-date" type="date">
+            </div>
+            <div class="field">
+              <label class="f-lab" for="new-app-position">Applied for</label>
+              <select class="f-in" id="new-app-position"></select>
+            </div>
           </div>
-          <div class="field" id="new-app-referrer-field" hidden>
-            <label class="f-lab" for="new-app-referrer-search">Referred by</label>
-            <input class="f-in" id="new-app-referrer-search" list="new-app-referrer-opts" placeholder="Type an employee's name…" autocomplete="off">
-            <datalist id="new-app-referrer-opts"></datalist>
-            <input type="hidden" id="new-app-referrer">
-          </div>
-          <div class="field">
-            <label class="f-lab" for="new-app-position">Applied for</label>
-            <select class="f-in" id="new-app-position"></select>
-            <input class="f-in" id="new-app-position-other" placeholder="Role title" style="margin-top:6px" hidden>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:2px">
+            <div class="field" id="new-app-referrer-field" hidden>
+              <label class="f-lab" for="new-app-referrer-search">Referred by</label>
+              <input class="f-in" id="new-app-referrer-search" list="new-app-referrer-opts" placeholder="Type an employee's name…" autocomplete="off">
+              <datalist id="new-app-referrer-opts"></datalist>
+              <input type="hidden" id="new-app-referrer">
+            </div>
+            <div class="field" id="new-app-position-other-field" hidden>
+              <label class="f-lab" for="new-app-position-other">Role title (Other)</label>
+              <input class="f-in" id="new-app-position-other" placeholder="Role title">
+            </div>
           </div>
           <button class="gh solid" id="add-applicant-btn" type="button">Add applicant</button>
         </div>
@@ -247,6 +256,7 @@ document.getElementById('header-date').textContent =
 const SOURCE_LABELS = { walk_in: 'Walk-in', referral: 'Referral', past_employee: 'Past employee', indeed: 'Indeed' };
 const REFERRAL_BONUS_DAYS = 90;
 const todayStr = new Date().toISOString().slice(0, 10);
+document.getElementById('new-app-applied-date').value = todayStr;
 
 function escapeHtml(str) {
   const div = document.createElement('div');
@@ -266,9 +276,9 @@ function roleOptionsHtml(selected) {
     + ROLE_TITLES.map((t) => `<option value="${escapeHtml(t)}" ${selected === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')
     + `<option value="__other" ${isOther ? 'selected' : ''}>Other (type below)</option>`;
 }
-function wirePositionToggle(selectId, otherId) {
+function wirePositionToggle(selectId, otherId, hideTargetId = otherId) {
   document.getElementById(selectId).addEventListener('change', () => {
-    document.getElementById(otherId).hidden = document.getElementById(selectId).value !== '__other';
+    document.getElementById(hideTargetId).hidden = document.getElementById(selectId).value !== '__other';
   });
 }
 function readPositionField(selectId, otherId) {
@@ -525,7 +535,7 @@ async function removeApplicant(id) {
 }
 
 document.getElementById('new-app-position').innerHTML = roleOptionsHtml('');
-wirePositionToggle('new-app-position', 'new-app-position-other');
+wirePositionToggle('new-app-position', 'new-app-position-other', 'new-app-position-other-field');
 
 document.getElementById('add-applicant-btn').addEventListener('click', async () => {
   const name = document.getElementById('new-app-name').value.trim();
@@ -533,12 +543,13 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
   const source = document.getElementById('new-app-source').value;
   const referredByEmpId = document.getElementById('new-app-referrer').value;
   if (source === 'referral' && !referredByEmpId) { showToast('Pick who referred them from the list.', 'error'); return; }
+  const appliedDate = document.getElementById('new-app-applied-date').value || todayStr;
   try {
     await setDoc(doc(collection(db, 'applicants')), {
       name, source,
       referred_by_emp_id: source === 'referral' ? referredByEmpId : '',
       position_applied: readPositionField('new-app-position', 'new-app-position-other'),
-      applied_date: new Date().toISOString().slice(0, 10),
+      applied_date: appliedDate,
       prescreen_passed: false,
       interview_status: 'pending',
       physical_passed: false,
@@ -558,7 +569,8 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
     document.getElementById('new-app-referrer').value = '';
     document.getElementById('new-app-position').value = '';
     document.getElementById('new-app-position-other').value = '';
-    document.getElementById('new-app-position-other').hidden = true;
+    document.getElementById('new-app-position-other-field').hidden = true;
+    document.getElementById('new-app-applied-date').value = todayStr;
     showToast('Applicant added.');
     await loadApplicants();
   } catch (err) {
