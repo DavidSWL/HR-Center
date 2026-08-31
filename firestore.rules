@@ -183,6 +183,17 @@ service cloud.firestore {
       }
     }
 
+    // Open job requisitions — opened_date/filled_date only; time-to-fill
+    // is computed from those on the Applicants tab and the Time to fill
+    // report, never stored itself.
+    match /open_jobs/{jobId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data)
+        && stamped(request.resource.data);
+      allow update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if isHrUser();
+    }
+
     // ---- discipline & notes ----------------------------------------------
     match /disciplinary_actions/{actionId} {
       allow read: if isHrUser();

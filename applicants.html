@@ -47,6 +47,52 @@
       </div>
 
       <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>Open jobs</h3><span id="jobs-summary">—</span></div>
+        <div class="card-body">
+          <div style="display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr auto;gap:12px;align-items:end">
+            <div class="field">
+              <label class="f-lab" for="new-job-title">Role</label>
+              <select class="f-in" id="new-job-title"></select>
+            </div>
+            <div class="field">
+              <label class="f-lab" for="new-job-division">Division</label>
+              <input class="f-in" id="new-job-division" list="job-division-options" autocomplete="off">
+              <datalist id="job-division-options"></datalist>
+            </div>
+            <div class="field">
+              <label class="f-lab" for="new-job-location">Location</label>
+              <select class="f-in" id="new-job-location">
+                <option value="">Select…</option>
+                <option value="OC">OC</option>
+                <option value="LA">LA</option>
+                <option value="IE">IE</option>
+                <option value="Trees">Trees</option>
+                <option value="Enhancements">Enhancements</option>
+                <option value="Corporate">Corporate</option>
+                <option value="Yard">Yard</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="f-lab" for="new-job-opened">Opened</label>
+              <input class="f-in" id="new-job-opened" type="date">
+            </div>
+            <button class="gh solid" id="add-job-btn" type="button" style="height:38px">Add opening</button>
+          </div>
+          <div class="field" id="job-title-other-field" hidden>
+            <label class="f-lab" for="new-job-title-other">Role title (Other)</label>
+            <input class="f-in" id="new-job-title-other" placeholder="Role title">
+          </div>
+          <div style="overflow-x:auto;margin-top:10px">
+          <table>
+            <thead><tr><th>Role</th><th>Division</th><th>Location</th><th>Opened</th><th>Days open</th><th>Status</th><th></th></tr></thead>
+            <tbody id="job-rows"></tbody>
+          </table>
+          </div>
+          <p class="dim" style="margin-top:8px;font-size:12px">Days open counts from Opened to today (or to the date it was marked filled). Time-to-fill trends live on the Reports tab.</p>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
         <div class="card-h"><h3>New applicant</h3><span>Name and how they applied — everything else is tracked below</span></div>
         <div class="card-body">
           <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr 1.4fr;gap:12px">
@@ -368,6 +414,7 @@ let employees = [];
 let allEmployeesEver = []; // includes terminated -- only for the Add to Roster Employee ID uniqueness check, so a reused ID can never silently overwrite someone's old record
 let departmentList = [];
 let davidUid = null;
+let openJobs = [];
 
 // Click-to-sort table headers, same pattern as Roster -- defaults to
 // Name A-Z so that's what loads without touching anything.
@@ -406,7 +453,9 @@ async function loadEmployees() {
 async function loadDepartmentList() {
   const snap = await getDoc(doc(db, 'settings', 'departments'));
   departmentList = snap.exists() ? (snap.data().values || []).filter((v) => v.active !== false).map((v) => v.label) : [];
-  document.getElementById('roster-division-options').innerHTML = departmentList.map((d) => `<option value="${escapeHtml(d)}">`).join('');
+  const opts = departmentList.map((d) => `<option value="${escapeHtml(d)}">`).join('');
+  document.getElementById('roster-division-options').innerHTML = opts;
+  document.getElementById('job-division-options').innerHTML = opts;
 }
 
 // David's uid is resolved by role, not hardcoded -- if his account is
@@ -497,6 +546,116 @@ function renderPipeline() {
     btn.addEventListener('click', () => openEditApplicant(btn.dataset.id));
   });
 }
+
+// ---- Open jobs -- a requisition David opens when a role needs filling,
+// closed out with "Mark filled" once someone starts. Days open/to fill
+// is computed from opened_date and (once set) filled_date, never stored
+// itself -- same "compute, don't store" rule as everywhere else in this
+// app. Feeds the Time to fill report on the Reports tab. ----
+
+async function loadOpenJobs() {
+  const snap = await getDocs(collection(db, 'open_jobs'));
+  openJobs = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.opened_date || '').localeCompare(b.opened_date || ''));
+  renderJobs();
+}
+
+function daysOpenFor(job) {
+  const start = new Date(job.opened_date + 'T00:00:00');
+  const end = job.filled_date ? new Date(job.filled_date + 'T00:00:00') : new Date(todayStr + 'T00:00:00');
+  return Math.max(0, Math.round((end - start) / 86400000));
+}
+
+function renderJobs() {
+  const openCount = openJobs.filter((j) => j.status === 'open').length;
+  document.getElementById('jobs-summary').textContent = `${openCount} open of ${openJobs.length}`;
+
+  document.getElementById('job-rows').innerHTML = openJobs.length ? openJobs.map((j) => {
+    const days = daysOpenFor(j);
+    const statusPill = j.status === 'open' ? '<span class="pill">Open</span>'
+      : j.status === 'filled' ? '<span class="pill ok">Filled</span>'
+      : '<span class="pill bad">Cancelled</span>';
+    return `
+      <tr${j.status !== 'open' ? ' style="opacity:.6"' : ''}>
+        <td>${escapeHtml(j.title || 'Unspecified')}</td>
+        <td class="dim">${escapeHtml(j.division) || '—'}</td>
+        <td class="dim">${escapeHtml(j.location) || '—'}</td>
+        <td class="mono dim">${formatDate(j.opened_date)}</td>
+        <td class="mono" style="${j.status === 'open' && days > 45 ? 'color:var(--alertTx);font-weight:700' : ''}">${days}${j.status === 'filled' ? ' (filled)' : ''}</td>
+        <td>${statusPill}</td>
+        <td style="text-align:right;white-space:nowrap">${j.status === 'open'
+          ? `<button class="gh fill-job-btn" data-id="${j.id}" type="button">Mark filled</button> <button class="gh cancel-job-btn" data-id="${j.id}" type="button">Cancel</button>`
+          : `<button class="gh delete-job-btn" data-id="${j.id}" type="button" style="color:var(--alertTx)">Delete</button>`}</td>
+      </tr>
+    `;
+  }).join('') : '<tr><td colspan="7" class="dim">No job openings yet.</td></tr>';
+
+  document.querySelectorAll('.fill-job-btn').forEach((btn) => {
+    btn.addEventListener('click', () => updateJob(btn.dataset.id, { status: 'filled', filled_date: todayStr }));
+  });
+  document.querySelectorAll('.cancel-job-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (confirm('Cancel this opening? It stays on record but drops out of "currently open."')) updateJob(btn.dataset.id, { status: 'cancelled' });
+    });
+  });
+  document.querySelectorAll('.delete-job-btn').forEach((btn) => {
+    btn.addEventListener('click', () => deleteJob(btn.dataset.id));
+  });
+}
+
+async function updateJob(id, fields) {
+  try {
+    await updateDoc(doc(db, 'open_jobs', id), { ...fields, entered_by: profile.uid, updated_at: serverTimestamp() });
+    const j = openJobs.find((x) => x.id === id);
+    if (j) Object.assign(j, fields);
+    renderJobs();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not update — ' + err.message, 'error');
+  }
+}
+
+async function deleteJob(id) {
+  if (!confirm('Delete this job opening record? This cannot be undone.')) return;
+  try {
+    await deleteDoc(doc(db, 'open_jobs', id));
+    showToast('Deleted.');
+    await loadOpenJobs();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not delete — ' + err.message, 'error');
+  }
+}
+
+document.getElementById('new-job-title').innerHTML = roleOptionsHtml('');
+wirePositionToggle('new-job-title', 'new-job-title-other', 'job-title-other-field');
+document.getElementById('new-job-opened').value = todayStr;
+
+document.getElementById('add-job-btn').addEventListener('click', async () => {
+  const title = readPositionField('new-job-title', 'new-job-title-other');
+  if (!title) { showToast('Pick a role.', 'error'); return; }
+  const division = document.getElementById('new-job-division').value.trim();
+  const location = document.getElementById('new-job-location').value;
+  const opened = document.getElementById('new-job-opened').value || todayStr;
+  try {
+    await setDoc(doc(collection(db, 'open_jobs')), {
+      title, division, location, opened_date: opened, status: 'open', filled_date: null,
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    document.getElementById('new-job-title').value = '';
+    document.getElementById('new-job-title-other').value = '';
+    document.getElementById('job-title-other-field').hidden = true;
+    document.getElementById('new-job-division').value = '';
+    document.getElementById('new-job-location').value = '';
+    document.getElementById('new-job-opened').value = todayStr;
+    showToast('Job opening added.');
+    await loadOpenJobs();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not add — ' + err.message, 'error');
+  }
+});
 
 function empName(empId) {
   const e = employees.find((x) => x.id === empId);
@@ -1071,6 +1230,7 @@ await loadEmployees();
 await loadDepartmentList();
 await loadDavidUid();
 await loadApplicants();
+await loadOpenJobs();
 </script>
 </body>
 </html>
