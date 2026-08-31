@@ -646,9 +646,10 @@ async function renderReport(key) {
     // Same definitions the Applicants tab itself uses (outcome is the
     // real signal now — hired/orientation_completed used to stand in
     // for it before the outcome field existed).
-    const CLOSED_OUT = ['rejected', 'resume_on_file', 'not_interested'];
+    const CLOSED_OUT = ['rejected', 'not_selected', 'resume_on_file', 'not_interested'];
     const hired = apps.filter((a) => a.outcome === 'hired').length;
     const rejected = apps.filter((a) => a.outcome === 'rejected' || a.interview_status === 'not_passed').length;
+    const notSelected = apps.filter((a) => a.outcome === 'not_selected').length;
     const resumeOnFile = apps.filter((a) => a.outcome === 'resume_on_file').length;
     const notInterested = apps.filter((a) => a.outcome === 'not_interested').length;
     const stillActive = apps.filter((a) => a.interview_status !== 'not_passed' && a.outcome !== 'hired' && !CLOSED_OUT.includes(a.outcome)).length;
@@ -677,6 +678,7 @@ async function renderReport(key) {
       ['Still active', stillActive],
       ['Hired', hired],
       ['Rejected', rejected],
+      ['Not selected to move forward', notSelected],
       ['Resume on file', resumeOnFile],
       [`Manager wasn't interested`, notInterested],
     ];
@@ -713,7 +715,7 @@ async function renderReport(key) {
     lastCsv = [
       ['Metric', 'Count'],
       ['Applicants', apps.length], ['Still active', stillActive], ['Hired', hired], ['Rejected', rejected],
-      ['Resume on file', resumeOnFile], [`Manager wasn't interested`, notInterested],
+      ['Not selected to move forward', notSelected], ['Resume on file', resumeOnFile], [`Manager wasn't interested`, notInterested],
       ...funnelPairs, ...Object.entries(bySource), ...Object.entries(byRole),
     ];
   }

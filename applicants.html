@@ -99,6 +99,7 @@
             <option value="hired">Hired</option>
             <option value="not_passed">Did not pass interview</option>
             <option value="rejected">Rejected</option>
+            <option value="not_selected">Not selected to move forward</option>
             <option value="resume_on_file">Resume on file</option>
             <option value="not_interested">Manager wasn't interested</option>
             <option value="oriented">Orientation completed</option>
@@ -463,7 +464,7 @@ const FUNNEL_STAGES = [
 ];
 function renderPipeline() {
   const stillMoving = applicants.filter((a) => a.interview_status !== 'not_passed'
-    && !['rejected', 'resume_on_file', 'not_interested', 'hired'].includes(a.outcome));
+    && !['rejected', 'not_selected', 'resume_on_file', 'not_interested', 'hired'].includes(a.outcome));
   const stageCounts = FUNNEL_STAGES.map((s) => ({ label: s.label, count: stillMoving.filter(s.test).length }));
   const max = Math.max(1, stageCounts[0].count);
   document.getElementById('pipeline-body').innerHTML = stageCounts.map((s) => `
@@ -476,10 +477,11 @@ function renderPipeline() {
 
   const hiredCount = applicants.filter((a) => a.outcome === 'hired').length;
   const rejectedCount = applicants.filter((a) => a.outcome === 'rejected' || a.interview_status === 'not_passed').length;
+  const notSelectedCount = applicants.filter((a) => a.outcome === 'not_selected').length;
   const resumePool = applicants.filter((a) => a.outcome === 'resume_on_file');
   const notInterestedCount = applicants.filter((a) => a.outcome === 'not_interested').length;
   document.getElementById('pipeline-summary').textContent =
-    `${stillMoving.length} still moving — ${hiredCount} hired, ${rejectedCount} rejected, ${resumePool.length} resume on file, ${notInterestedCount} not interested`;
+    `${stillMoving.length} still moving — ${hiredCount} hired, ${rejectedCount} rejected, ${notSelectedCount} not selected to move forward, ${resumePool.length} resume on file, ${notInterestedCount} not interested`;
 
   // Resume on file isn't a dead end like Rejected -- it's a bench of
   // people worth a call the next time a role opens up, so it gets its
@@ -507,7 +509,7 @@ function render() {
   const appliedFrom = document.getElementById('applied-from').value;
   const appliedTo = document.getElementById('applied-to').value;
 
-  const CLOSED_OUT_OUTCOMES = ['rejected', 'resume_on_file', 'not_interested'];
+  const CLOSED_OUT_OUTCOMES = ['rejected', 'not_selected', 'resume_on_file', 'not_interested'];
   const visible = applicants.filter((a) => {
     if (q && !(a.name || '').toLowerCase().includes(q)) return false;
     // Active pipeline: once someone's Hired, they've graduated to the
@@ -519,6 +521,7 @@ function render() {
     if (statusFilter === 'hired' && a.outcome !== 'hired') return false;
     if (statusFilter === 'not_passed' && a.interview_status !== 'not_passed') return false;
     if (statusFilter === 'rejected' && a.outcome !== 'rejected') return false;
+    if (statusFilter === 'not_selected' && a.outcome !== 'not_selected') return false;
     if (statusFilter === 'resume_on_file' && a.outcome !== 'resume_on_file') return false;
     if (statusFilter === 'not_interested' && a.outcome !== 'not_interested') return false;
     if (statusFilter === 'oriented' && !a.orientation_completed) return false;
@@ -576,6 +579,7 @@ function render() {
             <option value="" ${!a.outcome ? 'selected' : ''}>— Active —</option>
             <option value="hired" ${a.outcome === 'hired' ? 'selected' : ''}>Hired</option>
             <option value="rejected" ${a.outcome === 'rejected' ? 'selected' : ''}>Rejected</option>
+            <option value="not_selected" ${a.outcome === 'not_selected' ? 'selected' : ''}>Not selected to move forward</option>
             <option value="resume_on_file" ${a.outcome === 'resume_on_file' ? 'selected' : ''}>Resume on file</option>
             <option value="not_interested" ${a.outcome === 'not_interested' ? 'selected' : ''}>Manager wasn't interested</option>
           </select>
@@ -931,6 +935,7 @@ function progressFieldsHtml(a) {
         <option value="" ${!a.outcome ? 'selected' : ''}>— Active —</option>
         <option value="hired" ${a.outcome === 'hired' ? 'selected' : ''}>Hired</option>
         <option value="rejected" ${a.outcome === 'rejected' ? 'selected' : ''}>Rejected</option>
+        <option value="not_selected" ${a.outcome === 'not_selected' ? 'selected' : ''}>Not selected to move forward</option>
         <option value="resume_on_file" ${a.outcome === 'resume_on_file' ? 'selected' : ''}>Resume on file</option>
         <option value="not_interested" ${a.outcome === 'not_interested' ? 'selected' : ''}>Manager wasn't interested</option>
       </select>
