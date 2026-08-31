@@ -42,6 +42,8 @@
       <div class="card" style="margin-bottom:16px">
         <div class="card-h"><h3>Pipeline</h3><span id="pipeline-summary">—</span></div>
         <div class="card-body" id="pipeline-body"></div>
+        <div class="card-h" style="border-top:1px solid var(--line)"><h3>Resume on file pool</h3><span>Worth a call the next time a role opens</span></div>
+        <div class="card-body" id="pipeline-resume-pool"></div>
       </div>
 
       <div class="card" style="margin-bottom:16px">
@@ -474,10 +476,24 @@ function renderPipeline() {
 
   const hiredCount = applicants.filter((a) => a.outcome === 'hired').length;
   const rejectedCount = applicants.filter((a) => a.outcome === 'rejected' || a.interview_status === 'not_passed').length;
-  const resumeCount = applicants.filter((a) => a.outcome === 'resume_on_file').length;
+  const resumePool = applicants.filter((a) => a.outcome === 'resume_on_file');
   const notInterestedCount = applicants.filter((a) => a.outcome === 'not_interested').length;
   document.getElementById('pipeline-summary').textContent =
-    `${stillMoving.length} still moving — ${hiredCount} hired, ${rejectedCount} rejected, ${resumeCount} resume on file, ${notInterestedCount} not interested`;
+    `${stillMoving.length} still moving — ${hiredCount} hired, ${rejectedCount} rejected, ${resumePool.length} resume on file, ${notInterestedCount} not interested`;
+
+  // Resume on file isn't a dead end like Rejected -- it's a bench of
+  // people worth a call the next time a role opens up, so it gets its
+  // own browsable pool here instead of just a number in the tally above.
+  document.getElementById('pipeline-resume-pool').innerHTML = resumePool.length
+    ? resumePool.map((a) => `
+        <button type="button" class="gh pool-app-btn" data-id="${a.id}" style="font-size:11.5px;padding:4px 10px;margin:0 6px 6px 0">
+          ${escapeHtml(a.name)}${a.position_applied ? ` <span class="dim">— ${escapeHtml(a.position_applied)}</span>` : ''}
+        </button>
+      `).join('')
+    : '<span class="dim" style="font-size:12.5px">Nobody in the resume pool right now.</span>';
+  document.querySelectorAll('.pool-app-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openEditApplicant(btn.dataset.id));
+  });
 }
 
 function empName(empId) {
