@@ -570,7 +570,7 @@ const REVIEW_HEADING_ES = { 30: 'Revisión de 30 Días — Aprendiendo el Puesto
 
 function reviewFormHtml(milestone) {
   return `
-    <div class="card no-print" style="margin-bottom:10px">
+    <div class="card no-print" style="margin-bottom:10px" id="rev${milestone}-card">
       <div class="card-h"><h3>${REVIEW_HEADING[milestone]}</h3></div>
       <div class="card-body">
         <p class="dim" style="margin-bottom:10px">${REVIEW_FOCUS[milestone]}</p>
@@ -583,6 +583,7 @@ function reviewFormHtml(milestone) {
               <label><input type="radio" name="rev${milestone}-area${i}" value="N"> Needs improvement</label>
             </div>
             <input class="f-in" placeholder="Comment (required if Needs improvement)" id="rev${milestone}-comment-${i}">
+            <input class="f-in" placeholder="Comentario en español (opcional)" id="rev${milestone}-comment-${i}-es" style="margin-top:4px">
           </div>
         `).join('')}
         <div class="field">
@@ -594,6 +595,7 @@ function reviewFormHtml(milestone) {
             <label><input type="radio" name="rev${milestone}-areaOther" value="N"> Needs improvement</label>
           </div>
           <input class="f-in" placeholder="Comment (optional)" id="rev${milestone}-other-comment">
+          <input class="f-in" placeholder="Comentario en español (opcional)" id="rev${milestone}-other-comment-es" style="margin-top:4px">
         </div>
         <div class="field">
           <label class="f-lab">Is the employee on track at this stage?</label>
@@ -604,6 +606,7 @@ function reviewFormHtml(milestone) {
           </select>
         </div>
         <div class="field"><label class="f-lab">Manager notes (what's going well / what needs attention before the next review)</label><textarea class="f-in" id="rev${milestone}-notes" rows="3" style="resize:vertical"></textarea></div>
+        <div class="field"><label class="f-lab">Manager notes — español (opcional)</label><textarea class="f-in" id="rev${milestone}-notes-es" rows="3" style="resize:vertical"></textarea></div>
         ${milestone === 90 ? `
         <div class="field"><label class="f-lab">Overall 90-day assessment</label>
           <select class="f-in" id="rev90-overall">
@@ -624,8 +627,11 @@ function reviewFormHtml(milestone) {
           <div class="field"><label class="f-lab">Extend review period to (if selected above)</label><input class="f-in" id="rev90-extend-date" type="date"></div>
           <div class="field"><label class="f-lab">Other (if selected above)</label><input class="f-in" id="rev90-other-recommend"></div>
         </div>
+        <div class="field"><label class="f-lab">Other — español (opcional)</label><input class="f-in" id="rev90-other-recommend-es"></div>
         <div class="field"><label class="f-lab">Manager overall comments</label><textarea class="f-in" id="rev90-overall-comments" rows="3" style="resize:vertical"></textarea></div>
+        <div class="field"><label class="f-lab">Manager overall comments — español (opcional)</label><textarea class="f-in" id="rev90-overall-comments-es" rows="3" style="resize:vertical"></textarea></div>
         <div class="field"><label class="f-lab">Employee comments (optional)</label><textarea class="f-in" id="rev90-employee-comments" rows="2" style="resize:vertical"></textarea></div>
+        <div class="field"><label class="f-lab">Employee comments — español (opcional)</label><textarea class="f-in" id="rev90-employee-comments-es" rows="2" style="resize:vertical"></textarea></div>
         ` : ''}
         <button class="gh solid" id="rev${milestone}-generate-btn" type="button">Save &amp; generate — ${milestone}-day</button>
       </div>
@@ -638,6 +644,7 @@ function readReviewForm(milestone) {
     area: a,
     rating: document.querySelector(`input[name="rev${milestone}-area${i}"]:checked`).value,
     comment: document.getElementById(`rev${milestone}-comment-${i}`).value.trim(),
+    comment_es: document.getElementById(`rev${milestone}-comment-${i}-es`).value.trim(),
   }));
   const otherLabel = document.getElementById(`rev${milestone}-other-label`).value.trim();
   if (otherLabel) {
@@ -645,18 +652,23 @@ function readReviewForm(milestone) {
       area: `Other: ${otherLabel}`,
       rating: document.querySelector(`input[name="rev${milestone}-areaOther"]:checked`).value,
       comment: document.getElementById(`rev${milestone}-other-comment`).value.trim(),
+      comment_es: document.getElementById(`rev${milestone}-other-comment-es`).value.trim(),
     });
   }
   const onTrack = document.getElementById(`rev${milestone}-ontrack`).value;
   const notes = document.getElementById(`rev${milestone}-notes`).value.trim();
-  const data = { ratings, on_track: onTrack, manager_notes: notes };
+  const notesEs = document.getElementById(`rev${milestone}-notes-es`).value.trim();
+  const data = { ratings, on_track: onTrack, manager_notes: notes, manager_notes_es: notesEs };
   if (milestone === 90) {
     data.overall = document.getElementById('rev90-overall').value;
     data.recommend = document.getElementById('rev90-recommend').value;
     data.extend_date = document.getElementById('rev90-extend-date').value;
     data.other_recommend = document.getElementById('rev90-other-recommend').value.trim();
+    data.other_recommend_es = document.getElementById('rev90-other-recommend-es').value.trim();
     data.overall_comments = document.getElementById('rev90-overall-comments').value.trim();
+    data.overall_comments_es = document.getElementById('rev90-overall-comments-es').value.trim();
     data.employee_comments = document.getElementById('rev90-employee-comments').value.trim();
+    data.employee_comments_es = document.getElementById('rev90-employee-comments-es').value.trim();
   }
   return data;
 }
@@ -674,6 +686,22 @@ function renderReview() {
     <div class="form-doc" id="rev-sheet" hidden></div>
   `;
   wireEmpSearch('rev-emp');
+
+  // Deep link from the Review queue's "Submit review" button — jumps
+  // straight to a specific employee/milestone instead of leaving HR to
+  // search for both by hand.
+  const params = new URLSearchParams(window.location.search);
+  const deepEmp = params.get('emp');
+  const deepMilestone = Number(params.get('milestone'));
+  if (deepEmp) setEmpField('rev-emp', deepEmp);
+  if ([30, 60, 90].includes(deepMilestone)) {
+    const card = document.getElementById(`rev${deepMilestone}-card`);
+    if (card) {
+      card.style.outline = '2px solid var(--accent)';
+      card.style.outlineOffset = '2px';
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
 
   [30, 60, 90].forEach((milestone) => {
     document.getElementById(`rev${milestone}-generate-btn`).addEventListener('click', async () => {
@@ -716,6 +744,10 @@ function onTrackLabel(v, isEs) {
 function renderReviewSheet(emp, milestone, data, lang = 'en') {
   const isEs = lang === 'es';
   const areaLabel = (a) => (isEs ? (REVIEW_AREAS_ES[a] || a) : a);
+  // Free text is typed once per language by HR (not machine-translated) —
+  // fall back to the English text whenever a Spanish box was left blank,
+  // including for reviews saved before the Spanish fields existed.
+  const t2 = (en, es) => (isEs ? (es || en) : en);
   const sheet = document.getElementById('rev-sheet');
   sheet.hidden = false;
   sheet.innerHTML = `
@@ -740,11 +772,11 @@ function renderReviewSheet(emp, milestone, data, lang = 'en') {
       <table class="form-notice-table">
         <thead><tr><th>${isEs ? 'Área de Desempeño' : 'Performance Area'}</th><th>E</th><th>M</th><th>N</th><th>${isEs ? 'Comentarios' : 'Comments'}</th></tr></thead>
         <tbody>
-          ${data.ratings.map(r => `<tr><td>${escapeHtml(areaLabel(r.area))}</td><td style="text-align:center">${r.rating === 'E' ? '☑' : '☐'}</td><td style="text-align:center">${r.rating === 'M' ? '☑' : '☐'}</td><td style="text-align:center">${r.rating === 'N' ? '☑' : '☐'}</td><td>${escapeHtml(r.comment)}</td></tr>`).join('')}
+          ${data.ratings.map(r => `<tr><td>${escapeHtml(areaLabel(r.area))}</td><td style="text-align:center">${r.rating === 'E' ? '☑' : '☐'}</td><td style="text-align:center">${r.rating === 'M' ? '☑' : '☐'}</td><td style="text-align:center">${r.rating === 'N' ? '☑' : '☐'}</td><td>${escapeHtml(t2(r.comment, r.comment_es))}</td></tr>`).join('')}
         </tbody>
       </table>
       <div class="form-box">${isEs ? '¿El empleado va por buen camino en esta etapa?' : 'Is the employee on track at this stage?'} ${onTrackLabel(data.on_track, isEs)}</div>
-      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">${isEs ? 'Notas del Gerente' : 'Manager Notes'}</b>${escapeHtml(data.manager_notes) || '—'}</div>
+      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">${isEs ? 'Notas del Gerente' : 'Manager Notes'}</b>${escapeHtml(t2(data.manager_notes, data.manager_notes_es)) || '—'}</div>
       <div class="form-sig">
         <div>${isEs ? 'Revisión Completada El' : 'Review Completed On'}: ${formatDate(new Date().toISOString().slice(0, 10))}</div>
         <div>${isEs ? 'Iniciales del Gerente' : 'Manager Initials'}: ______&nbsp;&nbsp;&nbsp;${isEs ? 'Iniciales del Empleado' : 'Employee Initials'}: ______</div>
@@ -757,10 +789,10 @@ function renderReviewSheet(emp, milestone, data, lang = 'en') {
         : (data.overall === 'exceeds' ? 'Exceeds Expectations — performing above the standard for this role' : data.overall === 'needs' ? 'Needs Improvement — see comments; improvement plan or extended review period below' : 'Meets Expectations — performing at the standard for this role')}</div>
       <div class="form-section">${isEs ? 'Recomendación' : 'Recommendation'}</div>
       <div class="form-box">${isEs
-        ? { continue: 'Continuar en el puesto', 'continue-support': 'Continuar con capacitación / apoyo adicional (ver comentarios)', extend: `Extender el período de revisión hasta: ${formatDate(data.extend_date)}`, other: `Otro: ${escapeHtml(data.other_recommend)}` }[data.recommend]
+        ? { continue: 'Continuar en el puesto', 'continue-support': 'Continuar con capacitación / apoyo adicional (ver comentarios)', extend: `Extender el período de revisión hasta: ${formatDate(data.extend_date)}`, other: `Otro: ${escapeHtml(t2(data.other_recommend, data.other_recommend_es))}` }[data.recommend]
         : { continue: 'Continue in role', 'continue-support': 'Continue with additional training / support (see comments)', extend: `Extend review period to: ${formatDate(data.extend_date)}`, other: `Other: ${escapeHtml(data.other_recommend)}` }[data.recommend]}</div>
-      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">${isEs ? 'Comentarios Generales del Gerente' : 'Manager Overall Comments'}</b>${escapeHtml(data.overall_comments) || '—'}</div>
-      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">${isEs ? 'Comentarios del Empleado (opcional)' : 'Employee Comments (optional)'}</b>${escapeHtml(data.employee_comments) || '—'}</div>
+      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">${isEs ? 'Comentarios Generales del Gerente' : 'Manager Overall Comments'}</b>${escapeHtml(t2(data.overall_comments, data.overall_comments_es)) || '—'}</div>
+      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">${isEs ? 'Comentarios del Empleado (opcional)' : 'Employee Comments (optional)'}</b>${escapeHtml(t2(data.employee_comments, data.employee_comments_es)) || '—'}</div>
       ` : ''}
 
       <div class="form-page-break">
