@@ -114,6 +114,11 @@ service cloud.firestore {
         allow create, update: if isHrUser() && isClean(request.resource.data);
         allow delete: if false;
       }
+      match /harassment_training/{docId} {
+        allow read: if isHrUser();
+        allow create, update: if isHrUser() && isClean(request.resource.data);
+        allow delete: if false;
+      }
     }
 
     // The New Hire board and Review queue run a collection-group query
@@ -125,6 +130,12 @@ service cloud.firestore {
     // covers direct reads but not this. Without this block, that query
     // fails with a permissions error and silently blanks the whole page.
     match /{path=**}/reviews/{milestone} {
+      allow read: if isHrUser();
+    }
+    // Same reason, same fix, for the harassment-training tracker's
+    // collection-group read (one query for every employee's current
+    // cycle instead of 110 individual reads).
+    match /{path=**}/harassment_training/{docId} {
       allow read: if isHrUser();
     }
 
