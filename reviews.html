@@ -48,7 +48,7 @@
           </select>
         </div>
         <table>
-          <thead><tr><th>Due</th><th>Employee</th><th>Division</th><th>Milestone</th><th>Assigned to</th><th>Review done</th><th>Form received</th></tr></thead>
+          <thead><tr><th>Due</th><th>Employee</th><th>Division</th><th>Milestone</th><th>Assigned to</th><th>Review done</th><th>Form received</th><th></th></tr></thead>
           <tbody id="queue-rows"></tbody>
         </table>
       </div>
@@ -191,7 +191,7 @@ function renderBoard() {
             </select>
           </label>
           <table style="margin:0">
-            <thead><tr><th style="font-size:10.5px">Milestone</th><th style="font-size:10.5px">Due</th><th style="font-size:10.5px">Review done</th><th style="font-size:10.5px">Form received</th></tr></thead>
+            <thead><tr><th style="font-size:10.5px">Milestone</th><th style="font-size:10.5px">Due</th><th style="font-size:10.5px">Review done</th><th style="font-size:10.5px">Form received</th><th></th></tr></thead>
             <tbody>
               ${empReviews.map((r) => `
                 <tr>
@@ -199,8 +199,9 @@ function renderBoard() {
                   <td class="mono dim">${formatDate(r.due_date)}</td>
                   <td><input type="checkbox" class="review-toggle" data-emp="${emp.id}" data-milestone="${r.milestone}" ${r.review_completed ? 'checked' : ''}></td>
                   <td><input type="checkbox" class="form-toggle" data-emp="${emp.id}" data-milestone="${r.milestone}" ${r.form_received ? 'checked' : ''}></td>
+                  <td><a class="gh" href="docgen.html?open=review&${r.review_completed ? `doc=${emp.id}:${r.milestone}` : `emp=${emp.id}&milestone=${r.milestone}`}" style="font-size:12px;padding:4px 10px;display:inline-block;text-decoration:none">${r.review_completed ? 'Open →' : 'Submit →'}</a></td>
                 </tr>
-              `).join('') || '<tr><td colspan="4" class="dim">No 30/60/90 records yet.</td></tr>'}
+              `).join('') || '<tr><td colspan="5" class="dim">No 30/60/90 records yet.</td></tr>'}
             </tbody>
           </table>
         </td>
@@ -272,9 +273,10 @@ function renderQueue() {
         </td>
         <td><input type="checkbox" class="review-toggle" data-emp="${r.empId}" data-milestone="${r.milestone}" ${r.review_completed ? 'checked' : ''}></td>
         <td><input type="checkbox" class="form-toggle" data-emp="${r.empId}" data-milestone="${r.milestone}" ${r.form_received ? 'checked' : ''}></td>
+        <td>${terminated ? '' : `<a class="gh" href="docgen.html?open=review&${r.review_completed ? `doc=${r.empId}:${r.milestone}` : `emp=${r.empId}&milestone=${r.milestone}`}" style="font-size:12px;padding:4px 10px;display:inline-block;text-decoration:none">${r.review_completed ? 'Open →' : 'Submit review →'}</a>`}</td>
       </tr>
     `;
-  }).join('') : '<tr><td colspan="7" class="dim">No reviews match.</td></tr>';
+  }).join('') : '<tr><td colspan="8" class="dim">No reviews match.</td></tr>';
 
   document.querySelectorAll('.review-toggle').forEach((cb) => {
     cb.addEventListener('change', () => toggleField(cb.dataset.emp, cb.dataset.milestone, 'review_completed', cb.checked));
@@ -326,10 +328,14 @@ function renderEscalation() {
 
 async function toggleField(empId, milestone, field, value) {
   try {
-    await updateDoc(doc(db, 'employees', empId, 'reviews', milestone), {
-      [field]: value,
-      entered_by: profile.uid,
-    });
+    const patch = { [field]: value, entered_by: profile.uid };
+    // Stamped the moment a review is actually marked done, same "who and
+    // when" every other write in this app records — this didn't exist
+    // before, so it only starts populating from here forward; reviews
+    // completed earlier won't have it. Cleared if someone unchecks a
+    // review by mistake, so a stale timestamp can't survive a correction.
+    if (field === 'review_completed') patch.completed_at = value ? serverTimestamp() : null;
+    await updateDoc(doc(db, 'employees', empId, 'reviews', milestone), patch);
     const r = reviews.find((x) => x.empId === empId && String(x.milestone) === String(milestone));
     if (r) r[field] = value;
 

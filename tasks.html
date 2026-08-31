@@ -315,7 +315,12 @@ function renderCalendar() {
     ? `${Math.round((doneCount / monthTasks.length) * 100)}%` : '0%';
 
   const monthReviews = pendingReviews.filter((r) => {
-    if (personFilter && r.assigned_to !== personFilter) return false;
+    // Same rule as the dashboard's "Due soon" widget: an unassigned
+    // review (nothing picked in New hires & reviews yet) still shows
+    // under any single-person filter instead of disappearing the moment
+    // someone narrows the calendar to just themselves -- only a review
+    // actually assigned to someone else drops out.
+    if (personFilter && r.assigned_to && r.assigned_to !== personFilter) return false;
     const [y, m] = r.due_date.split('-').map(Number);
     return y === year && (m - 1) === month;
   });
