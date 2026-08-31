@@ -120,6 +120,7 @@ async function ensureLoaded(names) {
       // count toward Safety's numbers — same reasoning as excluding test
       // employees above.
       if (name === 'incidents') rows = rows.filter((i) => !i.voided);
+      if (name === 'attendance') rows = rows.filter((a) => !a.voided);
       data[name] = rows;
     }
   }
@@ -152,6 +153,12 @@ function previousRange({ start, end }) {
 function tsToDateStr(ts) {
   return ts?.seconds ? new Date(ts.seconds * 1000).toISOString().slice(0, 10) : null;
 }
+function daysBetween(a, b) { return Math.round((a - b) / 86400000); }
+function formatMonthLabel(ym) {
+  if (!ym || ym === 'Unknown') return 'Unknown';
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
 
 function topN(counts, n = 6) {
   return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, n);
@@ -159,6 +166,21 @@ function topN(counts, n = 6) {
 function rankHtml(pairs, emptyMsg) {
   if (!pairs.length) return `<div class="card-body dim">${emptyMsg}</div>`;
   const max = pairs[0][1] || 1;
+  return pairs.map(([label, count]) => `
+    <div class="rowbar">
+      <div class="l">${label}</div>
+      <div class="trk"><i style="width:${(count / max) * 100}%"></i></div>
+      <div class="mono" style="text-align:right">${count}</div>
+    </div>
+  `).join('');
+}
+// Same bars as rankHtml, but for pairs in a fixed logical order (tenure
+// bands, chronological months) rather than pre-sorted by count -- rankHtml
+// assumes the first pair is the max for the bar-width math, which is only
+// true for topN()'s count-sorted output.
+function rankHtmlOrdered(pairs, emptyMsg) {
+  if (!pairs.length) return `<div class="card-body dim">${emptyMsg}</div>`;
+  const max = Math.max(1, ...pairs.map(([, count]) => count));
   return pairs.map(([label, count]) => `
     <div class="rowbar">
       <div class="l">${label}</div>
@@ -216,16 +238,60 @@ async function renderReport(key) {
   const body = document.getElementById('report-body');
 
   if (key === 'turnover') {
-    await ensureLoaded(['employees']);
+    await ensureLoaded(['employees', 'terminations']);
     const emps = data.employees;
-    const separations = emps.filter((e) => e.status === 'terminated' && inRange(e.separation_date, range));
+    const separationsRaw = emps.filter((e) => e.status === 'terminated' && inRange(e.separation_date, range));
     const activeAvg = emps.filter((e) => e.status !== 'terminated').length; // simple proxy, stated as such
+
+    // Merge each separated employee with their termination record when one
+    // exists (a quick status flip from Roster's own Terminate action
+    // doesn't always go through the full Termination generator, so this
+    // isn't guaranteed) for the denormalized-at-the-time detail: reason,
+    // and division/location/job title/hire date as they were on the day
+    // it happened, not whatever the roster says today.
+    const separations = separationsRaw.map((e) => {
+      const termDocs = data.terminations.filter((t) => t.emp_id === e.id);
+      const term = termDocs.find((t) => t.termination_date === e.separation_date)
+        || termDocs.slice().sort((a, b) => (b.termination_date || '').localeCompare(a.termination_date || ''))[0];
+      const hireDate = term?.hire_date || e.hire_date || null;
+      const tenureDays = hireDate && e.separation_date
+        ? daysBetween(new Date(e.separation_date + 'T00:00:00'), new Date(hireDate + 'T00:00:00'))
+        : null;
+      return {
+        id: e.id,
+        name: `${e.first_name} ${e.last_name}`,
+        division: term?.division || e.division || 'Unspecified',
+        location: term?.location || e.location || 'Unspecified',
+        job_title: term?.job_title || e.position || '—',
+        hire_date: hireDate,
+        separation_date: e.separation_date,
+        separation_type: e.separation_type || term?.separation_type || 'unspecified',
+        reason: term?.reason || null,
+        tenureDays,
+      };
+    });
+
     const rate = activeAvg ? ((separations.length / activeAvg) * 100).toFixed(1) : '0.0';
     const vol = separations.filter((e) => e.separation_type === 'voluntary').length;
     const invol = separations.filter((e) => e.separation_type === 'involuntary').length;
 
-    const byDivision = {};
-    separations.forEach((e) => { byDivision[e.division || 'Unspecified'] = (byDivision[e.division || 'Unspecified'] || 0) + 1; });
+    const byDivision = {}, byLocation = {}, byReason = {}, byMonth = {};
+    const tenureOrder = ['< 90 days', '90 days – 1 yr', '1 – 3 yrs', '3+ yrs', 'Unknown'];
+    const byTenure = Object.fromEntries(tenureOrder.map((b) => [b, 0]));
+    separations.forEach((s) => {
+      byDivision[s.division] = (byDivision[s.division] || 0) + 1;
+      byLocation[s.location] = (byLocation[s.location] || 0) + 1;
+      byReason[s.reason || 'Not recorded'] = (byReason[s.reason || 'Not recorded'] || 0) + 1;
+      const month = s.separation_date ? s.separation_date.slice(0, 7) : 'Unknown';
+      byMonth[month] = (byMonth[month] || 0) + 1;
+      const band = s.tenureDays == null ? 'Unknown'
+        : s.tenureDays < 90 ? '< 90 days'
+        : s.tenureDays < 365 ? '90 days – 1 yr'
+        : s.tenureDays < 365 * 3 ? '1 – 3 yrs'
+        : '3+ yrs';
+      byTenure[band]++;
+    });
+    const monthEntries = Object.entries(byMonth).sort((a, b) => a[0].localeCompare(b[0]));
 
     body.innerHTML = statLine(range, `denominator: ${activeAvg} currently active (average headcount for the period is not tracked historically — this uses current headcount as the closest available proxy)`) + `
       <div class="big">
@@ -233,12 +299,58 @@ async function renderReport(key) {
         <div><div class="v n">${separations.length}</div><div class="k">Separations</div></div>
         <div><div class="v n">${vol} / ${invol}</div><div class="k">Voluntary / involuntary</div></div>
       </div>
+      <div class="two">
+        <div class="card">
+          <div class="card-h"><h3>By division</h3><span></span></div>
+          ${rankHtml(topN(byDivision, 12), 'No separations in range.')}
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>By location</h3><span></span></div>
+          ${rankHtml(topN(byLocation, 12), 'No separations in range.')}
+        </div>
+      </div>
+      <div class="two">
+        <div class="card">
+          <div class="card-h"><h3>By reason</h3><span></span></div>
+          ${rankHtml(topN(byReason, 8), 'No separations in range.')}
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>By tenure at separation</h3><span></span></div>
+          ${rankHtmlOrdered(tenureOrder.map((b) => [b, byTenure[b]]).filter(([, c]) => c > 0), 'No separations in range.')}
+        </div>
+      </div>
       <div class="card">
-        <div class="card-h"><h3>By division</h3><span></span></div>
-        <table><tbody>${Object.entries(byDivision).map(([d, c]) => `<tr><td>${d}</td><td class="mono" style="text-align:right">${c}</td></tr>`).join('') || '<tr><td class="dim">No separations in range.</td></tr>'}</tbody></table>
+        <div class="card-h"><h3>By month</h3><span></span></div>
+        ${rankHtmlOrdered(monthEntries.map(([m, c]) => [formatMonthLabel(m), c]), 'No separations in range.')}
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Separations detail</h3><span>${separations.length}</span></div>
+        <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Employee</th><th>Division</th><th>Location</th><th>Job title</th><th>Hired</th><th>Separated</th><th>Tenure</th><th>Type</th><th>Reason</th></tr></thead>
+          <tbody>
+            ${separations.slice().sort((a, b) => (b.separation_date || '').localeCompare(a.separation_date || '')).map((s) => `
+              <tr>
+                <td>${s.name}</td>
+                <td class="mono dim">${s.division}</td>
+                <td class="mono dim">${s.location}</td>
+                <td class="dim">${s.job_title}</td>
+                <td class="mono dim">${formatDate(s.hire_date)}</td>
+                <td class="mono">${formatDate(s.separation_date)}</td>
+                <td class="mono dim">${s.tenureDays == null ? '—' : `${Math.round(s.tenureDays / 30.44)} mo`}</td>
+                <td>${s.separation_type === 'involuntary' ? '<span class="pill bad">Involuntary</span>' : s.separation_type === 'voluntary' ? '<span class="pill ok">Voluntary</span>' : '<span class="pill">Unspecified</span>'}</td>
+                <td class="dim">${s.reason || '—'}</td>
+              </tr>
+            `).join('') || '<tr><td colspan="9" class="dim">No separations in range.</td></tr>'}
+          </tbody>
+        </table>
+        </div>
       </div>
     `;
-    lastCsv = [['Division', 'Separations'], ...Object.entries(byDivision)];
+    lastCsv = [
+      ['Employee', 'Division', 'Location', 'Job title', 'Hire date', 'Separation date', 'Tenure (days)', 'Type', 'Reason'],
+      ...separations.map((s) => [s.name, s.division, s.location, s.job_title, s.hire_date || '', s.separation_date || '', s.tenureDays ?? '', s.separation_type, s.reason || '']),
+    ];
   }
 
   else if (key === 'er') {
