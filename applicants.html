@@ -100,15 +100,18 @@
             <option value="oriented">Orientation completed</option>
             <option value="bonus_due">Referral bonus due</option>
           </select>
+          <label class="dim" style="font-size:11.5px;display:flex;align-items:center;gap:5px">Applied from<input class="inp" id="applied-from" type="date" style="width:150px"></label>
+          <label class="dim" style="font-size:11.5px;display:flex;align-items:center;gap:5px">to<input class="inp" id="applied-to" type="date" style="width:150px"></label>
+          <button class="gh" id="applied-range-clear-btn" type="button" style="font-size:11.5px;padding:6px 10px">Clear dates</button>
         </div>
         <div style="overflow-x:auto">
         <table>
           <thead>
-            <tr>
-              <th>Name</th>
+            <tr id="app-head-row">
+              <th class="sortable" data-key="name">Name<span class="sort-arrow"></span></th>
               <th>How applied</th>
-              <th>Applied for</th>
-              <th>Applied</th>
+              <th class="sortable" data-key="position">Applied for<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="applied">Applied<span class="sort-arrow"></span></th>
               <th>Pre-screen</th>
               <th>1st round interview</th>
               <th>Physical / drug exam</th>
@@ -357,6 +360,30 @@ let allEmployeesEver = []; // includes terminated -- only for the Add to Roster 
 let departmentList = [];
 let davidUid = null;
 
+// Click-to-sort table headers, same pattern as Roster -- defaults to
+// Name A-Z so that's what loads without touching anything.
+const APP_SORT_ACCESSORS = {
+  name: (a) => (a.name || '').toLowerCase(),
+  position: (a) => (a.position_applied || '').toLowerCase(),
+  applied: (a) => a.applied_date || '',
+};
+let sortKey = 'name';
+let sortDir = 'asc';
+function updateAppSortIndicators() {
+  document.querySelectorAll('#app-head-row .sortable').forEach((th) => {
+    const arrow = th.querySelector('.sort-arrow');
+    arrow.textContent = th.dataset.key === sortKey ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+  });
+}
+document.querySelectorAll('#app-head-row .sortable').forEach((th) => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.key;
+    if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    else { sortKey = key; sortDir = 'asc'; }
+    render();
+  });
+});
+
 async function loadEmployees() {
   const snap = await getDocs(collection(db, 'employees'));
   allEmployeesEver = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -455,6 +482,8 @@ function empName(empId) {
 function render() {
   const q = document.getElementById('search').value.trim().toLowerCase();
   const statusFilter = document.getElementById('status-filter').value;
+  const appliedFrom = document.getElementById('applied-from').value;
+  const appliedTo = document.getElementById('applied-to').value;
 
   const CLOSED_OUT_OUTCOMES = ['rejected', 'resume_on_file', 'not_interested'];
   const visible = applicants.filter((a) => {
@@ -475,8 +504,22 @@ function render() {
       if (a.source !== 'referral' || !a.hired_emp_id) return false;
       if (a.referral_bonus_referrer_paid && a.referral_bonus_new_hire_paid) return false;
     }
+    // An N/A applied date has nothing to compare, so a date range filter
+    // excludes it rather than guessing which side of the range it belongs on.
+    if (appliedFrom || appliedTo) {
+      if (!a.applied_date || a.applied_date === 'N/A') return false;
+      if (appliedFrom && a.applied_date < appliedFrom) return false;
+      if (appliedTo && a.applied_date > appliedTo) return false;
+    }
     return true;
   });
+
+  const accessor = APP_SORT_ACCESSORS[sortKey] || APP_SORT_ACCESSORS.name;
+  visible.sort((a, b) => {
+    const cmp = String(accessor(a)).localeCompare(String(accessor(b)));
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+  updateAppSortIndicators();
 
   const activeCount = applicants.filter((a) => a.interview_status !== 'not_passed' && a.outcome !== 'hired' && !CLOSED_OUT_OUTCOMES.includes(a.outcome)).length;
   document.getElementById('tracker-summary').textContent = `${visible.length} of ${applicants.length} — ${activeCount} still active`;
@@ -688,6 +731,13 @@ document.getElementById('new-app-source').addEventListener('change', (e) => {
 
 document.getElementById('search').addEventListener('input', render);
 document.getElementById('status-filter').addEventListener('change', render);
+document.getElementById('applied-from').addEventListener('change', render);
+document.getElementById('applied-to').addEventListener('change', render);
+document.getElementById('applied-range-clear-btn').addEventListener('click', () => {
+  document.getElementById('applied-from').value = '';
+  document.getElementById('applied-to').value = '';
+  render();
+});
 
 // ---- Add to Roster -- creates the real employee record from a hired
 // applicant, plus the same 30/60/90 review schedule and onboarding
