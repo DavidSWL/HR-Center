@@ -38,6 +38,11 @@
     <section class="view">
 
       <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>Pipeline</h3><span id="pipeline-summary">—</span></div>
+        <div class="card-body" id="pipeline-body"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
         <div class="card-h"><h3>New applicant</h3><span>Name and how they applied — everything else is tracked below</span></div>
         <div class="card-body">
           <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr 1.4fr;gap:12px">
@@ -85,8 +90,9 @@
         <div class="tools">
           <input class="inp" id="search" placeholder="Search name" style="min-width:190px">
           <select class="inp" id="status-filter">
+            <option value="active" selected>Active pipeline</option>
             <option value="">Everyone</option>
-            <option value="active">Active pipeline</option>
+            <option value="hired">Hired</option>
             <option value="not_passed">Did not pass interview</option>
             <option value="rejected">Rejected</option>
             <option value="resume_on_file">Resume on file</option>
@@ -404,6 +410,41 @@ async function loadApplicants() {
     .map((d) => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (b.entered_at?.seconds || 0) - (a.entered_at?.seconds || 0));
   render();
+  renderPipeline();
+}
+
+// ---- Pipeline funnel -- at-a-glance "who's moving on," computed only
+// (nothing stored) from the same fields the tracker table already
+// tracks. Counted against everyone still live in the pipeline -- a true
+// interview failure or a closed-out outcome (rejected, resume on file,
+// not interested, hired) isn't "still moving," so it's left out of the
+// funnel and rolled into the outcome tally underneath instead. ----
+const FUNNEL_STAGES = [
+  { label: 'Applied', test: () => true },
+  { label: 'Pre-screen passed', test: (a) => !!a.prescreen_passed },
+  { label: 'Interview passed', test: (a) => a.interview_status === 'passed' },
+  { label: 'Physical / drug exam passed', test: (a) => !!a.physical_passed },
+  { label: 'Orientation completed', test: (a) => !!a.orientation_completed },
+];
+function renderPipeline() {
+  const stillMoving = applicants.filter((a) => a.interview_status !== 'not_passed'
+    && !['rejected', 'resume_on_file', 'not_interested', 'hired'].includes(a.outcome));
+  const stageCounts = FUNNEL_STAGES.map((s) => ({ label: s.label, count: stillMoving.filter(s.test).length }));
+  const max = Math.max(1, stageCounts[0].count);
+  document.getElementById('pipeline-body').innerHTML = stageCounts.map((s) => `
+    <div style="display:grid;grid-template-columns:170px 1fr 34px;gap:10px;align-items:center;margin-bottom:8px">
+      <div class="dim" style="font-size:12.5px">${s.label}</div>
+      <div class="trk"><i style="width:${Math.round((s.count / max) * 100)}%"></i></div>
+      <div class="mono" style="text-align:right;font-size:12.5px">${s.count}</div>
+    </div>
+  `).join('');
+
+  const hiredCount = applicants.filter((a) => a.outcome === 'hired').length;
+  const rejectedCount = applicants.filter((a) => a.outcome === 'rejected' || a.interview_status === 'not_passed').length;
+  const resumeCount = applicants.filter((a) => a.outcome === 'resume_on_file').length;
+  const notInterestedCount = applicants.filter((a) => a.outcome === 'not_interested').length;
+  document.getElementById('pipeline-summary').textContent =
+    `${stillMoving.length} still moving — ${hiredCount} hired, ${rejectedCount} rejected, ${resumeCount} resume on file, ${notInterestedCount} not interested`;
 }
 
 function empName(empId) {
@@ -415,10 +456,16 @@ function render() {
   const q = document.getElementById('search').value.trim().toLowerCase();
   const statusFilter = document.getElementById('status-filter').value;
 
-  const NOT_ACTIVE_OUTCOMES = ['rejected', 'resume_on_file', 'not_interested'];
+  const CLOSED_OUT_OUTCOMES = ['rejected', 'resume_on_file', 'not_interested'];
   const visible = applicants.filter((a) => {
     if (q && !(a.name || '').toLowerCase().includes(q)) return false;
-    if (statusFilter === 'active' && (a.interview_status === 'not_passed' || NOT_ACTIVE_OUTCOMES.includes(a.outcome))) return false;
+    // Active pipeline: once someone's Hired, they've graduated to the
+    // roster and no longer need to clutter this list -- everyone else,
+    // rejected/resume-on-file/not-interested included, still shows here
+    // (faded) so a recent decision stays visible. A true interview
+    // failure works the same way as those three.
+    if (statusFilter === 'active' && (a.interview_status === 'not_passed' || a.outcome === 'hired')) return false;
+    if (statusFilter === 'hired' && a.outcome !== 'hired') return false;
     if (statusFilter === 'not_passed' && a.interview_status !== 'not_passed') return false;
     if (statusFilter === 'rejected' && a.outcome !== 'rejected') return false;
     if (statusFilter === 'resume_on_file' && a.outcome !== 'resume_on_file') return false;
@@ -431,11 +478,11 @@ function render() {
     return true;
   });
 
-  const activeCount = applicants.filter((a) => a.interview_status !== 'not_passed' && !NOT_ACTIVE_OUTCOMES.includes(a.outcome)).length;
-  document.getElementById('tracker-summary').textContent = `${visible.length} of ${applicants.length} — ${activeCount} active`;
+  const activeCount = applicants.filter((a) => a.interview_status !== 'not_passed' && a.outcome !== 'hired' && !CLOSED_OUT_OUTCOMES.includes(a.outcome)).length;
+  document.getElementById('tracker-summary').textContent = `${visible.length} of ${applicants.length} — ${activeCount} still active`;
 
   document.getElementById('rows').innerHTML = visible.length ? visible.map((a) => {
-    const grayed = a.interview_status === 'not_passed' || NOT_ACTIVE_OUTCOMES.includes(a.outcome);
+    const grayed = a.interview_status === 'not_passed' || CLOSED_OUT_OUTCOMES.includes(a.outcome);
     const isReferral = a.source === 'referral';
     const linkedEmp = a.hired_emp_id ? employees.find((e) => e.id === a.hired_emp_id) : null;
     const bonusDue = linkedEmp ? addDays(linkedEmp.hire_date, REFERRAL_BONUS_DAYS) : '';
@@ -569,6 +616,7 @@ async function updateApplicant(id, fields) {
     const a = applicants.find((x) => x.id === id);
     if (a) Object.assign(a, fields);
     render();
+    renderPipeline();
   } catch (err) {
     console.error(err);
     showToast('Could not update — ' + err.message, 'error');
