@@ -95,6 +95,7 @@ const REPORTS = [
   { key: 'compliance', title: 'Policy compliance', desc: 'Current snapshot — missing by document' },
   { key: 'reviews', title: 'New hires and reviews', desc: 'Onboarding volume, overdue reviews' },
   { key: 'applicants', title: 'Applicants', desc: 'Pipeline funnel, outcomes, source, and role applied for' },
+  { key: 'timetofill', title: 'Time to fill', desc: 'Days open, days to fill by role and division' },
   { key: 'recurring', title: 'Recurring issues', desc: 'Employees showing up across multiple modules' },
   { key: 'output', title: 'Team output', desc: 'Completed work by person, from the activity log' },
 ];
@@ -717,6 +718,74 @@ async function renderReport(key) {
       ['Applicants', apps.length], ['Still active', stillActive], ['Hired', hired], ['Rejected', rejected],
       ['Not selected to move forward', notSelected], ['Resume on file', resumeOnFile], [`Manager wasn't interested`, notInterested],
       ...funnelPairs, ...Object.entries(bySource), ...Object.entries(byRole),
+    ];
+  }
+
+  else if (key === 'timetofill') {
+    await ensureLoaded(['open_jobs']);
+    const todayStr = new Date().toISOString().slice(0, 10);
+    // Days from opened_date to either "now" (still-open reqs) or
+    // filled_date (filled ones), averaged across whatever job list is passed in.
+    const avgDaysTo = (jobs, endKeyOrToday) => jobs.length
+      ? Math.round(jobs.reduce((sum, j) => {
+          const end = endKeyOrToday === 'today' ? todayStr : j[endKeyOrToday];
+          return sum + daysBetween(new Date(end + 'T00:00:00'), new Date(j.opened_date + 'T00:00:00'));
+        }, 0) / jobs.length)
+      : 0;
+
+    // Currently-open reqs are a snapshot (as of today), not date-ranged --
+    // there's nothing to range them by until they're filled. Filled reqs
+    // are ranged by when they were filled, so a quarter's numbers reflect
+    // hiring that actually closed out in that quarter.
+    const currentlyOpen = data.open_jobs.filter((j) => j.status === 'open');
+    const filledInRange = data.open_jobs.filter((j) => j.status === 'filled' && inRange(j.filled_date, range));
+
+    const byRole = {};
+    filledInRange.forEach((j) => { (byRole[j.title || 'Unspecified'] = byRole[j.title || 'Unspecified'] || []).push(j); });
+    const byRolePairs = Object.entries(byRole).map(([role, jobs]) => [role, avgDaysTo(jobs, 'filled_date')]);
+
+    const byDivision = {};
+    filledInRange.forEach((j) => { const d = j.division || 'Unspecified'; (byDivision[d] = byDivision[d] || []).push(j); });
+    const byDivisionPairs = Object.entries(byDivision).map(([division, jobs]) => [division, avgDaysTo(jobs, 'filled_date')]);
+
+    const openRows = currentlyOpen
+      .map((j) => [j.title || 'Unspecified', j.division || '—', j.location || '—', j.opened_date, daysBetween(new Date(todayStr + 'T00:00:00'), new Date(j.opened_date + 'T00:00:00'))])
+      .sort((a, b) => b[4] - a[4]);
+
+    body.innerHTML = statLine(range, `denominator: ${filledInRange.length} openings filled in range · ${currentlyOpen.length} open as of today`) + `
+      <div class="big">
+        <div><div class="v n">${currentlyOpen.length}</div><div class="k">Currently open</div></div>
+        <div><div class="v n">${avgDaysTo(currentlyOpen, 'today')}</div><div class="k">Avg days open (so far)</div></div>
+        <div><div class="v n">${filledInRange.length}</div><div class="k">Filled in range</div></div>
+        <div><div class="v n">${avgDaysTo(filledInRange, 'filled_date')}</div><div class="k">Avg days to fill</div></div>
+      </div>
+      <div class="two">
+        <div class="card">
+          <div class="card-h"><h3>Avg days to fill by role</h3><span></span></div>
+          ${rankHtml(byRolePairs.sort((a, b) => b[1] - a[1]), 'Nothing filled in range.')}
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Avg days to fill by division</h3><span></span></div>
+          ${rankHtml(byDivisionPairs.sort((a, b) => b[1] - a[1]), 'Nothing filled in range.')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Currently open, oldest first</h3><span></span></div>
+        <table>
+          <thead><tr><th>Role</th><th>Division</th><th>Location</th><th>Opened</th><th>Days open</th></tr></thead>
+          <tbody>${openRows.map(([role, div, loc, opened, days]) => `
+            <tr><td>${role}</td><td class="dim">${div}</td><td class="dim">${loc}</td><td class="mono dim">${formatDate(opened)}</td><td class="mono" style="${days > 45 ? 'color:var(--alertTx);font-weight:700' : ''}">${days}</td></tr>
+          `).join('') || '<tr><td colspan="5" class="dim">No open jobs right now.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <p class="dim" style="margin-top:10px;font-size:12px">Open jobs are entered and marked filled from the Applicants tab. "Filled in range" uses the date marked filled, not the date opened.</p>
+    `;
+    lastCsv = [
+      ['Metric', 'Count'],
+      ['Currently open', currentlyOpen.length], ['Filled in range', filledInRange.length], ['Avg days to fill', avgDaysTo(filledInRange, 'filled_date')],
+      ['By role (avg days to fill)', ''], ...byRolePairs,
+      ['By division (avg days to fill)', ''], ...byDivisionPairs,
+      ['Open job', 'Division', 'Location', 'Opened', 'Days open'], ...openRows,
     ];
   }
 
