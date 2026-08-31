@@ -57,6 +57,7 @@
             <div class="field">
               <label class="f-lab" for="new-app-applied-date">Applied</label>
               <input class="f-in" id="new-app-applied-date" type="date">
+              <label style="display:block;font-size:11px;margin-top:4px;font-weight:400"><input type="checkbox" id="new-app-applied-na"> N/A — date unknown</label>
             </div>
             <div class="field">
               <label class="f-lab" for="new-app-position">Applied for</label>
@@ -216,6 +217,7 @@
         <div class="field">
           <label class="f-lab" for="edit-app-applied-date">Applied</label>
           <input class="f-in" id="edit-app-applied-date" type="date">
+          <label style="display:block;font-size:11px;margin-top:4px;font-weight:400"><input type="checkbox" id="edit-app-applied-na"> N/A — date unknown</label>
         </div>
       </div>
       <div class="field" id="edit-app-referrer-field" hidden>
@@ -280,6 +282,8 @@ const SOURCE_LABELS = { walk_in: 'Walk-in', referral: 'Referral', past_employee:
 const REFERRAL_BONUS_DAYS = 90;
 const todayStr = new Date().toISOString().slice(0, 10);
 document.getElementById('new-app-applied-date').value = todayStr;
+wireAppliedNaToggle('new-app-applied-date', 'new-app-applied-na');
+wireAppliedNaToggle('edit-app-applied-date', 'edit-app-applied-na');
 
 function escapeHtml(str) {
   const div = document.createElement('div');
@@ -307,6 +311,28 @@ function wirePositionToggle(selectId, otherId, hideTargetId = otherId) {
 function readPositionField(selectId, otherId) {
   const sel = document.getElementById(selectId);
   return sel.value === '__other' ? document.getElementById(otherId).value.trim() : sel.value;
+}
+
+// Applied date isn't always known (paper applications, old referrals) --
+// checking N/A disables and clears the date box instead of forcing a
+// guess, and the applicant's applied_date is stored as the literal
+// string "N/A" rather than left blank so it's unambiguous in reports/CSVs.
+function wireAppliedNaToggle(dateId, naId) {
+  document.getElementById(naId).addEventListener('change', (e) => {
+    const dateInput = document.getElementById(dateId);
+    dateInput.disabled = e.target.checked;
+    if (e.target.checked) dateInput.value = '';
+  });
+}
+function readAppliedDate(dateId, naId, fallback = '') {
+  if (document.getElementById(naId).checked) return 'N/A';
+  return document.getElementById(dateId).value || fallback;
+}
+function setAppliedDate(dateId, naId, value) {
+  const isNa = value === 'N/A';
+  document.getElementById(naId).checked = isNa;
+  document.getElementById(dateId).disabled = isNa;
+  document.getElementById(dateId).value = isNa ? '' : (value || '');
 }
 
 // Referral bonus due date is computed from the linked employee's real
@@ -420,7 +446,7 @@ function render() {
         <td class="app-name-cell">${escapeHtml(a.name)}</td>
         <td class="dim">${SOURCE_LABELS[a.source] || a.source}</td>
         <td class="dim">${escapeHtml(a.position_applied) || '—'}</td>
-        <td class="mono dim">${formatDate(a.applied_date)}</td>
+        <td class="mono dim">${a.applied_date === 'N/A' ? 'N/A' : formatDate(a.applied_date)}</td>
         <td style="text-align:center"><input type="checkbox" class="app-cb prescreen-cb" data-id="${a.id}" ${a.prescreen_passed ? 'checked' : ''}></td>
         <td>
           <select class="inp interview-select" data-id="${a.id}" style="height:32px;font-size:12.5px">
@@ -572,7 +598,7 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
   const source = document.getElementById('new-app-source').value;
   const referredByEmpId = document.getElementById('new-app-referrer').value;
   if (source === 'referral' && !referredByEmpId) { showToast('Pick who referred them from the list.', 'error'); return; }
-  const appliedDate = document.getElementById('new-app-applied-date').value || todayStr;
+  const appliedDate = readAppliedDate('new-app-applied-date', 'new-app-applied-na', todayStr);
   try {
     await setDoc(doc(collection(db, 'applicants')), {
       name, source,
@@ -599,7 +625,7 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
     document.getElementById('new-app-position').value = '';
     document.getElementById('new-app-position-other').value = '';
     document.getElementById('new-app-position-other-field').hidden = true;
-    document.getElementById('new-app-applied-date').value = todayStr;
+    setAppliedDate('new-app-applied-date', 'new-app-applied-na', todayStr);
     showToast('Applicant added.');
     await loadApplicants();
   } catch (err) {
@@ -738,7 +764,7 @@ function openEditApplicant(applicantId) {
   editTargetApplicantId = applicantId;
   document.getElementById('edit-app-name').value = a.name || '';
   document.getElementById('edit-app-source').value = a.source || 'walk_in';
-  document.getElementById('edit-app-applied-date').value = a.applied_date || '';
+  setAppliedDate('edit-app-applied-date', 'edit-app-applied-na', a.applied_date || '');
   document.getElementById('edit-app-referrer-field').hidden = a.source !== 'referral';
   setEmpField('edit-app-referrer', a.referred_by_emp_id || '');
   document.getElementById('edit-app-position').innerHTML = roleOptionsHtml(a.position_applied || '');
@@ -764,8 +790,8 @@ document.getElementById('edit-app-save-btn').addEventListener('click', async () 
   const name = document.getElementById('edit-app-name').value.trim();
   if (!name) { showToast('Enter a name.', 'error'); return; }
   const source = document.getElementById('edit-app-source').value;
-  const appliedDate = document.getElementById('edit-app-applied-date').value;
-  if (!appliedDate) { showToast('Applied date is required.', 'error'); return; }
+  const appliedDate = readAppliedDate('edit-app-applied-date', 'edit-app-applied-na');
+  if (!appliedDate) { showToast('Enter an applied date, or check N/A.', 'error'); return; }
   const referredByEmpId = document.getElementById('edit-app-referrer').value;
   if (source === 'referral' && !referredByEmpId) { showToast('Pick who referred them from the list.', 'error'); return; }
   await updateApplicant(applicantId, {
