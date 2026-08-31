@@ -172,6 +172,15 @@ service cloud.firestore {
         && stamped(request.resource.data);
       allow update: if isHrUser() && isClean(request.resource.data);
       allow delete: if isHrUser();
+
+      // Rejection reason — David's own note on why a candidate was
+      // turned down, not visible to (or writable by) anyone else,
+      // enforced here rather than just hidden in the UI.
+      match /private/{docId} {
+        allow read: if isDavid();
+        allow create, update: if isDavid() && isClean(request.resource.data);
+        allow delete: if false;
+      }
     }
 
     // ---- discipline & notes ----------------------------------------------
