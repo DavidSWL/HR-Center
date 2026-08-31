@@ -248,6 +248,18 @@ export function formatDate(value) {
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+// For a Firestore Timestamp (server-set entered_at/edited_at fields) --
+// formatDate above is for plain 'YYYY-MM-DD' calendar-date strings and
+// can't read a Timestamp directly, and callers that need the time of
+// day (not just the day) were dropping it by slicing down to a date
+// string first. This reads a Timestamp (or a plain Date) straight.
+export function formatDateTime(value) {
+  if (!value) return '—';
+  const d = value?.toDate ? value.toDate() : value;
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '—';
+  return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}, ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+}
+
 export function yearsSince(dateStr) {
   if (!dateStr) return '—';
   const start = new Date(dateStr + 'T00:00:00');

@@ -79,7 +79,7 @@
 
 <script type="module">
 import { requireAuth } from './auth.js';
-import { initShell, showToast, formatDate } from './app.js';
+import { initShell, showToast, formatDate, formatDateTime } from './app.js';
 import { db, storage } from './firebaseconfig.js';
 import {
   collection, doc, getDocs, setDoc, serverTimestamp,
@@ -105,10 +105,20 @@ const TYPE_LABELS = {
 
 let employees = [];
 let notes = [];
+let staff = [];
 
 function empName(id) {
   const e = employees.find((x) => x.id === id);
   return e ? `${e.first_name} ${e.last_name}` : id;
+}
+
+function staffName(uid) {
+  const s = staff.find((x) => x.id === uid);
+  return s ? s.name : (uid || '—');
+}
+async function loadStaff() {
+  const snap = await getDocs(collection(db, 'users'));
+  staff = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
 function escapeHtml(str) {
@@ -162,12 +172,12 @@ function render() {
   document.getElementById('notes-summary').textContent = `${visible.length} of ${notes.length}`;
   document.getElementById('rows').innerHTML = visible.length ? visible.map((n) => `
     <tr>
-      <td class="mono">${n.entered_at?.seconds ? formatDate(new Date(n.entered_at.seconds * 1000)) : '—'}</td>
+      <td class="mono" style="font-size:11.5px">${formatDateTime(n.entered_at)}</td>
       <td>${empName(n.emp_id)}</td>
       <td class="dim">${TYPE_LABELS[n.type] || n.type}</td>
       <td>${(n.body || '').slice(0, 90)}${(n.body || '').length > 90 ? '…' : ''}</td>
       <td>${n.attachment_url ? `<a href="${n.attachment_url}" target="_blank" rel="noopener">View</a>` : '<span class="dim">—</span>'}</td>
-      <td class="mono dim">${n.entered_by === profile.uid ? 'You' : n.entered_by}</td>
+      <td class="mono dim">${staffName(n.entered_by)}</td>
     </tr>
   `).join('') : '<tr><td colspan="6" class="dim">No notes yet.</td></tr>';
 }
@@ -217,7 +227,7 @@ document.getElementById('note-form').addEventListener('submit', async (e) => {
   }
 });
 
-await loadEmployees();
+await Promise.all([loadEmployees(), loadStaff()]);
 await loadNotes();
 </script>
 </body>
