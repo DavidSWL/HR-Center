@@ -95,6 +95,21 @@
     </div>
     <form id="employee-form">
       <div class="modal-body">
+        <div class="field">
+          <label class="f-lab">Photo</label>
+          <div style="display:flex;align-items:center;gap:14px">
+            <div id="photo-preview-wrap" style="width:60px;height:60px;border-radius:50%;overflow:hidden;flex-shrink:0;background:var(--oregon);display:flex;align-items:center;justify-content:center">
+              <img id="photo-preview-img" alt="" hidden style="width:100%;height:100%;object-fit:cover">
+              <span id="photo-preview-initials" style="color:#fff;font-family:var(--display);font-size:17px"></span>
+            </div>
+            <div>
+              <input type="file" id="photo-file" accept="image/*" hidden>
+              <button type="button" class="gh" id="photo-choose-btn">Choose photo</button>
+              <button type="button" class="gh" id="photo-remove-btn" hidden>Remove photo</button>
+              <div class="dim" style="font-size:10.5px;margin-top:5px">Resized and saved with the employee record — no file storage involved</div>
+            </div>
+          </div>
+        </div>
         <div class="field" id="emp-id-field">
           <label class="f-lab" for="emp-id">Employee ID</label>
           <input class="f-in" id="emp-id" placeholder="e.g. SWL-1041">
@@ -301,6 +316,97 @@ document.getElementById('header-date').textContent =
 let allEmployees = [];
 let managerIds = new Set();
 let editingId = null;
+
+// Photo — resized and compressed to a small JPEG data: URI right in the
+// browser and stored as a field on the employee doc itself. No Firebase
+// Storage: this project stays on the free Spark plan, and a handful of
+// crew photos easily fits Firestore's per-document limit this way.
+// pendingPhotoDataUrl holds a newly chosen (already-resized) photo
+// waiting to save; removePhoto flags an existing one for clearing. Both
+// reset whenever the modal opens or closes.
+let pendingPhotoDataUrl = null;
+let removePhoto = false;
+const PHOTO_MAX_DIMENSION = 320;
+const PHOTO_JPEG_QUALITY = 0.82;
+
+function initials(first, last) {
+  return `${(first || '?')[0] || ''}${(last || '?')[0] || ''}`.toUpperCase();
+}
+
+function showPhotoPreview(dataUrl, first, last) {
+  const img = document.getElementById('photo-preview-img');
+  const initialsEl = document.getElementById('photo-preview-initials');
+  if (dataUrl) {
+    img.src = dataUrl;
+    img.hidden = false;
+    initialsEl.hidden = true;
+  } else {
+    img.hidden = true;
+    img.removeAttribute('src');
+    initialsEl.hidden = false;
+    initialsEl.textContent = initials(first, last);
+  }
+}
+
+function resetPhotoField() {
+  pendingPhotoDataUrl = null;
+  removePhoto = false;
+  document.getElementById('photo-file').value = '';
+  document.getElementById('photo-remove-btn').hidden = true;
+}
+
+// Downscales to PHOTO_MAX_DIMENSION on the long edge and re-encodes as a
+// JPEG — a phone photo at full resolution can be several MB; this keeps
+// the result to tens of KB, comfortably inside Firestore's 1MiB document
+// limit even accounting for base64's ~33% overhead.
+function resizeImageToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const scale = Math.min(1, PHOTO_MAX_DIMENSION / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', PHOTO_JPEG_QUALITY));
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Could not read that image.')); };
+    img.src = objectUrl;
+  });
+}
+
+document.getElementById('photo-choose-btn').addEventListener('click', () => document.getElementById('photo-file').click());
+document.getElementById('photo-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const dataUrl = await resizeImageToDataUrl(file);
+    pendingPhotoDataUrl = dataUrl;
+    removePhoto = false;
+    document.getElementById('photo-remove-btn').hidden = false;
+    showPhotoPreview(dataUrl);
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+document.getElementById('photo-remove-btn').addEventListener('click', () => {
+  pendingPhotoDataUrl = null;
+  removePhoto = true;
+  document.getElementById('photo-file').value = '';
+  document.getElementById('photo-remove-btn').hidden = true;
+  showPhotoPreview(null, document.getElementById('first-name').value, document.getElementById('last-name').value);
+});
+// Add-new-hire flow: no photo yet, so the initials placeholder should
+// track the name as HR types it instead of staying blank.
+['first-name', 'last-name'].forEach((id) => {
+  document.getElementById(id).addEventListener('input', () => {
+    if (pendingPhotoDataUrl || (editingId && !removePhoto && allEmployees.find((e) => e.id === editingId)?.photo_data_url)) return;
+    showPhotoPreview(null, document.getElementById('first-name').value, document.getElementById('last-name').value);
+  });
+});
 
 function escapeHtml(str) {
   const div = document.createElement('div');
@@ -526,6 +632,8 @@ function populateManagerSelects(excludeId, keepIds = []) {
 function openAdd() {
   editingId = null;
   form.reset();
+  resetPhotoField();
+  showPhotoPreview(null, '', '');
   populateManagerSelects(null);
   document.getElementById('modal-title').textContent = 'Add new hire';
   document.getElementById('emp-id').value = '';
@@ -576,6 +684,9 @@ function openEdit(id) {
   document.getElementById('phone').value = emp.phone || '';
   document.getElementById('birth-month').value = emp.birth_month || '';
   document.getElementById('birth-day').value = emp.birth_day || '';
+  resetPhotoField();
+  showPhotoPreview(emp.photo_data_url || null, emp.first_name, emp.last_name);
+  if (emp.photo_data_url) document.getElementById('photo-remove-btn').hidden = false;
   document.getElementById('emergency-name').value = emp.emergency_contact_name || '';
   document.getElementById('emergency-phone').value = emp.emergency_contact_phone || '';
   document.getElementById('is-test').checked = !!emp.is_test;
@@ -630,6 +741,15 @@ form.addEventListener('submit', async (e) => {
     entered_by: profile.uid,
     updated_at: serverTimestamp(),
   };
+
+  // Only touch photo_data_url when it actually changed — an edit that
+  // doesn't touch the photo field should leave whatever's already saved
+  // alone, not silently overwrite it with nothing.
+  if (pendingPhotoDataUrl) {
+    data.photo_data_url = pendingPhotoDataUrl;
+  } else if (removePhoto) {
+    data.photo_data_url = null;
+  }
 
   const separationSectionOpen = !document.getElementById('terminate-section').hidden;
   if (separationSectionOpen) {

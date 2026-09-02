@@ -83,6 +83,18 @@ service cloud.firestore {
       return data.keys().hasAll(['entered_by']);
     }
 
+    // Employee photos are embedded as a data: URI directly on the
+    // document -- no Firebase Storage, so this project can stay on the
+    // free Spark plan for a handful of crew photos. This is a backstop,
+    // not the primary control: employees.html already resizes and
+    // compresses client-side before it ever gets here. 700,000 chars is
+    // generous headroom over the ~50-100KB a resized JPEG data URL
+    // actually runs, while still well under Firestore's 1MiB document cap.
+    function photoSizeOk(data) {
+      return !('photo_data_url' in data) || data.photo_data_url == null
+        || data.photo_data_url.size() < 700000;
+    }
+
     // ---- users ------------------------------------------------------------
     // Role assignment is how every other rule below decides who can do
     // what, so it is not something the app itself is allowed to change.
@@ -96,7 +108,8 @@ service cloud.firestore {
     // ---- employees ----------------------------------------------------
     match /employees/{empId} {
       allow read: if isHrUser();
-      allow create, update: if isHrUser() && isClean(request.resource.data);
+      allow create, update: if isHrUser() && isClean(request.resource.data)
+        && photoSizeOk(request.resource.data);
       allow delete: if false; // terminate = status change, not a delete
 
       match /acknowledgments/{docId} {
