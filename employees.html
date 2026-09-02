@@ -95,20 +95,6 @@
     </div>
     <form id="employee-form">
       <div class="modal-body">
-        <div class="field">
-          <label class="f-lab">Photo</label>
-          <div style="display:flex;align-items:center;gap:14px">
-            <div id="photo-preview-wrap" style="width:60px;height:60px;border-radius:50%;overflow:hidden;flex-shrink:0;background:var(--oregon);display:flex;align-items:center;justify-content:center">
-              <img id="photo-preview-img" alt="" hidden style="width:100%;height:100%;object-fit:cover">
-              <span id="photo-preview-initials" style="color:#fff;font-family:var(--display);font-size:17px"></span>
-            </div>
-            <div>
-              <input type="file" id="photo-file" accept="image/*" hidden>
-              <button type="button" class="gh" id="photo-choose-btn">Choose photo</button>
-              <button type="button" class="gh" id="photo-remove-btn" hidden>Remove photo</button>
-            </div>
-          </div>
-        </div>
         <div class="field" id="emp-id-field">
           <label class="f-lab" for="emp-id">Employee ID</label>
           <input class="f-in" id="emp-id" placeholder="e.g. SWL-1041">
@@ -299,12 +285,11 @@
 <script type="module">
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate, yearsSince, readSpreadsheetSheets, objectsFromRows } from './app.js';
-import { db, storage } from './firebaseconfig.js';
+import { db } from './firebaseconfig.js';
 import { ONBOARDING_CHECKLIST } from './letterhead-assets.js';
 import {
   collection, doc, getDoc, getDocs, updateDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
@@ -316,64 +301,6 @@ document.getElementById('header-date').textContent =
 let allEmployees = [];
 let managerIds = new Set();
 let editingId = null;
-
-// Photo upload — held here until Save, not written to Storage on every
-// keystroke. pendingPhotoFile is a newly chosen file waiting to upload;
-// removePhoto flags an existing photo for deletion. Both are cleared
-// whenever the modal opens or closes.
-let pendingPhotoFile = null;
-let removePhoto = false;
-
-function initials(first, last) {
-  return `${(first || '?')[0] || ''}${(last || '?')[0] || ''}`.toUpperCase();
-}
-
-function showPhotoPreview(url, first, last) {
-  const img = document.getElementById('photo-preview-img');
-  const initialsEl = document.getElementById('photo-preview-initials');
-  if (url) {
-    img.src = url;
-    img.hidden = false;
-    initialsEl.hidden = true;
-  } else {
-    img.hidden = true;
-    img.removeAttribute('src');
-    initialsEl.hidden = false;
-    initialsEl.textContent = initials(first, last);
-  }
-}
-
-function resetPhotoField() {
-  pendingPhotoFile = null;
-  removePhoto = false;
-  document.getElementById('photo-file').value = '';
-  document.getElementById('photo-remove-btn').hidden = true;
-}
-
-document.getElementById('photo-choose-btn').addEventListener('click', () => document.getElementById('photo-file').click());
-document.getElementById('photo-file').addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  pendingPhotoFile = file;
-  removePhoto = false;
-  document.getElementById('photo-remove-btn').hidden = false;
-  showPhotoPreview(URL.createObjectURL(file));
-});
-document.getElementById('photo-remove-btn').addEventListener('click', () => {
-  pendingPhotoFile = null;
-  removePhoto = true;
-  document.getElementById('photo-file').value = '';
-  document.getElementById('photo-remove-btn').hidden = true;
-  showPhotoPreview(null, document.getElementById('first-name').value, document.getElementById('last-name').value);
-});
-// Add-new-hire flow: no photo yet, so the initials placeholder should
-// track the name as HR types it instead of staying blank.
-['first-name', 'last-name'].forEach((id) => {
-  document.getElementById(id).addEventListener('input', () => {
-    if (pendingPhotoFile || (editingId && !removePhoto && allEmployees.find((e) => e.id === editingId)?.photo_url)) return;
-    showPhotoPreview(null, document.getElementById('first-name').value, document.getElementById('last-name').value);
-  });
-});
 
 function escapeHtml(str) {
   const div = document.createElement('div');
@@ -599,8 +526,6 @@ function populateManagerSelects(excludeId, keepIds = []) {
 function openAdd() {
   editingId = null;
   form.reset();
-  resetPhotoField();
-  showPhotoPreview(null, '', '');
   populateManagerSelects(null);
   document.getElementById('modal-title').textContent = 'Add new hire';
   document.getElementById('emp-id').value = '';
@@ -651,9 +576,6 @@ function openEdit(id) {
   document.getElementById('phone').value = emp.phone || '';
   document.getElementById('birth-month').value = emp.birth_month || '';
   document.getElementById('birth-day').value = emp.birth_day || '';
-  resetPhotoField();
-  showPhotoPreview(emp.photo_url || null, emp.first_name, emp.last_name);
-  if (emp.photo_url) document.getElementById('photo-remove-btn').hidden = false;
   document.getElementById('emergency-name').value = emp.emergency_contact_name || '';
   document.getElementById('emergency-phone').value = emp.emergency_contact_phone || '';
   document.getElementById('is-test').checked = !!emp.is_test;
@@ -746,27 +668,7 @@ form.addEventListener('submit', async (e) => {
     }
   }
 
-  const finalId = editingId || newId;
-  const currentEmp = editingId ? allEmployees.find((e) => e.id === editingId) : null;
-
   try {
-    if (pendingPhotoFile) {
-      // Replace, not accumulate — delete the old blob first if this
-      // employee already had a different one on file.
-      if (currentEmp?.photo_path && currentEmp.photo_path !== `employee_photos/${finalId}/${pendingPhotoFile.name}`) {
-        try { await deleteObject(ref(storage, currentEmp.photo_path)); } catch { /* already gone — fine */ }
-      }
-      const photoPath = `employee_photos/${finalId}/${pendingPhotoFile.name}`;
-      const photoRef = ref(storage, photoPath);
-      await uploadBytes(photoRef, pendingPhotoFile);
-      data.photo_url = await getDownloadURL(photoRef);
-      data.photo_path = photoPath;
-    } else if (removePhoto && currentEmp?.photo_path) {
-      try { await deleteObject(ref(storage, currentEmp.photo_path)); } catch { /* already gone — fine */ }
-      data.photo_url = null;
-      data.photo_path = null;
-    }
-
     if (editingId) {
       await updateDoc(doc(db, 'employees', editingId), data);
 
