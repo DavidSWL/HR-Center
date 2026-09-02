@@ -1146,6 +1146,16 @@ await loadEmployees();
 await loadDepartmentList();
 await loadDavidUid();
 await loadApplicants();
+
+// Deep link from Search -- show every applicant regardless of pipeline
+// status so a match never disappears just because the default filter
+// (Active pipeline) would otherwise hide them.
+const deepQ = new URLSearchParams(window.location.search).get('q');
+if (deepQ) {
+  document.getElementById('search').value = deepQ;
+  document.getElementById('status-filter').value = '';
+  render();
+}
 </script>
 </body>
 </html>

@@ -3086,7 +3086,7 @@ function renderEmployeeFile() {
   `;
   wireEmpSearch('ef-emp', allEmployeesEver);
 
-  document.getElementById('ef-generate-btn').addEventListener('click', async () => {
+  const generate = async () => {
     const empId = document.getElementById('ef-emp').value;
     const emp = allEmployeesEver.find((e) => e.id === empId);
     if (!emp) { showToast('Select an employee.', 'error'); return; }
@@ -3101,7 +3101,17 @@ function renderEmployeeFile() {
     } finally {
       btn.disabled = false;
     }
-  });
+  };
+  document.getElementById('ef-generate-btn').addEventListener('click', generate);
+
+  // Deep link from Search -- jump straight to one person's file instead
+  // of leaving HR to search for them again on a page they just searched from.
+  const params = new URLSearchParams(window.location.search);
+  const deepEmp = params.get('emp');
+  if (deepEmp) {
+    setEmpField('ef-emp', deepEmp, allEmployeesEver);
+    if (params.get('auto') === '1') generate();
+  }
 }
 
 function renderEmployeeFileSheet(emp, f) {

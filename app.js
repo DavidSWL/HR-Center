@@ -16,12 +16,14 @@ export const NAV_SECTIONS = [
     label: 'Overview',
     items: [
       { key: 'dashboard', label: 'Dashboard', href: 'dashboard.html', built: true },
+      { key: 'search', label: 'Search', href: 'search.html', built: true },
     ],
   },
   {
     label: 'People',
     items: [
       { key: 'roster', label: 'Employee roster', href: 'employees.html', built: true },
+      { key: 'orgchart', label: 'Org chart', href: 'orgchart.html', built: true },
       { key: 'applicants', label: 'Applicants', href: 'applicants.html', built: true },
       { key: 'comp', label: 'Policy compliance', href: 'compliance.html', built: true },
       { key: 'harassment_training', label: 'Harassment training', href: 'harassmenttraining.html', built: true },

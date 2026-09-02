@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>
+.result-row{display:block;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:13px 16px;cursor:pointer}
+.result-row:last-child{border-bottom:0}
+.result-row:hover{background:var(--hover)}
+.result-row .nm{font-size:14px;font-weight:600}
+.result-row .meta{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:2px;letter-spacing:.03em}
+.result-row .badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1>Search</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+      <div class="card">
+        <div class="card-body">
+          <input class="f-in" id="q" placeholder="Type a name…" autocomplete="off" style="font-size:16px;padding:13px 15px">
+        </div>
+        <div class="card-h" style="border-top:1px solid var(--line)"><h3>Results</h3><span id="results-summary">—</span></div>
+        <div id="results"></div>
+      </div>
+      <p class="dim" style="margin-top:10px;font-size:12px">Searches active and terminated employees, plus applicants who never made it to the roster. Click a result to open everything on file for them. Employee relations shows as a count only — open Employee relations directly for case detail.</p>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell } from './app.js';
+import { db } from './firebaseconfig.js';
+import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('search', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+// Loaded once, up front -- 110 employees and everything linked to them
+// is small enough to hold in the browser, same reasoning as every
+// report in this app. Counts only; no narrative content is pulled in
+// (especially not from er_cases -- that stays behind its own page).
+let employees = [];
+let applicants = [];
+let countsByEmp = {}; // empId -> { discipline, notes, incidents, attendance, pips, er }
+
+async function loadAll() {
+  const [empSnap, appSnap, discSnap, noteSnap, incSnap, attSnap, pipSnap, erSnap] = await Promise.all([
+    getDocs(collection(db, 'employees')),
+    getDocs(collection(db, 'applicants')),
+    getDocs(collection(db, 'disciplinary_actions')),
+    getDocs(collection(db, 'notes_to_file')),
+    getDocs(collection(db, 'incidents')),
+    getDocs(collection(db, 'attendance')),
+    getDocs(collection(db, 'pips')),
+    getDocs(collection(db, 'er_cases')),
+  ]);
+
+  employees = empSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => !e.is_test);
+  applicants = appSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  const bump = (empId, key) => {
+    if (!empId) return;
+    countsByEmp[empId] = countsByEmp[empId] || { discipline: 0, notes: 0, incidents: 0, attendance: 0, pips: 0, er: 0 };
+    countsByEmp[empId][key] += 1;
+  };
+  discSnap.docs.forEach((d) => bump(d.data().emp_id, 'discipline'));
+  noteSnap.docs.forEach((d) => bump(d.data().emp_id, 'notes'));
+  incSnap.docs.forEach((d) => { if (!d.data().voided) bump(d.data().emp_id, 'incidents'); });
+  attSnap.docs.forEach((d) => bump(d.data().emp_id, 'attendance'));
+  pipSnap.docs.forEach((d) => bump(d.data().emp_id, 'pips'));
+  erSnap.docs.forEach((d) => bump(d.data().complainant_emp_id, 'er'));
+
+  render();
+}
+
+function badgesHtml(empId) {
+  const c = countsByEmp[empId];
+  if (!c) return '<span class="dim mono" style="font-size:10.5px">Nothing else on file</span>';
+  const labels = [
+    ['discipline', 'Discipline'], ['incidents', 'Incidents'], ['notes', 'Notes'],
+    ['attendance', 'Attendance'], ['pips', 'PIPs'], ['er', 'ER'],
+  ];
+  const chips = labels.filter(([k]) => c[k] > 0).map(([k, label]) => `<span class="pill">${label} ${c[k]}</span>`);
+  return chips.length ? chips.join('') : '<span class="dim mono" style="font-size:10.5px">Nothing else on file</span>';
+}
+
+function render() {
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  const box = document.getElementById('results');
+  if (!q) {
+    document.getElementById('results-summary').textContent = '—';
+    box.innerHTML = '<p class="dim" style="padding:16px">Start typing a name.</p>';
+    return;
+  }
+
+  const empMatches = employees.filter((e) => `${e.first_name || ''} ${e.last_name || ''}`.toLowerCase().includes(q));
+  const empIds = new Set(empMatches.map((e) => e.id));
+  // An applicant who was hired already shows as an employee -- don't
+  // list them twice under their applicant record too.
+  const appMatches = applicants.filter((a) => (a.name || '').toLowerCase().includes(q) && !(a.hired_emp_id && empIds.has(a.hired_emp_id)));
+
+  document.getElementById('results-summary').textContent = `${empMatches.length + appMatches.length} match${empMatches.length + appMatches.length === 1 ? '' : 'es'}`;
+
+  const empRows = empMatches.map((e) => `
+    <button type="button" class="result-row" data-kind="emp" data-id="${e.id}">
+      <div class="nm">${escapeHtml(`${e.first_name} ${e.last_name}`)} <span class="dim mono" style="font-size:11px;font-weight:400">${escapeHtml(e.id)}</span></div>
+      <div class="meta">${escapeHtml(e.position) || '—'} · ${escapeHtml(e.division) || '—'}${e.status === 'terminated' ? ' · <span style="color:var(--faint)">Terminated</span>' : ''}</div>
+      <div class="badges">${badgesHtml(e.id)}</div>
+    </button>
+  `).join('');
+
+  const appRows = appMatches.map((a) => `
+    <button type="button" class="result-row" data-kind="applicant" data-id="${a.id}" data-name="${escapeHtml(a.name)}">
+      <div class="nm">${escapeHtml(a.name)} <span class="dim mono" style="font-size:11px;font-weight:400">Applicant — not on roster</span></div>
+      <div class="meta">${escapeHtml(a.position_applied) || 'Role not specified'}</div>
+    </button>
+  `).join('');
+
+  box.innerHTML = (empRows + appRows) || '<p class="dim" style="padding:16px">No matches.</p>';
+
+  document.querySelectorAll('.result-row[data-kind="emp"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      window.location.href = `docgen.html?open=employeefile&emp=${btn.dataset.id}&auto=1`;
+    });
+  });
+  document.querySelectorAll('.result-row[data-kind="applicant"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      window.location.href = `applicants.html?q=${encodeURIComponent(btn.dataset.name)}`;
+    });
+  });
+}
+
+document.getElementById('q').addEventListener('input', render);
+
+await loadAll();
+
+const initialQ = new URLSearchParams(window.location.search).get('q');
+if (initialQ) {
+  document.getElementById('q').value = initialQ;
+  render();
+} else {
+  document.getElementById('q').focus();
+}
+</script>
+</body>
+</html>
