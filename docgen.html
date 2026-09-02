@@ -147,7 +147,7 @@
 
 <script type="module">
 import { requireAuth } from './auth.js';
-import { initShell, showToast, formatDate, readSpreadsheetSheets, objectsFromRows } from './app.js';
+import { initShell, showToast, formatDate, formatDateTime, readSpreadsheetSheets, objectsFromRows } from './app.js';
 import { db, storage } from './firebaseconfig.js';
 import { LOGO_DATA_URL, LOCATIONS, SCHEDULE_PRESETS, HR_SIGNER, ONBOARDING_CHECKLIST } from './letterhead-assets.js';
 import { JOB_DESCRIPTIONS } from './jobdescriptionsdata.js';
@@ -211,12 +211,15 @@ const GENERATORS = [
 
   { key: 'refusal', title: 'Medical Treatment Refusal', desc: 'Matches the SWL acknowledgment form — English or Spanish, saves to Documents', category: 'Safety' },
   { key: 'incidentreport', title: 'Incident Report', desc: 'Log a new incident — injury/near miss/property damage/vehicle accident, matches SWL Form 7.3, signed by manager and employee', category: 'Safety' },
+  { key: 'osha300a', title: 'OSHA 300A Annual Summary', desc: 'Totals computed from recordable incidents for the year — post Feb 1–Apr 30', category: 'Safety' },
+
+  { key: 'employeefile', title: 'Employee file', desc: 'Everything on file for one employee — reviews, discipline, training, incidents — in one printable packet', category: 'Employee records' },
 
   { key: 'sop', title: 'SOP', desc: 'Standard Operating Procedure — matches the real SWL SOP format, saves to Documents', category: 'Reference library' },
   { key: 'jobdesc', title: 'Job description', desc: 'Matches the real SWL Job Description format — English or Spanish, saves to Documents', category: 'Reference library' },
 ];
 
-const CATEGORY_ORDER = ['New hire & offers', 'Performance & conduct', 'Separation', 'Pay & time', 'Safety', 'Reference library'];
+const CATEGORY_ORDER = ['New hire & offers', 'Performance & conduct', 'Separation', 'Pay & time', 'Safety', 'Employee records', 'Reference library'];
 
 document.getElementById('tiles').innerHTML = CATEGORY_ORDER.map((cat) => `
   <div class="gen-category">
@@ -381,6 +384,8 @@ function renderCurrent() {
   if (currentKey === 'mealpenalty') renderMealPenalty(lang);
   if (currentKey === 'mealwaiver2') renderMealWaiver2(lang);
   if (currentKey === 'incidentreport') renderIncidentReport();
+  if (currentKey === 'osha300a') renderOsha300a();
+  if (currentKey === 'employeefile') renderEmployeeFile();
 }
 
 // ---- PIP ----
@@ -911,6 +916,7 @@ function renderTermination() {
             <th class="sortable" data-key="location">Location<span class="sort-arrow"></span></th>
             <th class="sortable" data-key="reason">Reason<span class="sort-arrow"></span></th>
             <th class="sortable" data-key="type">Type<span class="sort-arrow"></span></th>
+            <th>Rehire</th>
             <th>Notes / exit interview</th>
           </tr>
         </thead>
@@ -1054,9 +1060,16 @@ function renderTermRows() {
       <td class="mono dim">${escapeHtml(r.location || '—')}</td>
       <td>${escapeHtml(r.reason || '—')}</td>
       <td>${r.separation_type === 'involuntary' ? '<span class="pill bad">Involuntary</span>' : '<span class="pill ok">Voluntary</span>'}</td>
+      <td onclick="event.stopPropagation()">
+        <select class="inp rehire-select-row" data-id="${r.id}" style="height:32px;font-size:12.5px">
+          <option value="yes" ${(r.rehire_eligible || 'maybe') === 'yes' ? 'selected' : ''}>Yes</option>
+          <option value="maybe" ${(r.rehire_eligible || 'maybe') === 'maybe' ? 'selected' : ''}>Maybe</option>
+          <option value="no" ${(r.rehire_eligible || 'maybe') === 'no' ? 'selected' : ''}>No</option>
+        </select>
+      </td>
       <td class="dim term-notes-cell" data-id="${r.id}" style="cursor:pointer" title="Click to add or edit">${escapeHtml(r.circumstances || '— click to add')}</td>
     </tr>
-  `).join('') : '<tr><td colspan="7" class="dim">No terminations logged yet.</td></tr>';
+  `).join('') : '<tr><td colspan="8" class="dim">No terminations logged yet.</td></tr>';
   document.querySelectorAll('#term-rows tr').forEach((tr) => {
     tr.addEventListener('click', (e) => {
       if (e.target.closest('.term-notes-cell')) return; // handled separately below
@@ -1086,6 +1099,24 @@ function renderTermRows() {
       } catch (err) {
         console.error(err);
         showToast('Could not save — ' + err.message, 'error');
+      }
+    });
+  });
+  // Same "editable after the fact" reasoning as the notes cell above --
+  // a rehire call is often revisited once things settle, not fixed
+  // forever the day someone's let go.
+  document.querySelectorAll('.rehire-select-row').forEach((sel) => {
+    sel.addEventListener('change', async () => {
+      const rec = terminations.find((r) => r.id === sel.dataset.id);
+      if (!rec) return;
+      try {
+        await updateDoc(doc(db, 'terminations', rec.id), { rehire_eligible: sel.value, entered_by: profile.uid });
+        rec.rehire_eligible = sel.value;
+        showToast('Rehire eligibility updated.');
+      } catch (err) {
+        console.error(err);
+        showToast('Could not save — ' + err.message, 'error');
+        renderTermRows();
       }
     });
   });
@@ -2832,6 +2863,341 @@ async function saveIncidentReport(f, wantsSignatureTask = false) {
   }
 }
 
+// ---- OSHA 300A Annual Summary -- case/day totals are computed from
+// Safety's recordable incidents for the selected year, never typed in.
+// Establishment info (name/address/NAICS) saves once to
+// settings/osha_establishment so it doesn't need retyping every year --
+// annual average headcount and total hours worked come from payroll,
+// which this app doesn't track, so those two stay typed-in-only, same
+// rule as any pay figure. Injury-vs-illness type (M1-M6) is a best-
+// effort keyword match against each incident's typed injury
+// description, not a guarantee -- flagged on screen for review before
+// posting. ----
+
+let oshaEstablishment = { name: '', industry: '', address: '', city: '', state: 'CA', zip: '', naics: '' };
+
+async function loadOshaEstablishment() {
+  try {
+    const snap = await getDoc(doc(db, 'settings', 'osha_establishment'));
+    if (snap.exists()) oshaEstablishment = { ...oshaEstablishment, ...snap.data() };
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function classifyIllnessType(injuryType) {
+  const t = (injuryType || '').toLowerCase();
+  if (/rash|dermatitis|\bskin\b/.test(t)) return 'm2';
+  if (/respiratory|lung|breath|asthma|smoke inhalation/.test(t)) return 'm3';
+  if (/poison|toxic|chemical exposure|pesticide exposure/.test(t)) return 'm4';
+  if (/hearing|\bear\b/.test(t)) return 'm5';
+  if (/heat illness|heat stroke|heat exhaustion|illness|disease/.test(t)) return 'm6';
+  return 'm1';
+}
+
+function renderOsha300a() {
+  const lastYear = new Date().getFullYear() - 1;
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <p class="dim" style="margin-bottom:12px">Case and day counts are computed from Safety's recordable incidents for the year you pick. This reproduces the standard federal 300A layout — check it against the official form the first few times before posting.</p>
+        <div class="field"><label class="f-lab">Year</label>
+          <select class="f-in" id="osha-year">
+            ${[lastYear + 1, lastYear, lastYear - 1, lastYear - 2].map((y) => `<option value="${y}" ${y === lastYear ? 'selected' : ''}>${y}</option>`).join('')}
+          </select>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Company name</label><input class="f-in" id="osha-name" value="${escapeHtml(oshaEstablishment.name)}"></div>
+          <div class="field"><label class="f-lab">Industry description</label><input class="f-in" id="osha-industry" value="${escapeHtml(oshaEstablishment.industry)}" placeholder="e.g. Landscaping Services"></div>
+        </div>
+        <div class="field"><label class="f-lab">Street address</label><input class="f-in" id="osha-address" value="${escapeHtml(oshaEstablishment.address)}"></div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">City</label><input class="f-in" id="osha-city" value="${escapeHtml(oshaEstablishment.city)}"></div>
+          <div class="field"><label class="f-lab">State</label><input class="f-in" id="osha-state" value="${escapeHtml(oshaEstablishment.state)}" maxlength="2" style="text-transform:uppercase"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">ZIP</label><input class="f-in" id="osha-zip" value="${escapeHtml(oshaEstablishment.zip)}"></div>
+          <div class="field"><label class="f-lab">NAICS code</label><input class="f-in" id="osha-naics" value="${escapeHtml(oshaEstablishment.naics)}"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Annual average number of employees</label><input class="f-in" id="osha-avg-emp" type="number" min="0"></div>
+          <div class="field"><label class="f-lab">Total hours worked, all employees, last year</label><input class="f-in" id="osha-hours" type="number" min="0"></div>
+        </div>
+        <button class="gh solid" id="osha-generate-btn" type="button">Generate summary</button>
+      </div>
+    </div>
+    <div class="form-doc" id="osha-sheet" hidden></div>
+  `;
+
+  document.getElementById('osha-generate-btn').addEventListener('click', async () => {
+    const year = document.getElementById('osha-year').value;
+    const establishment = {
+      name: document.getElementById('osha-name').value.trim(),
+      industry: document.getElementById('osha-industry').value.trim(),
+      address: document.getElementById('osha-address').value.trim(),
+      city: document.getElementById('osha-city').value.trim(),
+      state: document.getElementById('osha-state').value.trim().toUpperCase(),
+      zip: document.getElementById('osha-zip').value.trim(),
+      naics: document.getElementById('osha-naics').value.trim(),
+    };
+    oshaEstablishment = establishment;
+    try {
+      await setDoc(doc(db, 'settings', 'osha_establishment'), { ...establishment, entered_by: profile.uid, updated_at: serverTimestamp() }, { merge: true });
+    } catch (err) {
+      console.error(err);
+      showToast('Establishment info could not be saved, but the summary will still generate — ' + err.message, 'error');
+    }
+
+    const avgEmp = document.getElementById('osha-avg-emp').value;
+    const totalHours = document.getElementById('osha-hours').value;
+
+    const snap = await getDocs(collection(db, 'incidents'));
+    const yearIncidents = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .filter((i) => !i.voided && i.recordable && (i.date || '').startsWith(String(year)));
+
+    let deaths = 0, daysAwayCases = 0, transferCases = 0, otherCases = 0, totalDaysAway = 0, totalRestrictedDays = 0;
+    const typeCounts = { m1: 0, m2: 0, m3: 0, m4: 0, m5: 0, m6: 0 };
+    yearIncidents.forEach((i) => {
+      totalDaysAway += Number(i.days_away || 0);
+      totalRestrictedDays += Number(i.restricted_days || 0);
+      if (i.fatality) deaths++;
+      else if (Number(i.days_away) > 0) daysAwayCases++;
+      else if (Number(i.restricted_days) > 0) transferCases++;
+      else otherCases++;
+      typeCounts[classifyIllnessType(i.injury_type)]++;
+    });
+    const totalCases = deaths + daysAwayCases + transferCases + otherCases;
+
+    renderOsha300aSheet({
+      year, establishment, avgEmp, totalHours,
+      deaths, daysAwayCases, transferCases, otherCases, totalCases,
+      totalDaysAway, totalRestrictedDays, typeCounts,
+    });
+  });
+}
+
+function renderOsha300aSheet(d) {
+  const sheet = document.getElementById('osha-sheet');
+  sheet.hidden = false;
+  sheet.innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">OSHA Form 300A — Summary of Work-Related Injuries and Illnesses</h1>
+      <p class="dim" style="margin-bottom:10px">Year ${d.year}</p>
+      <div class="form-section">Establishment Information</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Company Name</b>${escapeHtml(d.establishment.name) || '—'}</div>
+        <div class="form-cell"><b>NAICS Code</b>${escapeHtml(d.establishment.naics) || '—'}</div>
+        <div class="form-cell"><b>Street</b>${escapeHtml(d.establishment.address) || '—'}</div>
+        <div class="form-cell"><b>Industry Description</b>${escapeHtml(d.establishment.industry) || '—'}</div>
+        <div class="form-cell"><b>City, State, ZIP</b>${escapeHtml(`${d.establishment.city}, ${d.establishment.state} ${d.establishment.zip}`.trim())}</div>
+      </div>
+      <div class="form-section">Employment Information</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Annual Average Number of Employees</b>${d.avgEmp || '—'}</div>
+        <div class="form-cell"><b>Total Hours Worked, All Employees, Last Year</b>${d.totalHours || '—'}</div>
+      </div>
+      <div class="form-section">Number of Cases</div>
+      <table class="form-notice-table">
+        <tbody>
+          <tr><td>(G) Total number of deaths</td><td class="mono" style="text-align:right">${d.deaths}</td></tr>
+          <tr><td>(H) Total number of cases with days away from work</td><td class="mono" style="text-align:right">${d.daysAwayCases}</td></tr>
+          <tr><td>(I) Total number of cases with job transfer or restriction</td><td class="mono" style="text-align:right">${d.transferCases}</td></tr>
+          <tr><td>(J) Total number of other recordable cases</td><td class="mono" style="text-align:right">${d.otherCases}</td></tr>
+        </tbody>
+      </table>
+      <div class="form-section">Number of Days</div>
+      <table class="form-notice-table">
+        <tbody>
+          <tr><td>(K) Total number of days away from work</td><td class="mono" style="text-align:right">${d.totalDaysAway}</td></tr>
+          <tr><td>(L) Total number of days of job transfer or restriction</td><td class="mono" style="text-align:right">${d.totalRestrictedDays}</td></tr>
+        </tbody>
+      </table>
+      <div class="form-section">Injury and Illness Types</div>
+      <div class="form-fine" style="border-top:1px solid #999">Sorted by a best-effort keyword match against each incident's typed injury description — verify against the individual incidents in Safety before posting, especially any illness case.</div>
+      <table class="form-notice-table">
+        <tbody>
+          <tr><td>(M1) Injuries</td><td class="mono" style="text-align:right">${d.typeCounts.m1}</td></tr>
+          <tr><td>(M2) Skin disorders</td><td class="mono" style="text-align:right">${d.typeCounts.m2}</td></tr>
+          <tr><td>(M3) Respiratory conditions</td><td class="mono" style="text-align:right">${d.typeCounts.m3}</td></tr>
+          <tr><td>(M4) Poisonings</td><td class="mono" style="text-align:right">${d.typeCounts.m4}</td></tr>
+          <tr><td>(M5) Hearing loss</td><td class="mono" style="text-align:right">${d.typeCounts.m5}</td></tr>
+          <tr><td>(M6) All other illnesses</td><td class="mono" style="text-align:right">${d.typeCounts.m6}</td></tr>
+        </tbody>
+      </table>
+      <div class="form-fine" style="border:1px solid #999;margin-top:14px">I certify that I have examined this document and that to the best of my knowledge the entries are true, accurate, and complete.</div>
+      <div class="form-sig">
+        <div>Company Executive Name / Title: ______________________</div>
+        <div>Phone: ______________________&nbsp;&nbsp;&nbsp;Date: ______________________</div>
+      </div>
+      <div class="form-fine" style="margin-top:10px">Post this Summary page from February 1 to April 30 of the year following the year covered by this form.</div>
+      <button class="gh no-print" id="osha-back-btn" type="button" style="margin-top:14px">&larr; Back to document generator</button>
+    </div>
+  `;
+  document.getElementById('osha-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+}
+
+// ---- Employee file -- a read-only, printable compile of everything on
+// record for one employee, pulled live from Firestore each time (not
+// its own saved document, same as a report). Employee relations cases
+// are deliberately left out -- that's a separate, more restricted
+// record (only David closes a case), not general personnel file
+// content. Nothing here writes anything or files a task; it's a view,
+// like a report, not a generated document. ----
+
+async function loadEmployeeFileData(empId) {
+  const [disc, notes, pips, attendanceSnap, incidentsSnap, terms, reviews, onboarding, harassment, acks] = await Promise.all([
+    getDocs(query(collection(db, 'disciplinary_actions'), where('emp_id', '==', empId))),
+    getDocs(query(collection(db, 'notes_to_file'), where('emp_id', '==', empId))),
+    getDocs(query(collection(db, 'pips'), where('emp_id', '==', empId))),
+    getDocs(query(collection(db, 'attendance'), where('emp_id', '==', empId))),
+    getDocs(query(collection(db, 'incidents'), where('emp_id', '==', empId))),
+    getDocs(query(collection(db, 'terminations'), where('emp_id', '==', empId))),
+    getDocs(collection(db, 'employees', empId, 'reviews')),
+    getDocs(collection(db, 'employees', empId, 'onboarding_docs')),
+    getDocs(collection(db, 'employees', empId, 'harassment_training')),
+    getDocs(collection(db, 'employees', empId, 'acknowledgments')),
+  ]);
+  const rows = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return {
+    discipline: rows(disc).sort((a, b) => (b.infraction_date || '').localeCompare(a.infraction_date || '')),
+    notes: rows(notes).sort((a, b) => (b.entered_at?.seconds || 0) - (a.entered_at?.seconds || 0)),
+    pips: rows(pips).sort((a, b) => (b.start_date || '').localeCompare(a.start_date || '')),
+    attendance: rows(attendanceSnap).sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+    incidents: rows(incidentsSnap).filter((i) => !i.voided).sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+    terminations: rows(terms).sort((a, b) => (b.termination_date || '').localeCompare(a.termination_date || '')),
+    reviews: rows(reviews).sort((a, b) => Number(a.id) - Number(b.id)),
+    onboarding: rows(onboarding),
+    harassment: rows(harassment),
+    acknowledgments: rows(acks),
+  };
+}
+
+function renderEmployeeFile() {
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <p class="dim" style="margin-bottom:12px">Pulls together everything on file for one employee — onboarding, 30/60/90 reviews, harassment training, policy acknowledgments, PIPs, discipline, notes to file, incidents, attendance occurrences, and separation — into one printable packet. Employee relations cases are not included; those stay confidential to that case's own access rules.</p>
+        ${empSearchFieldHtml('ef-emp', '<label class="f-lab">Employee</label>', allEmployeesEver)}
+        <button class="gh solid" id="ef-generate-btn" type="button">Generate file</button>
+      </div>
+    </div>
+    <div class="form-doc" id="ef-sheet" hidden></div>
+  `;
+  wireEmpSearch('ef-emp', allEmployeesEver);
+
+  const generate = async () => {
+    const empId = document.getElementById('ef-emp').value;
+    const emp = allEmployeesEver.find((e) => e.id === empId);
+    if (!emp) { showToast('Select an employee.', 'error'); return; }
+    const btn = document.getElementById('ef-generate-btn');
+    btn.disabled = true;
+    try {
+      const fileData = await loadEmployeeFileData(empId);
+      renderEmployeeFileSheet(emp, fileData);
+    } catch (err) {
+      console.error(err);
+      showToast('Could not load — ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  };
+  document.getElementById('ef-generate-btn').addEventListener('click', generate);
+
+  // Deep link from Search -- jump straight to one person's file instead
+  // of leaving HR to search for them again on a page they just searched from.
+  const params = new URLSearchParams(window.location.search);
+  const deepEmp = params.get('emp');
+  if (deepEmp) {
+    setEmpField('ef-emp', deepEmp, allEmployeesEver);
+    if (params.get('auto') === '1') generate();
+  }
+}
+
+function renderEmployeeFileSheet(emp, f) {
+  const sheet = document.getElementById('ef-sheet');
+  sheet.hidden = false;
+  const onboardingOnFile = f.onboarding.filter((o) => o.on_file).length;
+  const harassmentCurrent = f.harassment.find((h) => h.id === 'current');
+  const ackRows = f.acknowledgments.filter((a) => a.status && a.status !== 'missing');
+  sheet.innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">Employee File — ${escapeHtml(`${emp.first_name} ${emp.last_name}`)}</h1>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Employee ID</b>${escapeHtml(emp.id)}</div>
+        <div class="form-cell"><b>Status</b>${escapeHtml(emp.status) || '—'}</div>
+        <div class="form-cell"><b>Job Title</b>${escapeHtml(emp.position) || '—'}</div>
+        <div class="form-cell"><b>Division</b>${escapeHtml(emp.division) || '—'}</div>
+        <div class="form-cell"><b>Location</b>${escapeHtml(emp.location) || '—'}</div>
+        <div class="form-cell"><b>Hire Date</b>${formatDate(emp.hire_date)}</div>
+      </div>
+
+      ${f.terminations.length ? `
+      <div class="form-section">Separation</div>
+      <table class="form-notice-table">
+        <thead><tr><th>Termination Date</th><th>Last Day Worked</th><th>Type</th><th>Reason</th></tr></thead>
+        <tbody>${f.terminations.map((t) => `<tr><td>${formatDate(t.termination_date)}</td><td>${formatDate(t.last_day_worked)}</td><td>${escapeHtml(t.separation_type) || '—'}</td><td>${escapeHtml(t.reason) || '—'}</td></tr>`).join('')}</tbody>
+      </table>
+      ` : ''}
+
+      <div class="form-section">Onboarding</div>
+      <div class="form-box">${onboardingOnFile} of ${f.onboarding.length} onboarding items on file</div>
+
+      <div class="form-section">30 / 60 / 90 Day Reviews</div>
+      <table class="form-notice-table">
+        <thead><tr><th>Milestone</th><th>Due</th><th>Completed</th><th>On Track</th></tr></thead>
+        <tbody>${f.reviews.length ? f.reviews.map((r) => `<tr><td>${escapeHtml(r.id)}-day</td><td>${formatDate(r.due_date)}</td><td>${r.review_completed ? 'Yes' : 'No'}</td><td>${escapeHtml(r.on_track) || '—'}</td></tr>`).join('') : '<tr><td colspan="4" class="dim">No review records.</td></tr>'}</tbody>
+      </table>
+
+      <div class="form-section">Harassment Prevention Training (SB 1343)</div>
+      <div class="form-box">${harassmentCurrent
+        ? `Completed ${formatDate(harassmentCurrent.completed_date)} — due again ${formatDate(harassmentCurrent.due_date)}`
+        : 'No completion on record.'}</div>
+
+      <div class="form-section">Policy Acknowledgments on File</div>
+      <table class="form-notice-table">
+        <thead><tr><th>Policy</th><th>Version</th><th>Signed</th></tr></thead>
+        <tbody>${ackRows.length ? ackRows.map((a) => `<tr><td>${escapeHtml(a.id)}</td><td>${escapeHtml(a.version_label) || '—'}</td><td>${formatDate(a.signed_date)}</td></tr>`).join('') : '<tr><td colspan="3" class="dim">None on file.</td></tr>'}</tbody>
+      </table>
+
+      <div class="form-section">Performance Improvement Plans</div>
+      <table class="form-notice-table">
+        <thead><tr><th>Start</th><th>Final Review</th></tr></thead>
+        <tbody>${f.pips.length ? f.pips.map((p) => `<tr><td>${formatDate(p.start_date)}</td><td>${formatDate(p.final_review_date)}</td></tr>`).join('') : '<tr><td colspan="2" class="dim">None on file.</td></tr>'}</tbody>
+      </table>
+
+      <div class="form-section">Disciplinary Actions</div>
+      <table class="form-notice-table">
+        <thead><tr><th>Date</th><th>Level</th><th>Category</th><th>Description</th></tr></thead>
+        <tbody>${f.discipline.length ? f.discipline.map((a) => `<tr><td>${formatDate(a.infraction_date)}</td><td>${a.level ?? '—'}</td><td>${escapeHtml(a.category) || '—'}</td><td>${escapeHtml(a.description) || '—'}</td></tr>`).join('') : '<tr><td colspan="4" class="dim">None on file.</td></tr>'}</tbody>
+      </table>
+
+      <div class="form-section">Notes to File</div>
+      <table class="form-notice-table">
+        <thead><tr><th>Entered</th><th>Type</th><th>Note</th></tr></thead>
+        <tbody>${f.notes.length ? f.notes.map((n) => `<tr><td>${formatDateTime(n.entered_at)}</td><td>${escapeHtml(n.type) || '—'}</td><td>${escapeHtml(n.body) || '—'}</td></tr>`).join('') : '<tr><td colspan="3" class="dim">None on file.</td></tr>'}</tbody>
+      </table>
+
+      <div class="form-section">Incidents</div>
+      <table class="form-notice-table">
+        <thead><tr><th>Date</th><th>Type</th><th>Injury Type</th><th>Recordable</th></tr></thead>
+        <tbody>${f.incidents.length ? f.incidents.map((i) => `<tr><td>${formatDate(i.date)}</td><td>${escapeHtml(i.incident_type) || '—'}</td><td>${escapeHtml(i.injury_type) || '—'}</td><td>${i.recordable ? 'Yes' : 'No'}</td></tr>`).join('') : '<tr><td colspan="4" class="dim">None on file.</td></tr>'}</tbody>
+      </table>
+
+      <div class="form-section">Attendance Occurrences</div>
+      <table class="form-notice-table">
+        <thead><tr><th>Date</th><th>Type</th><th>Reason</th></tr></thead>
+        <tbody>${f.attendance.length ? f.attendance.map((o) => `<tr><td>${formatDate(o.date)}</td><td>${o.type === 'ncns' ? 'No Call No Show' : 'Other'}</td><td>${escapeHtml(o.reason) || '—'}</td></tr>`).join('') : '<tr><td colspan="3" class="dim">None on file.</td></tr>'}</tbody>
+      </table>
+
+      <div class="form-fine" style="margin-top:14px">Employee relations cases are not included in this file. Compensation, SSN, date of birth, I-9/work authorization, and medical detail beyond Cal/OSHA Form 300 fields are never stored in this system and cannot appear here.</div>
+      <button class="gh no-print" id="ef-back-btn" type="button" style="margin-top:14px">&larr; Back to document generator</button>
+    </div>
+  `;
+  document.getElementById('ef-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+}
+
 // ---- SOP — matches the real SWL Standard Operating Procedure format:
 // letterhead, a metadata grid (SOP number/dates/revision), PURPOSE and
 // SCOPE section bars, a Responsibilities table, a numbered Procedure
@@ -4532,6 +4898,7 @@ await loadManagerIds();
 await loadTerminations();
 await loadStaff();
 await loadDepartmentList();
+await loadOshaEstablishment();
 
 // A nav item can jump straight into a specific generator (used for the
 // Terminations tab) instead of always landing on the tile menu.

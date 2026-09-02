@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Org chart — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1>Org chart</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+      <div class="big" style="margin-bottom:16px">
+        <div><div class="v n" id="stat-total">—</div><div class="k">Active employees</div></div>
+        <div><div class="v n" id="stat-managers">—</div><div class="k">People with direct reports</div></div>
+        <div><div class="v n" id="stat-largest">—</div><div class="k">Largest team</div></div>
+        <div><div class="v hot" id="stat-gap">—</div><div class="k">No manager, manages no one</div></div>
+      </div>
+
+      <div class="card" id="gap-card" style="margin-bottom:16px" hidden>
+        <div class="card-h"><h3>Worth checking</h3><span>No manager set, and nobody reports to them</span></div>
+        <table>
+          <thead><tr><th>Employee</th><th>Job title</th><th>Division</th><th>Location</th></tr></thead>
+          <tbody id="gap-rows"></tbody>
+        </table>
+      </div>
+
+      <div id="teams"></div>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell } from './app.js';
+import { db } from './firebaseconfig.js';
+import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('orgchart', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+async function loadAndRender() {
+  const snap = await getDocs(collection(db, 'employees'));
+  const all = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => !e.is_test);
+  const active = all.filter((e) => e.status !== 'terminated');
+  const byId = new Map(active.map((e) => [e.id, e]));
+
+  // Direct reports per manager -- computed from manager_emp_id every
+  // load, never stored, same as anniversary/tenure elsewhere in this app.
+  const reportsOf = new Map();
+  active.forEach((e) => {
+    if (e.manager_emp_id && byId.has(e.manager_emp_id)) {
+      if (!reportsOf.has(e.manager_emp_id)) reportsOf.set(e.manager_emp_id, []);
+      reportsOf.get(e.manager_emp_id).push(e);
+    }
+  });
+
+  const managerIds = [...reportsOf.keys()].sort((a, b) => reportsOf.get(b).length - reportsOf.get(a).length);
+
+  // A real gap: nobody reports to them AND they report to nobody --
+  // organizationally invisible. Someone at the top who has no manager
+  // but DOES manage people isn't a gap, so they're excluded here.
+  const gaps = active.filter((e) => !reportsOf.has(e.id) && !(e.manager_emp_id && byId.has(e.manager_emp_id)));
+
+  document.getElementById('stat-total').textContent = active.length;
+  document.getElementById('stat-managers').textContent = managerIds.length;
+  const largest = managerIds[0];
+  document.getElementById('stat-largest').textContent = largest
+    ? `${byId.get(largest).first_name} ${byId.get(largest).last_name} (${reportsOf.get(largest).length})`
+    : '—';
+  document.getElementById('stat-gap').textContent = gaps.length;
+
+  if (gaps.length) {
+    document.getElementById('gap-card').hidden = false;
+    document.getElementById('gap-rows').innerHTML = gaps
+      .sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`))
+      .map((e) => `
+        <tr>
+          <td>${escapeHtml(`${e.first_name} ${e.last_name}`)}</td>
+          <td class="dim">${escapeHtml(e.position) || '—'}</td>
+          <td class="dim">${escapeHtml(e.division) || '—'}</td>
+          <td class="dim">${escapeHtml(e.location) || '—'}</td>
+        </tr>
+      `).join('');
+  }
+
+  document.getElementById('teams').innerHTML = managerIds.map((mgrId) => {
+    const mgr = byId.get(mgrId);
+    const reports = reportsOf.get(mgrId).sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`));
+    return `
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h">
+          <h3>${escapeHtml(`${mgr.first_name} ${mgr.last_name}`)}${mgr.position ? ` — ${escapeHtml(mgr.position)}` : ''}</h3>
+          <span>${reports.length} direct report${reports.length === 1 ? '' : 's'}</span>
+        </div>
+        <table>
+          <thead><tr><th>Employee</th><th>Job title</th><th>Division</th><th>Location</th><th></th></tr></thead>
+          <tbody>
+            ${reports.map((r) => `
+              <tr>
+                <td>${escapeHtml(`${r.first_name} ${r.last_name}`)}</td>
+                <td class="dim">${escapeHtml(r.position) || '—'}</td>
+                <td class="dim">${escapeHtml(r.division) || '—'}</td>
+                <td class="dim">${escapeHtml(r.location) || '—'}</td>
+                <td class="dim mono" style="font-size:11px">${reportsOf.has(r.id) ? `manages ${reportsOf.get(r.id).length}` : ''}${r.dotted_line_emp_id && byId.has(r.dotted_line_emp_id) ? `${reportsOf.has(r.id) ? ' · ' : ''}dotted line to ${escapeHtml(`${byId.get(r.dotted_line_emp_id).first_name} ${byId.get(r.dotted_line_emp_id).last_name}`)}` : ''}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }).join('') || '<div class="card"><div class="card-body dim">Nobody in the active roster has a manager or direct reports set yet.</div></div>';
+}
+
+await loadAndRender();
+</script>
+</body>
+</html>
