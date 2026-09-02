@@ -408,7 +408,7 @@ function render() {
   emptyState.hidden = visible.length > 0;
 
   rowsEl.querySelectorAll('tr').forEach((tr) => {
-    tr.addEventListener('click', () => openEdit(tr.dataset.id));
+    tr.addEventListener('click', () => { window.location.href = `employeeprofile.html?id=${encodeURIComponent(tr.dataset.id)}`; });
   });
 
   const activeCount = allEmployees.filter((e) => e.status !== 'terminated' && !e.is_test).length;
@@ -940,6 +940,12 @@ if (urlStatus) document.getElementById('status-filter').value = urlStatus;
 
 await loadEmployees();
 await loadManagerIds();
+
+// Deep link from the profile page's "Edit details" button — jump
+// straight into that employee's edit modal instead of making HR find
+// them again in the table.
+const deepEditId = new URLSearchParams(window.location.search).get('edit');
+if (deepEditId && allEmployees.some((e) => e.id === deepEditId)) openEdit(deepEditId);
 </script>
 </body>
 </html>
