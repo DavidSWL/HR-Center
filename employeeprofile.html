@@ -105,6 +105,14 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+// Month and day only — birth year is never collected or displayed.
+function formatBirthday(emp) {
+  if (!emp.birth_month || !emp.birth_day) return '—';
+  return `${MONTH_NAMES[emp.birth_month - 1]} ${emp.birth_day}`;
+}
+
 function statusPill(emp) {
   const base = emp.status === 'terminated' ? '<span class="pill bad">Terminated</span>'
     : emp.status === 'onboarding' ? '<span class="pill mid">Onboarding</span>'
@@ -151,7 +159,7 @@ const tenureLine = emp.status === 'terminated'
 
 document.getElementById('hero-card').innerHTML = `
   <div class="p-hero">
-    <div class="p-ava">${escapeHtml(initials)}</div>
+    <div class="p-ava">${emp.photo_url ? `<img src="${escapeHtml(emp.photo_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : escapeHtml(initials)}</div>
     <div>
       <div class="p-name">${escapeHtml(fullName)}</div>
       <div class="p-meta"><b>${escapeHtml(emp.position) || 'No title on file'}</b><span class="sep">&middot;</span>${escapeHtml(emp.division) || '—'}<span class="sep">&middot;</span>${escapeHtml(emp.location) || '—'}<span class="sep">&middot;</span><span class="mono">ID ${escapeHtml(emp.id)}</span></div>
@@ -172,6 +180,7 @@ document.getElementById('tab-personal').innerHTML = `
   <div class="card-h"><h3>Personal details</h3><span>Contact and emergency info only</span></div>
   <div class="kv-grid">
     <div><b>Phone</b><span>${escapeHtml(emp.phone) || '—'}</span></div>
+    <div><b>Birthday</b><span>${formatBirthday(emp)}</span><span class="kv-note">Month and day only — birth year isn't collected</span></div>
     <div><b>Emergency contact</b><span>${escapeHtml(emp.emergency_contact_name) || '—'}</span></div>
     <div><b>Emergency phone</b><span>${escapeHtml(emp.emergency_contact_phone) || '—'}</span></div>
   </div>
@@ -199,7 +208,12 @@ document.getElementById('tab-employment').innerHTML = `
 // duplicate table — each row links out to the module that actually owns
 // that data. Employee relations is deliberately not included here, same
 // as the Document Generator's "Employee file" packet excludes it: ER
-// cases stay confidential to that case's own access rules.
+// cases stay confidential to that case's own access rules. Disciplinary
+// actions are David-only in firestore.rules — querying that collection
+// for anyone else would fail this whole Promise.all, so it's skipped
+// entirely (not just hidden) for non-David viewers.
+const isDavid = profile?.role === 'david';
+
 async function countWhere(collectionName, field, value) {
   const snap = await getDocs(query(collection(db, collectionName), where(field, '==', value)));
   return snap.size;
@@ -207,7 +221,7 @@ async function countWhere(collectionName, field, value) {
 
 const [attendanceCount, disciplineCount, notesCount, reviewsSnap] = await Promise.all([
   countWhere('attendance', 'emp_id', emp.id),
-  countWhere('disciplinary_actions', 'emp_id', emp.id),
+  isDavid ? countWhere('disciplinary_actions', 'emp_id', emp.id) : Promise.resolve(null),
   countWhere('notes_to_file', 'emp_id', emp.id),
   getDocs(collection(db, 'employees', emp.id, 'reviews')),
 ]);
@@ -221,7 +235,7 @@ const reviewsValue = reviews.length === 0 ? 'None scheduled'
 document.getElementById('tab-records').innerHTML = `
   <div class="card-h"><h3>Records</h3><span>Everything on file, linked to where it actually lives</span></div>
   <a class="rec-row" href="attendance.html"><div class="l"><b>Attendance</b><small>Occurrences on file</small></div><div class="v">${attendanceCount} occurrence${attendanceCount === 1 ? '' : 's'}</div><div class="go">&rarr;</div></a>
-  <a class="rec-row" href="discipline.html"><div class="l"><b>Disciplinary actions</b><small>Write-ups and PIPs</small></div><div class="v">${disciplineCount ? `${disciplineCount} on file` : 'None on file'}</div><div class="go">&rarr;</div></a>
+  ${isDavid ? `<a class="rec-row" href="discipline.html"><div class="l"><b>Disciplinary actions</b><small>Write-ups and PIPs</small></div><div class="v">${disciplineCount ? `${disciplineCount} on file` : 'None on file'}</div><div class="go">&rarr;</div></a>` : ''}
   <a class="rec-row" href="notes.html"><div class="l"><b>Notes to file</b><small>Informal notes from managers</small></div><div class="v">${notesCount ? `${notesCount} note${notesCount === 1 ? '' : 's'}` : 'None on file'}</div><div class="go">&rarr;</div></a>
   <a class="rec-row" href="reviews.html"><div class="l"><b>Reviews</b><small>30/60/90-day new hire reviews</small></div><div class="v">${reviewsValue}</div><div class="go">&rarr;</div></a>
   <a class="rec-row" href="compliance.html"><div class="l"><b>Policy &amp; training compliance</b><small>Acknowledgments and harassment training</small></div><div class="v"></div><div class="go">&rarr;</div></a>

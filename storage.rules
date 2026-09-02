@@ -17,6 +17,11 @@ service firebase.storage {
         firestore.exists(/databases/(default)/documents/users/$(request.auth.uid));
     }
 
+    function isDavid() {
+      return isHrUser() &&
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'david';
+    }
+
     // 25MB covers a scanned, signed multi-page PDF with room to spare.
     // Anything asking for more from this app is not a document upload.
     function isReasonableUpload() {
@@ -32,10 +37,21 @@ service firebase.storage {
         && request.resource.contentType.matches('application/pdf|image/.*|application/msword|application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     }
 
+    // Write-ups are David-only, same as the Firestore record they attach
+    // to (disciplinary_actions).
     match /disciplinary/{actionId}/{fileName} {
+      allow read: if isDavid();
+      allow write: if isDavid() && isReasonableUpload();
+      allow delete: if false; // superseded, not removed — keep the record
+    }
+
+    // Employee profile photos — display only, not a personnel record, so
+    // (unlike disciplinary/notes/incidents above) a replaced photo can
+    // actually be deleted instead of piling up superseded copies.
+    match /employee_photos/{empId}/{fileName} {
       allow read: if isHrUser();
       allow write: if isHrUser() && isReasonableUpload();
-      allow delete: if false; // superseded, not removed — keep the record
+      allow delete: if isHrUser();
     }
 
     match /notes/{noteId}/{fileName} {

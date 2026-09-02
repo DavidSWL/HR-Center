@@ -200,6 +200,15 @@ const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
 initShell('er', profile);
 
+// ER cases are David's alone — enforced for real in firestore.rules;
+// this just keeps anyone else from landing on a page that would
+// otherwise fail every read with a permission error.
+if (profile.role !== 'david') {
+  document.querySelector('.view').innerHTML =
+    '<div class="card"><div class="card-body dim">Employee relations is restricted to David.</div></div>';
+  throw new Error('restricted to David');
+}
+
 document.getElementById('header-date').textContent =
   new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
 

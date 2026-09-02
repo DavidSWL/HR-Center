@@ -3046,8 +3046,12 @@ function renderOsha300aSheet(d) {
 // like a report, not a generated document. ----
 
 async function loadEmployeeFileData(empId) {
+  // Disciplinary actions are David-only in firestore.rules now — querying
+  // them for anyone else would fail this whole Promise.all, not just that
+  // one section. Skip the read entirely and mark the section restricted.
+  const isDavid = profile?.role === 'david';
   const [disc, notes, pips, attendanceSnap, incidentsSnap, terms, reviews, onboarding, harassment, acks] = await Promise.all([
-    getDocs(query(collection(db, 'disciplinary_actions'), where('emp_id', '==', empId))),
+    isDavid ? getDocs(query(collection(db, 'disciplinary_actions'), where('emp_id', '==', empId))) : Promise.resolve(null),
     getDocs(query(collection(db, 'notes_to_file'), where('emp_id', '==', empId))),
     getDocs(query(collection(db, 'pips'), where('emp_id', '==', empId))),
     getDocs(query(collection(db, 'attendance'), where('emp_id', '==', empId))),
@@ -3060,7 +3064,9 @@ async function loadEmployeeFileData(empId) {
   ]);
   const rows = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   return {
-    discipline: rows(disc).sort((a, b) => (b.infraction_date || '').localeCompare(a.infraction_date || '')),
+    // null (not []) means "restricted", not "none on file" — the sheet
+    // renders those two cases differently.
+    discipline: disc ? rows(disc).sort((a, b) => (b.infraction_date || '').localeCompare(a.infraction_date || '')) : null,
     notes: rows(notes).sort((a, b) => (b.entered_at?.seconds || 0) - (a.entered_at?.seconds || 0)),
     pips: rows(pips).sort((a, b) => (b.start_date || '').localeCompare(a.start_date || '')),
     attendance: rows(attendanceSnap).sort((a, b) => (b.date || '').localeCompare(a.date || '')),
@@ -3170,7 +3176,7 @@ function renderEmployeeFileSheet(emp, f) {
       <div class="form-section">Disciplinary Actions</div>
       <table class="form-notice-table">
         <thead><tr><th>Date</th><th>Level</th><th>Category</th><th>Description</th></tr></thead>
-        <tbody>${f.discipline.length ? f.discipline.map((a) => `<tr><td>${formatDate(a.infraction_date)}</td><td>${a.level ?? '—'}</td><td>${escapeHtml(a.category) || '—'}</td><td>${escapeHtml(a.description) || '—'}</td></tr>`).join('') : '<tr><td colspan="4" class="dim">None on file.</td></tr>'}</tbody>
+        <tbody>${f.discipline === null ? '<tr><td colspan="4" class="dim">Restricted to David.</td></tr>' : f.discipline.length ? f.discipline.map((a) => `<tr><td>${formatDate(a.infraction_date)}</td><td>${a.level ?? '—'}</td><td>${escapeHtml(a.category) || '—'}</td><td>${escapeHtml(a.description) || '—'}</td></tr>`).join('') : '<tr><td colspan="4" class="dim">None on file.</td></tr>'}</tbody>
       </table>
 
       <div class="form-section">Notes to File</div>
