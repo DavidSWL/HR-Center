@@ -195,11 +195,14 @@ service cloud.firestore {
     }
 
     // ---- discipline & notes ----------------------------------------------
+    // Write-ups are David's alone — not just closing one out like ER
+    // cases, but reading and filing them at all. Per his explicit
+    // instruction, enforced here rather than just hidden in the nav.
     match /disciplinary_actions/{actionId} {
-      allow read: if isHrUser();
-      allow create: if isHrUser() && isClean(request.resource.data)
+      allow read: if isDavid();
+      allow create: if isDavid() && isClean(request.resource.data)
         && stamped(request.resource.data);
-      allow update: if isHrUser() && isClean(request.resource.data);
+      allow update: if isDavid() && isClean(request.resource.data);
       allow delete: if false;
     }
 
@@ -263,33 +266,26 @@ service cloud.firestore {
     }
 
     // ---- employee relations ------------------------------------------
-    // Anyone on staff can open a case, add interviews, and record
-    // responses. Only David can move a case to closed — enforced here,
-    // not by hiding the button in the UI. A single update that both
-    // closes the case AND changes other fields still requires David,
-    // because the check runs against the resulting document.
+    // Cases are David's alone — reading and filing, not just closing.
+    // Per his explicit instruction, enforced here rather than just
+    // hidden in the nav.
     match /er_cases/{caseId} {
-      allow read: if isHrUser();
-      allow create: if isHrUser() && isClean(request.resource.data)
+      allow read: if isDavid();
+      // A case still can't be born already closed — that workflow rule
+      // predates the access change and isn't affected by it.
+      allow create: if isDavid() && isClean(request.resource.data)
         && request.resource.data.status != 'closed';
-      // David alone writes findings/action and closes the case; everyone
-      // else can move a case to review (that's what alerts him) but can't
-      // touch the conclusion fields or the closed status themselves.
-      allow update: if isHrUser() && isClean(request.resource.data)
-        && (isDavid() || (
-          request.resource.data.status != 'closed'
-          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['findings', 'action'])
-        ));
+      allow update: if isDavid() && isClean(request.resource.data);
       allow delete: if false;
 
       match /interviews/{interviewId} {
-        allow read: if isHrUser();
-        allow create, update: if isHrUser() && isClean(request.resource.data);
+        allow read: if isDavid();
+        allow create, update: if isDavid() && isClean(request.resource.data);
         allow delete: if false;
 
         match /responses/{questionNo} {
-          allow read: if isHrUser();
-          allow create, update: if isHrUser() && isClean(request.resource.data);
+          allow read: if isDavid();
+          allow create, update: if isDavid() && isClean(request.resource.data);
           allow delete: if false;
         }
       }

@@ -147,9 +147,9 @@ test('attendance create with entered_by succeeds', async () => {
   );
 });
 
-// ---- ER case closure is role-gated ---------------------------------------
+// ---- ER cases are David-only, not just closure --------------------------
 
-test('a case cannot be created already closed, by anyone', async () => {
+test('a case cannot be created already closed, even by David', async () => {
   await assertFails(
     as(DAVID).collection('er_cases').doc('ER-2026-001').set({
       status: 'closed',
@@ -158,46 +158,73 @@ test('a case cannot be created already closed, by anyone', async () => {
   );
 });
 
-test('Tanya can open and update an ER case, but cannot close it', async () => {
-  const db = as(TANYA);
-  await assertSucceeds(
-    db.collection('er_cases').doc('ER-2026-002').set({
+test('Tanya cannot open, read, or update an ER case', async () => {
+  await assertFails(
+    as(TANYA).collection('er_cases').doc('ER-2026-002').set({
       status: 'open',
       opened_by: TANYA,
     })
   );
-  await assertSucceeds(
-    db.collection('er_cases').doc('ER-2026-002').update({ status: 'review' })
-  );
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection('er_cases').doc('ER-2026-002').set({
+      status: 'open',
+      opened_by: DAVID,
+    });
+  });
+  await assertFails(as(TANYA).collection('er_cases').doc('ER-2026-002').get());
   await assertFails(
-    db.collection('er_cases').doc('ER-2026-002').update({ status: 'closed' })
+    as(TANYA).collection('er_cases').doc('ER-2026-002').update({ status: 'review' })
   );
 });
 
-test('David can close an ER case', async () => {
-  await testEnv.withSecurityRulesDisabled(async (ctx) => {
-    await ctx.firestore().collection('er_cases').doc('ER-2026-003').set({
-      status: 'review',
-      opened_by: TANYA,
-    });
-  });
+test('David can open, update, and close an ER case', async () => {
+  const db = as(DAVID);
   await assertSucceeds(
-    as(DAVID).collection('er_cases').doc('ER-2026-003').update({ status: 'closed' })
+    db.collection('er_cases').doc('ER-2026-003').set({
+      status: 'open',
+      opened_by: DAVID,
+    })
+  );
+  await assertSucceeds(
+    db.collection('er_cases').doc('ER-2026-003').update({ status: 'review' })
+  );
+  await assertSucceeds(
+    db.collection('er_cases').doc('ER-2026-003').update({ status: 'closed' })
   );
 });
 
-test('closing while also changing other fields in the same write still requires David', async () => {
+// ---- disciplinary actions are David-only ---------------------------------
+
+test('Tanya cannot read, file, or update a disciplinary action', async () => {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
-    await ctx.firestore().collection('er_cases').doc('ER-2026-004').set({
-      status: 'review',
-      opened_by: TANYA,
-      summary: 'draft',
+    await ctx.firestore().collection('disciplinary_actions').doc('D2').set({
+      emp_id: 'E100',
+      division: 'Maintenance',
+      level: 1,
+      entered_by: DAVID,
     });
   });
+  await assertFails(as(TANYA).collection('disciplinary_actions').doc('D2').get());
   await assertFails(
-    as(TANYA).collection('er_cases').doc('ER-2026-004').update({
-      status: 'closed',
-      summary: 'final',
+    as(TANYA).collection('disciplinary_actions').doc('D3').set({
+      emp_id: 'E100',
+      division: 'Maintenance',
+      level: 1,
+      entered_by: TANYA,
+    })
+  );
+  await assertFails(
+    as(TANYA).collection('disciplinary_actions').doc('D2').update({ level: 2 })
+  );
+});
+
+test('David can file a disciplinary action', async () => {
+  await assertSucceeds(
+    as(DAVID).collection('disciplinary_actions').doc('D4').set({
+      emp_id: 'E100',
+      division: 'Maintenance',
+      level: 1,
+      entered_by: DAVID,
     })
   );
 });

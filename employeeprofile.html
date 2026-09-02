@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Employee profile — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>
+  /* Profile-specific additions, page-local like docgen.html's .tabs —
+     not promoted to styles.css until a second page needs them. */
+  .crumb{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);text-decoration:none;margin-bottom:7px}
+  .crumb:hover{color:var(--accentTx)}
+  .p-hero{padding:22px;display:grid;grid-template-columns:auto 1fr auto;gap:22px;align-items:start}
+  .p-ava{width:84px;height:84px;border-radius:50%;background:var(--oregon);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:26px;letter-spacing:-.01em;flex-shrink:0}
+  .p-name{font-family:var(--display);font-size:24px;letter-spacing:-.01em;margin:0 0 6px}
+  .p-meta{font-size:13px;color:var(--muted);margin-bottom:10px}
+  .p-meta b{color:var(--text);font-weight:600}
+  .p-meta .sep{color:var(--edge);margin:0 8px}
+  .p-tags{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  .p-sub{font-size:12.5px;color:var(--faint)}
+  .p-sub b{color:var(--muted);font-weight:600}
+  .p-actions{display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+  .p-actions .gh{width:170px;text-align:center;text-decoration:none;display:block}
+  .tabs{display:flex;gap:0;border:1px solid var(--line);border-top:0;width:fit-content;margin-bottom:0}
+  .tabs .tab{padding:8px 18px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;color:var(--faint);border-right:1px solid var(--line)}
+  .tabs .tab:last-child{border-right:none}
+  .tabs .tab.active{background:var(--accent);color:#fff}
+  .kv-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line)}
+  .kv-grid div{background:var(--raise);padding:12px 16px}
+  .kv-grid b{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:4px}
+  .kv-grid span{font-size:13.5px}
+  .kv-note{display:block;margin-top:3px;font-size:10.5px;color:var(--faint);font-style:italic}
+  .rec-row{display:grid;grid-template-columns:1fr auto 16px;gap:14px;align-items:center;padding:13px 16px;border-bottom:1px solid var(--line);text-decoration:none;color:inherit}
+  .rec-row:last-child{border-bottom:none}
+  .rec-row:hover{background:var(--hover)}
+  .rec-row .l b{display:block;font-size:13.5px;font-weight:600}
+  .rec-row .l small{display:block;color:var(--faint);font-size:11.5px;margin-top:2px}
+  .rec-row .v{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right;white-space:nowrap}
+  .rec-row .go{color:var(--faint);font-family:var(--mono)}
+  @media (max-width:900px){ .p-hero{grid-template-columns:1fr} .p-actions{align-items:flex-start;flex-direction:row} }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div>
+        <a class="crumb" href="employees.html">&larr; Employee roster</a>
+        <h1 id="profile-h1">Employee profile</h1>
+      </div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+      <div id="not-found" class="card" hidden>
+        <div class="card-body dim">That employee ID wasn't found in the roster.</div>
+      </div>
+
+      <div id="profile-root" hidden>
+        <div class="card" id="hero-card" style="margin-bottom:0"></div>
+
+        <div class="tabs" id="tab-strip">
+          <div class="tab active" data-tab="personal">Personal</div>
+          <div class="tab" data-tab="employment">Employment</div>
+          <div class="tab" data-tab="records">Records</div>
+        </div>
+
+        <div class="card" id="tab-personal"></div>
+        <div class="card" id="tab-employment" hidden></div>
+        <div class="card" id="tab-records" hidden></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, formatDate, yearsSince } from './app.js';
+import { db } from './firebaseconfig.js';
+import { collection, doc, getDoc, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('roster', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+// Month and day only — birth year is never collected or displayed.
+function formatBirthday(emp) {
+  if (!emp.birth_month || !emp.birth_day) return '—';
+  return `${MONTH_NAMES[emp.birth_month - 1]} ${emp.birth_day}`;
+}
+
+function statusPill(emp) {
+  const base = emp.status === 'terminated' ? '<span class="pill bad">Terminated</span>'
+    : emp.status === 'onboarding' ? '<span class="pill mid">Onboarding</span>'
+    : '<span class="pill ok">Active</span>';
+  return emp.is_test ? `${base} <span class="pill">Test</span>` : base;
+}
+
+const empId = new URLSearchParams(window.location.search).get('id');
+if (!empId) {
+  document.getElementById('not-found').hidden = false;
+  throw new Error('no employee id in URL');
+}
+
+const [empSnap, allSnap] = await Promise.all([
+  getDoc(doc(db, 'employees', empId)),
+  getDocs(collection(db, 'employees')),
+]);
+
+if (!empSnap.exists()) {
+  document.getElementById('not-found').hidden = false;
+  throw new Error('employee not found');
+}
+
+const emp = { id: empSnap.id, ...empSnap.data() };
+const allEmployees = allSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+const byId = new Map(allEmployees.map((e) => [e.id, e]));
+
+function managerName(id) {
+  if (!id) return '—';
+  const m = byId.get(id);
+  return m ? `${m.first_name} ${m.last_name}` : '—';
+}
+
+const fullName = `${emp.first_name} ${emp.last_name}`;
+document.getElementById('profile-h1').textContent = fullName;
+document.title = `${fullName} — SWL HR`;
+document.getElementById('profile-root').hidden = false;
+
+const initials = `${(emp.first_name || '?')[0] || ''}${(emp.last_name || '?')[0] || ''}`.toUpperCase();
+
+const tenureLine = emp.status === 'terminated'
+  ? `Hired ${formatDate(emp.hire_date)} &middot; Separated ${formatDate(emp.separation_date)}`
+  : `Since ${formatDate(emp.hire_date)} &middot; ${yearsSince(emp.hire_date)} yrs`;
+
+document.getElementById('hero-card').innerHTML = `
+  <div class="p-hero">
+    <div class="p-ava">${emp.photo_url ? `<img src="${escapeHtml(emp.photo_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : escapeHtml(initials)}</div>
+    <div>
+      <div class="p-name">${escapeHtml(fullName)}</div>
+      <div class="p-meta"><b>${escapeHtml(emp.position) || 'No title on file'}</b><span class="sep">&middot;</span>${escapeHtml(emp.division) || '—'}<span class="sep">&middot;</span>${escapeHtml(emp.location) || '—'}<span class="sep">&middot;</span><span class="mono">ID ${escapeHtml(emp.id)}</span></div>
+      <div class="p-tags">
+        ${statusPill(emp)}
+        <span class="pill">${tenureLine}</span>
+      </div>
+      <div class="p-sub">Reports to <b>${escapeHtml(managerName(emp.manager_emp_id))}</b>${emp.dotted_line_emp_id ? ` &nbsp;&middot;&nbsp; Dotted line to <b>${escapeHtml(managerName(emp.dotted_line_emp_id))}</b>` : ''}</div>
+    </div>
+    <div class="p-actions">
+      <a class="gh solid" style="background:var(--accent);border-color:var(--accent);color:#fff" href="employees.html?edit=${encodeURIComponent(emp.id)}">Edit details</a>
+      <a class="gh" href="docgen.html?open=employeefile&amp;emp=${encodeURIComponent(emp.id)}&amp;auto=1">Print employee file</a>
+    </div>
+  </div>
+`;
+
+document.getElementById('tab-personal').innerHTML = `
+  <div class="card-h"><h3>Personal details</h3><span>Contact and emergency info only</span></div>
+  <div class="kv-grid">
+    <div><b>Phone</b><span>${escapeHtml(emp.phone) || '—'}</span></div>
+    <div><b>Birthday</b><span>${formatBirthday(emp)}</span><span class="kv-note">Month and day only — birth year isn't collected</span></div>
+    <div><b>Emergency contact</b><span>${escapeHtml(emp.emergency_contact_name) || '—'}</span></div>
+    <div><b>Emergency phone</b><span>${escapeHtml(emp.emergency_contact_phone) || '—'}</span></div>
+  </div>
+`;
+
+document.getElementById('tab-employment').innerHTML = `
+  <div class="card-h"><h3>Employment</h3><span>Current assignment</span></div>
+  <div class="kv-grid">
+    <div><b>Division</b><span>${escapeHtml(emp.division) || '—'}</span></div>
+    <div><b>Location</b><span>${escapeHtml(emp.location) || '—'}</span></div>
+    <div><b>Position</b><span>${escapeHtml(emp.position) || '—'}</span></div>
+    <div><b>Status</b><span>${statusPill(emp)}</span></div>
+    <div><b>Manager</b><span>${escapeHtml(managerName(emp.manager_emp_id))}</span></div>
+    <div><b>Dotted line</b><span>${escapeHtml(managerName(emp.dotted_line_emp_id))}</span></div>
+    <div><b>Hire date</b><span>${formatDate(emp.hire_date)}</span></div>
+    <div><b>Tenure</b><span>${emp.status === 'terminated' ? '—' : `${yearsSince(emp.hire_date)} yrs`}</span><span class="kv-note">Computed from hire date, not stored</span></div>
+    ${emp.status === 'terminated' ? `
+    <div><b>Separation date</b><span>${formatDate(emp.separation_date)}</span></div>
+    <div><b>Separation type</b><span>${escapeHtml(emp.separation_type) || '—'}</span></div>
+    ` : ''}
+  </div>
+`;
+
+// Records: real counts from a single equality query per collection, not a
+// duplicate table — each row links out to the module that actually owns
+// that data. Employee relations is deliberately not included here, same
+// as the Document Generator's "Employee file" packet excludes it: ER
+// cases stay confidential to that case's own access rules. Disciplinary
+// actions are David-only in firestore.rules — querying that collection
+// for anyone else would fail this whole Promise.all, so it's skipped
+// entirely (not just hidden) for non-David viewers.
+const isDavid = profile?.role === 'david';
+
+async function countWhere(collectionName, field, value) {
+  const snap = await getDocs(query(collection(db, collectionName), where(field, '==', value)));
+  return snap.size;
+}
+
+const [attendanceCount, disciplineCount, notesCount, reviewsSnap] = await Promise.all([
+  countWhere('attendance', 'emp_id', emp.id),
+  isDavid ? countWhere('disciplinary_actions', 'emp_id', emp.id) : Promise.resolve(null),
+  countWhere('notes_to_file', 'emp_id', emp.id),
+  getDocs(collection(db, 'employees', emp.id, 'reviews')),
+]);
+
+const reviews = reviewsSnap.docs.map((d) => d.data()).sort((a, b) => a.milestone - b.milestone);
+const nextReview = reviews.find((r) => !r.review_completed);
+const reviewsValue = reviews.length === 0 ? 'None scheduled'
+  : nextReview ? `${nextReview.milestone}-day due ${formatDate(nextReview.due_date)}`
+  : 'All complete';
+
+document.getElementById('tab-records').innerHTML = `
+  <div class="card-h"><h3>Records</h3><span>Everything on file, linked to where it actually lives</span></div>
+  <a class="rec-row" href="attendance.html"><div class="l"><b>Attendance</b><small>Occurrences on file</small></div><div class="v">${attendanceCount} occurrence${attendanceCount === 1 ? '' : 's'}</div><div class="go">&rarr;</div></a>
+  ${isDavid ? `<a class="rec-row" href="discipline.html"><div class="l"><b>Disciplinary actions</b><small>Write-ups and PIPs</small></div><div class="v">${disciplineCount ? `${disciplineCount} on file` : 'None on file'}</div><div class="go">&rarr;</div></a>` : ''}
+  <a class="rec-row" href="notes.html"><div class="l"><b>Notes to file</b><small>Informal notes from managers</small></div><div class="v">${notesCount ? `${notesCount} note${notesCount === 1 ? '' : 's'}` : 'None on file'}</div><div class="go">&rarr;</div></a>
+  <a class="rec-row" href="reviews.html"><div class="l"><b>Reviews</b><small>30/60/90-day new hire reviews</small></div><div class="v">${reviewsValue}</div><div class="go">&rarr;</div></a>
+  <a class="rec-row" href="compliance.html"><div class="l"><b>Policy &amp; training compliance</b><small>Acknowledgments and harassment training</small></div><div class="v"></div><div class="go">&rarr;</div></a>
+`;
+
+// tabs
+document.querySelectorAll('#tab-strip .tab').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#tab-strip .tab').forEach((b) => b.classList.toggle('active', b === btn));
+    ['personal', 'employment', 'records'].forEach((key) => {
+      document.getElementById(`tab-${key}`).hidden = key !== btn.dataset.tab;
+    });
+  });
+});
+</script>
+</body>
+</html>

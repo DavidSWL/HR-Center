@@ -22,6 +22,17 @@
   .form-doc { border:none !important; }
   @page { size:letter; margin:0.4in; }
 }
+/* The signature-later assignee dropdown sits directly on the white
+   print sheet, outside any .card-body/.modal-body — without this it
+   falls back to the login page's dark .f-in style (white text on a
+   dark transparent background), unreadable against white. Same fix as
+   docgen.html's sheets. */
+.form-doc-inner .f-in {
+  background:#fff; border-color:#ccc; color:#111;
+}
+.form-doc-inner .f-in:focus {
+  outline:0; border-color:#154733; background-color:#f3f8f5;
+}
 </style>
 </head>
 <body>
@@ -152,6 +163,10 @@
       <div class="acts no-print" id="print-acts" hidden style="margin-top:16px">
         <button class="gh" id="print-close-btn" type="button">&larr; Back to log</button>
         <button class="gh solid" id="print-now-btn" type="button">Print</button>
+        <select class="inp" id="lang-select" style="width:auto">
+          <option value="en">English</option>
+          <option value="es">Español</option>
+        </select>
       </div>
       <div class="form-doc" id="writeup-sheet" hidden style="margin-top:16px"></div>
     </section>
@@ -164,13 +179,22 @@ import { initShell, showToast, formatDate } from './app.js';
 import { db, storage } from './firebaseconfig.js';
 import { LOGO_DATA_URL } from './letterhead-assets.js';
 import {
-  collection, doc, getDocs, setDoc, addDoc, writeBatch, serverTimestamp,
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
 initShell('discipline', profile);
+
+// Write-ups are David's alone — enforced for real in firestore.rules;
+// this just keeps anyone else from landing on a page that would
+// otherwise fail every read with a permission error.
+if (profile.role !== 'david') {
+  document.querySelector('.view').innerHTML =
+    '<div class="card"><div class="card-body dim">Disciplinary actions are restricted to David.</div></div>';
+  throw new Error('restricted to David');
+}
 
 function escapeHtml(str) {
   const div = document.createElement('div');
@@ -179,15 +203,33 @@ function escapeHtml(str) {
 }
 
 const WARNING_LABELS = { 1: 'Verbal', 2: 'First Warning', 3: 'Second Warning', 4: 'Final Warning' };
+const WARNING_LABELS_ES = { 1: 'Verbal', 2: 'Primera Amonestación', 3: 'Segunda Amonestación', 4: 'Amonestación Final' };
 const OFFENSE_OPTIONS = ['Tardiness/Leaving Early', 'Absenteeism', 'Violation of Company Policies', 'Substandard Work', 'Violation of Safety Rules', 'Rudeness to Customers/Coworkers'];
+// Sheet output only is bilingual — the write-up form above stays in
+// English (HR fills it out); a saved action's offenses are stored in
+// English and looked up here for display, same as every other generator.
+const OFFENSE_OPTIONS_ES = {
+  'Tardiness/Leaving Early': 'Tardanza/Salida Anticipada',
+  Absenteeism: 'Ausentismo',
+  'Violation of Company Policies': 'Violación de Políticas de la Compañía',
+  'Substandard Work': 'Trabajo Deficiente',
+  'Violation of Safety Rules': 'Violación de Normas de Seguridad',
+  'Rudeness to Customers/Coworkers': 'Falta de Respeto a Clientes/Compañeros',
+};
 
 document.getElementById('header-date').textContent =
   new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
 
 let employees = [];
 let actions = [];
+let staff = [];
 
 function empById(id) { return employees.find((e) => e.id === id); }
+
+async function loadStaff() {
+  const snap = await getDocs(collection(db, 'users'));
+  staff = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
 
 // Type-ahead employee picker — a text input (with a datalist for
 // narrowing by name as you type) paired with a hidden input holding the
@@ -435,54 +477,247 @@ const writeupSheet = document.getElementById('writeup-sheet');
 document.getElementById('print-close-btn').addEventListener('click', () => {
   printActs.hidden = true;
   writeupSheet.hidden = true;
+  pendingSigDocId = null;
+  pendingSigTaskId = null;
 });
 document.getElementById('print-now-btn').addEventListener('click', () => window.print());
+document.getElementById('lang-select').addEventListener('change', (e) => {
+  if (sheetRerender) sheetRerender(e.target.value);
+});
 
-function openPrintSheet(emp, a) {
+// ---- signature infrastructure — duplicated from docgen.html on purpose
+// (this app has no shared-JS-across-pages setup), same reusable pad/
+// preserve-across-rerender/save-for-later pattern used everywhere else
+// a document gets signed. ----
+
+const sigPads = {};
+let sheetRerender = null;
+let pendingSigDocId = null;
+let pendingSigTaskId = null;
+
+function withPreservedSignature(canvasId, renderFn) {
+  const oldCanvas = document.getElementById(canvasId);
+  const oldState = sigPads[canvasId];
+  const dataUrl = (oldCanvas && oldState && oldState.hasStroke) ? oldCanvas.toDataURL('image/png') : null;
+  renderFn();
+  if (!dataUrl) return;
+  const newCanvas = document.getElementById(canvasId);
+  const newState = sigPads[canvasId];
+  if (!newCanvas || !newState) return;
+  const rect = newCanvas.getBoundingClientRect();
+  const img = new Image();
+  img.onload = () => {
+    newState.ctx.drawImage(img, 0, 0, rect.width, rect.height);
+    newState.hasStroke = true;
+  };
+  img.src = dataUrl;
+}
+
+function drawExistingSignatureDataUrl(canvasId, dataUrl) {
+  return new Promise((resolve) => {
+    const canvas = document.getElementById(canvasId);
+    const state = sigPads[canvasId];
+    if (!canvas || !state || !dataUrl) { resolve(); return; }
+    const rect = canvas.getBoundingClientRect();
+    const img = new Image();
+    img.onload = () => {
+      state.ctx.drawImage(img, 0, 0, rect.width, rect.height);
+      state.hasStroke = true;
+      resolve();
+    };
+    img.src = dataUrl;
+  });
+}
+
+function setUpSignaturePad(canvasId, clearBtnId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ratio = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * ratio;
+  canvas.height = rect.height * ratio;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(ratio, ratio);
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#111';
+  const state = { ctx, drawing: false, hasStroke: false };
+  sigPads[canvasId] = state;
+
+  const pos = (e) => {
+    const r = canvas.getBoundingClientRect();
+    const p = e.touches ? e.touches[0] : e;
+    return { x: p.clientX - r.left, y: p.clientY - r.top };
+  };
+  const start = (e) => { e.preventDefault(); state.drawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+  const move = (e) => {
+    if (!state.drawing) return;
+    e.preventDefault();
+    const p = pos(e);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    state.hasStroke = true;
+  };
+  const end = () => { state.drawing = false; };
+
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', end);
+  canvas.addEventListener('touchstart', start, { passive: false });
+  canvas.addEventListener('touchmove', move, { passive: false });
+  canvas.addEventListener('touchend', end);
+
+  document.getElementById(clearBtnId).addEventListener('click', () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    state.hasStroke = false;
+  });
+}
+
+function signaturePadHtml(canvasId, clearId, height = 90) {
+  return `
+    <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
+      <canvas id="${canvasId}" style="width:100%;height:${height}px;display:block;cursor:crosshair;touch-action:none"></canvas>
+    </div>
+    <button type="button" class="gh no-print" id="${clearId}" style="margin-bottom:10px">Clear signature</button>
+  `;
+}
+
+function signatureTaskFieldsHtml(prefix) {
+  return `
+    <div class="frow" style="margin-top:10px;align-items:flex-end">
+      <div class="field" style="margin:0">
+        <label class="f-lab">Not signing right now? Get the signature later — who should get it signed</label>
+        <select class="f-in" id="${prefix}-sig-assignee"><option value="">Choose…</option>${staff.map((s) => `<option value="${s.id}">${s.name}</option>`).join('')}</select>
+      </div>
+      <div class="field" style="margin:0"><label class="f-lab">By when</label><input class="f-in" id="${prefix}-sig-due" type="date"></div>
+      <button class="gh no-print" id="${prefix}-sig-later-btn" type="button">Save for signature later</button>
+    </div>
+  `;
+}
+
+async function createSignatureFollowupTask(prefix, { linkedDocId, title }) {
+  const assigneeId = document.getElementById(`${prefix}-sig-assignee`).value;
+  const dueDate = document.getElementById(`${prefix}-sig-due`).value;
+  if (!assigneeId || !dueDate) { showToast('Pick who should get the signature and by when.', 'error'); return false; }
+  const assignee = staff.find((s) => s.id === assigneeId);
+  try {
+    await addDoc(collection(db, 'tasks'), {
+      assigned_to: assigneeId, due_date: dueDate,
+      instructions: `Get signature — ${title}`,
+      recurring: 'none', status: 'open', linked_doc_id: linkedDocId, linked_doc_type: 'writeup',
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    showToast(`Task created for ${assignee?.name || assigneeId} — open it from Tasks when ready to sign.`);
+    return true;
+  } catch (err) {
+    console.error(err);
+    showToast('Could not create the task — ' + err.message, 'error');
+    return false;
+  }
+}
+
+async function completeLinkedTask(taskId) {
+  try {
+    await updateDoc(doc(db, 'tasks', taskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
+  } catch (err) { console.error('Could not auto-complete task', err); }
+}
+
+function signedOnHtml(ts) {
+  if (!ts?.toDate) return '';
+  return `<div class="dim" style="margin-top:6px;font-size:11.5px">Signed ${formatDate(ts.toDate().toISOString().slice(0, 10))}</div>`;
+}
+
+function openPrintSheet(emp, a, lang) {
+  lang = lang || document.getElementById('lang-select').value || 'en';
+  document.getElementById('lang-select').value = lang;
+  const isEs = lang === 'es';
   formCard.hidden = true;
   const offenseList = a.offenses || (a.category ? a.category.split(', ') : []);
+  const warningLabels = isEs ? WARNING_LABELS_ES : WARNING_LABELS;
+  const offenseLabel = (o) => (isEs ? (OFFENSE_OPTIONS_ES[o] || o) : o);
   writeupSheet.innerHTML = `
     <div class="form-doc-inner">
       <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
-      <h1 class="form-title">Employee Write Up</h1>
-      <div class="form-section">Employee Information</div>
+      <h1 class="form-title">${isEs ? 'Formulario de Amonestación al Empleado' : 'Employee Write Up'}</h1>
+      <div class="form-section">${isEs ? 'Información del Empleado' : 'Employee Information'}</div>
       <div class="form-grid c2">
-        <div class="form-cell"><b>Employee Name</b>${emp.first_name} ${emp.last_name}</div>
-        <div class="form-cell"><b>Date of Infraction</b>${formatDate(a.infraction_date)}</div>
-        <div class="form-cell"><b>Employee ID</b>${emp.id}</div>
-        <div class="form-cell"><b>Date Issued</b>${a.entered_at?.seconds ? formatDate(new Date(a.entered_at.seconds * 1000)) : formatDate(new Date().toISOString().slice(0, 10))}</div>
-        <div class="form-cell"><b>Manager</b>${escapeHtml(a.issued_by || '')}</div>
-        <div class="form-cell"><b>Job Title</b>${emp.position || ''}</div>
-        <div class="form-cell" style="grid-column:1/-1"><b>Department</b>${emp.division || ''}</div>
+        <div class="form-cell"><b>${isEs ? 'Nombre del Empleado' : 'Employee Name'}</b>${emp.first_name} ${emp.last_name}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha de la Infracción' : 'Date of Infraction'}</b>${formatDate(a.infraction_date)}</div>
+        <div class="form-cell"><b>${isEs ? 'ID del Empleado' : 'Employee ID'}</b>${emp.id}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha de Emisión' : 'Date Issued'}</b>${a.entered_at?.seconds ? formatDate(new Date(a.entered_at.seconds * 1000)) : formatDate(new Date().toISOString().slice(0, 10))}</div>
+        <div class="form-cell"><b>${isEs ? 'Gerente' : 'Manager'}</b>${escapeHtml(a.issued_by || '')}</div>
+        <div class="form-cell"><b>${isEs ? 'Puesto' : 'Job Title'}</b>${emp.position || ''}</div>
+        <div class="form-cell" style="grid-column:1/-1"><b>${isEs ? 'Departamento' : 'Department'}</b>${emp.division || ''}</div>
       </div>
-      <div class="form-section">Type of Warning</div>
-      <div class="form-checks">${[1, 2, 3, 4].map((n) => `<label>${n === a.level ? '☑' : '☐'} ${WARNING_LABELS[n]}</label>`).join('')}</div>
-      <div class="form-section">Type of Offenses</div>
+      <div class="form-section">${isEs ? 'Tipo de Amonestación' : 'Type of Warning'}</div>
+      <div class="form-checks">${[1, 2, 3, 4].map((n) => `<label>${n === a.level ? '☑' : '☐'} ${warningLabels[n]}</label>`).join('')}</div>
+      <div class="form-section">${isEs ? 'Tipo de Infracciones' : 'Type of Offenses'}</div>
       <div class="form-checks">
-        ${OFFENSE_OPTIONS.map((o) => `<label>${offenseList.includes(o) ? '☑' : '☐'} ${o}</label>`).join('')}
-        <label>${offenseList.some((o) => !OFFENSE_OPTIONS.includes(o)) ? '☑' : '☐'} Other: ${escapeHtml(offenseList.find((o) => !OFFENSE_OPTIONS.includes(o)) || '')}</label>
+        ${OFFENSE_OPTIONS.map((o) => `<label>${offenseList.includes(o) ? '☑' : '☐'} ${offenseLabel(o)}</label>`).join('')}
+        <label>${offenseList.some((o) => !OFFENSE_OPTIONS.includes(o)) ? '☑' : '☐'} ${isEs ? 'Otro' : 'Other'}: ${escapeHtml(offenseList.find((o) => !OFFENSE_OPTIONS.includes(o)) || '')}</label>
       </div>
-      <div class="form-section">Details</div>
-      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">Description of Infraction</b>${escapeHtml(a.description) || '—'}</div>
+      <div class="form-section">${isEs ? 'Detalles' : 'Details'}</div>
+      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">${isEs ? 'Descripción de la Infracción' : 'Description of Infraction'}</b>${escapeHtml(a.description) || '—'}</div>
       <div class="form-grid c2">
-        <div class="form-cell"><b>Plan for Improvement</b>${escapeHtml(a.plan_improvement) || '—'}</div>
-        <div class="form-cell"><b>Follow-Up Review Date</b>${formatDate(a.follow_up_date)}</div>
+        <div class="form-cell"><b>${isEs ? 'Plan de Mejora' : 'Plan for Improvement'}</b>${escapeHtml(a.plan_improvement) || '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha de Revisión de Seguimiento' : 'Follow-Up Review Date'}</b>${formatDate(a.follow_up_date)}</div>
       </div>
-      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">Consequences of Further Infractions</b>${escapeHtml(a.consequences) || '—'}</div>
-      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">Employee Comments/Response (optional)</b>${escapeHtml(a.employee_comments) || '—'}</div>
-      <div class="form-section">Acknowledgment of Receipt of Warnings</div>
-      <div class="form-fine" style="font-style:normal">By signing this form, you confirm that you understand the information in this warning. You also confirm that you and your manager have discussed the warning and a plan for improvement. Signing this form does not necessarily indicate that you agree with this warning.</div>
-      <div class="form-fine">This document is for internal disciplinary tracking purposes only. It does not create a contract of employment, and nothing in this document alters the at-will nature of employment. The Company reserves the right to skip disciplinary steps or proceed directly to termination based on the severity of the conduct.</div>
-      <div class="form-sig" style="grid-template-columns:1fr">
-        <div style="border-right:none">Employee Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
-        <div style="border-right:none;border-top:none">Manager Signature: _______________________________________&nbsp;&nbsp;&nbsp;Date: _______________</div>
-        <div style="border-right:none;border-top:none">Witness Signature (if employee understands warning but refuses to sign)&nbsp;&nbsp;&nbsp;Date: _______________</div>
+      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">${isEs ? 'Consecuencias de Infracciones Adicionales' : 'Consequences of Further Infractions'}</b>${escapeHtml(a.consequences) || '—'}</div>
+      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333;margin-bottom:3px">${isEs ? 'Comentarios/Respuesta del Empleado (opcional)' : 'Employee Comments/Response (optional)'}</b>${escapeHtml(a.employee_comments) || '—'}</div>
+      <div class="form-section">${isEs ? 'Reconocimiento de Recibo de la Amonestación' : 'Acknowledgment of Receipt of Warnings'}</div>
+      <div class="form-fine" style="font-style:normal">${isEs
+        ? 'Al firmar este formulario, usted confirma que entiende la información en esta amonestación. También confirma que usted y su gerente han discutido la amonestación y un plan de mejora. Firmar este formulario no significa necesariamente que usted está de acuerdo con esta amonestación.'
+        : 'By signing this form, you confirm that you understand the information in this warning. You also confirm that you and your manager have discussed the warning and a plan for improvement. Signing this form does not necessarily indicate that you agree with this warning.'}</div>
+      <div class="form-fine">${isEs
+        ? 'Este documento es únicamente para fines internos de seguimiento disciplinario. No crea un contrato de empleo, y nada en este documento altera la naturaleza de empleo a voluntad ("at-will"). La Compañía se reserva el derecho de omitir pasos disciplinarios o proceder directamente a la terminación según la gravedad de la conducta.'
+        : 'This document is for internal disciplinary tracking purposes only. It does not create a contract of employment, and nothing in this document alters the at-will nature of employment. The Company reserves the right to skip disciplinary steps or proceed directly to termination based on the severity of the conduct.'}</div>
+      <div class="form-section">${isEs ? 'Firma Electrónica del Empleado' : 'Employee Electronic Signature'}</div>
+      ${signaturePadHtml('wu-emp-sig-pad', 'wu-emp-sig-clear')}
+      <div class="form-section">${isEs ? 'Firma Electrónica del Gerente' : 'Manager Electronic Signature'}</div>
+      ${signaturePadHtml('wu-mgr-sig-pad', 'wu-mgr-sig-clear')}
+      <button type="button" class="gh solid no-print" id="wu-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
+      ${signedOnHtml(a.signed_at)}
+      ${a.id ? signatureTaskFieldsHtml('wu') : ''}
+      <div class="form-sig" style="grid-template-columns:1fr;margin-top:10px">
+        <div style="border-right:none">${isEs ? 'Firma del Testigo (si el empleado entiende la amonestación pero se niega a firmar)' : 'Witness Signature (if employee understands warning but refuses to sign)'}&nbsp;&nbsp;&nbsp;${isEs ? 'Fecha' : 'Date'}: _______________</div>
       </div>
     </div>
   `;
   printActs.hidden = false;
   writeupSheet.hidden = false;
   writeupSheet.scrollIntoView({ behavior: 'smooth' });
+
+  setUpSignaturePad('wu-emp-sig-pad', 'wu-emp-sig-clear');
+  setUpSignaturePad('wu-mgr-sig-pad', 'wu-mgr-sig-clear');
+  document.getElementById('wu-sig-save').addEventListener('click', async () => {
+    if (!a.id) { showToast('Save this write-up first, then reopen it from the log to save a signature.', 'error'); return; }
+    const empState = sigPads['wu-emp-sig-pad'];
+    const mgrState = sigPads['wu-mgr-sig-pad'];
+    if (!(empState?.hasStroke) && !(mgrState?.hasStroke)) {
+      showToast('Get at least one signature first — both pads are empty.', 'error'); return;
+    }
+    try {
+      const update = { signed_at: serverTimestamp(), signed_by: profile.uid };
+      if (empState?.hasStroke) update.signature_data_url = document.getElementById('wu-emp-sig-pad').toDataURL('image/png');
+      if (mgrState?.hasStroke) update.manager_signature_data_url = document.getElementById('wu-mgr-sig-pad').toDataURL('image/png');
+      await updateDoc(doc(db, 'disciplinary_actions', a.id), update);
+      Object.assign(a, update);
+      if (pendingSigTaskId) {
+        await completeLinkedTask(pendingSigTaskId);
+        pendingSigDocId = null; pendingSigTaskId = null;
+      }
+      showToast('Signature saved.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
+  if (a.id) {
+    document.getElementById('wu-sig-later-btn').addEventListener('click', () => createSignatureFollowupTask('wu', {
+      linkedDocId: a.id, title: `Write-up — ${emp.first_name} ${emp.last_name}`,
+    }));
+  }
+  sheetRerender = (l) => withPreservedSignature('wu-mgr-sig-pad', () => withPreservedSignature('wu-emp-sig-pad', () => openPrintSheet(emp, a, l)));
 }
 
 document.getElementById('search').addEventListener('input', render);
@@ -491,7 +726,29 @@ document.getElementById('division-filter').addEventListener('change', render);
 document.getElementById('final-only').addEventListener('change', render);
 
 await loadEmployees();
+await loadStaff();
 await loadActions();
+
+// A "get signature later" task links back here with the action id and,
+// if opened from Tasks, the task id to auto-complete once signed.
+const requestedDocId = new URLSearchParams(window.location.search).get('doc');
+const requestedTaskId = new URLSearchParams(window.location.search).get('task');
+if (requestedDocId) {
+  const action = actions.find((a) => a.id === requestedDocId);
+  const emp = action && empById(action.emp_id);
+  if (action && emp) {
+    const bothSigned = action.signature_data_url && action.manager_signature_data_url;
+    if (requestedTaskId && bothSigned) await completeLinkedTask(requestedTaskId);
+    pendingSigDocId = requestedDocId;
+    pendingSigTaskId = bothSigned ? null : requestedTaskId;
+    openPrintSheet(emp, action);
+    await drawExistingSignatureDataUrl('wu-emp-sig-pad', action.signature_data_url);
+    await drawExistingSignatureDataUrl('wu-mgr-sig-pad', action.manager_signature_data_url);
+    if (bothSigned) showToast('Already fully signed — shown below.');
+  } else {
+    showToast('That write-up could not be found.', 'error');
+  }
+}
 </script>
 </body>
 </html>

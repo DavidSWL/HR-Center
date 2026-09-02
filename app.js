@@ -29,7 +29,7 @@ export const NAV_SECTIONS = [
       { key: 'harassment_training', label: 'Harassment training', href: 'harassmenttraining.html', built: true },
       { key: 'attendance', label: 'Attendance', href: 'attendance.html', built: true },
       { key: 'reviews', label: 'New hires & reviews', href: 'reviews.html', built: true },
-      { key: 'discipline', label: 'Disciplinary actions', href: 'discipline.html', built: true },
+      { key: 'discipline', label: 'Disciplinary actions', href: 'discipline.html', built: true, davidOnly: true },
       { key: 'terminations', label: 'Terminations', href: 'docgen.html?open=termination', built: true },
       { key: 'notes', label: 'Notes & files', href: 'notes.html', built: true },
     ],
@@ -56,7 +56,7 @@ export const NAV_SECTIONS = [
     label: 'Reporting',
     items: [
       { key: 'reports', label: 'Reports', href: 'reports.html', built: true },
-      { key: 'er', label: 'Employee relations', href: 'er.html', built: true },
+      { key: 'er', label: 'Employee relations', href: 'er.html', built: true, davidOnly: true },
       { key: 'docgen', label: 'Document generator', href: 'docgen.html', built: true },
     ],
   },
@@ -81,8 +81,11 @@ function escapeHtml(str) {
 }
 
 function renderSidebar(activeKey, profile) {
+  const isDavid = profile?.role === 'david';
   const sections = NAV_SECTIONS.map((section) => {
-    const items = section.items.map((item) => {
+    const visibleItems = section.items.filter((item) => !item.davidOnly || isDavid);
+    if (!visibleItems.length) return '';
+    const items = visibleItems.map((item) => {
       if (!item.built) {
         return `<span class="nv disabled">${escapeHtml(item.label)}<span class="b soon">Soon</span></span>`;
       }

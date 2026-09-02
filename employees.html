@@ -95,6 +95,20 @@
     </div>
     <form id="employee-form">
       <div class="modal-body">
+        <div class="field">
+          <label class="f-lab">Photo</label>
+          <div style="display:flex;align-items:center;gap:14px">
+            <div id="photo-preview-wrap" style="width:60px;height:60px;border-radius:50%;overflow:hidden;flex-shrink:0;background:var(--oregon);display:flex;align-items:center;justify-content:center">
+              <img id="photo-preview-img" alt="" hidden style="width:100%;height:100%;object-fit:cover">
+              <span id="photo-preview-initials" style="color:#fff;font-family:var(--display);font-size:17px"></span>
+            </div>
+            <div>
+              <input type="file" id="photo-file" accept="image/*" hidden>
+              <button type="button" class="gh" id="photo-choose-btn">Choose photo</button>
+              <button type="button" class="gh" id="photo-remove-btn" hidden>Remove photo</button>
+            </div>
+          </div>
+        </div>
         <div class="field" id="emp-id-field">
           <label class="f-lab" for="emp-id">Employee ID</label>
           <input class="f-in" id="emp-id" placeholder="e.g. SWL-1041">
@@ -158,6 +172,44 @@
           <div class="field">
             <label class="f-lab" for="phone">Phone</label>
             <input class="f-in" id="phone" type="tel">
+          </div>
+        </div>
+        <div class="frow">
+          <div class="field">
+            <label class="f-lab" for="birth-month">Birthday — month</label>
+            <select class="f-in" id="birth-month">
+              <option value="">—</option>
+              <option value="1">January</option>
+              <option value="2">February</option>
+              <option value="3">March</option>
+              <option value="4">April</option>
+              <option value="5">May</option>
+              <option value="6">June</option>
+              <option value="7">July</option>
+              <option value="8">August</option>
+              <option value="9">September</option>
+              <option value="10">October</option>
+              <option value="11">November</option>
+              <option value="12">December</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="f-lab" for="birth-day">Birthday — day</label>
+            <select class="f-in" id="birth-day">
+              <option value="">—</option>
+              <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+              <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+              <option value="7">7</option><option value="8">8</option><option value="9">9</option>
+              <option value="10">10</option><option value="11">11</option><option value="12">12</option>
+              <option value="13">13</option><option value="14">14</option><option value="15">15</option>
+              <option value="16">16</option><option value="17">17</option><option value="18">18</option>
+              <option value="19">19</option><option value="20">20</option><option value="21">21</option>
+              <option value="22">22</option><option value="23">23</option><option value="24">24</option>
+              <option value="25">25</option><option value="26">26</option><option value="27">27</option>
+              <option value="28">28</option><option value="29">29</option><option value="30">30</option>
+              <option value="31">31</option>
+            </select>
+            <span class="s" style="display:block;margin-top:5px;font-size:10.5px;color:var(--faint)">Month and day only — birth year is never collected</span>
           </div>
         </div>
         <div class="frow">
@@ -247,11 +299,12 @@
 <script type="module">
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate, yearsSince, readSpreadsheetSheets, objectsFromRows } from './app.js';
-import { db } from './firebaseconfig.js';
+import { db, storage } from './firebaseconfig.js';
 import { ONBOARDING_CHECKLIST } from './letterhead-assets.js';
 import {
   collection, doc, getDoc, getDocs, updateDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
@@ -263,6 +316,64 @@ document.getElementById('header-date').textContent =
 let allEmployees = [];
 let managerIds = new Set();
 let editingId = null;
+
+// Photo upload — held here until Save, not written to Storage on every
+// keystroke. pendingPhotoFile is a newly chosen file waiting to upload;
+// removePhoto flags an existing photo for deletion. Both are cleared
+// whenever the modal opens or closes.
+let pendingPhotoFile = null;
+let removePhoto = false;
+
+function initials(first, last) {
+  return `${(first || '?')[0] || ''}${(last || '?')[0] || ''}`.toUpperCase();
+}
+
+function showPhotoPreview(url, first, last) {
+  const img = document.getElementById('photo-preview-img');
+  const initialsEl = document.getElementById('photo-preview-initials');
+  if (url) {
+    img.src = url;
+    img.hidden = false;
+    initialsEl.hidden = true;
+  } else {
+    img.hidden = true;
+    img.removeAttribute('src');
+    initialsEl.hidden = false;
+    initialsEl.textContent = initials(first, last);
+  }
+}
+
+function resetPhotoField() {
+  pendingPhotoFile = null;
+  removePhoto = false;
+  document.getElementById('photo-file').value = '';
+  document.getElementById('photo-remove-btn').hidden = true;
+}
+
+document.getElementById('photo-choose-btn').addEventListener('click', () => document.getElementById('photo-file').click());
+document.getElementById('photo-file').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  pendingPhotoFile = file;
+  removePhoto = false;
+  document.getElementById('photo-remove-btn').hidden = false;
+  showPhotoPreview(URL.createObjectURL(file));
+});
+document.getElementById('photo-remove-btn').addEventListener('click', () => {
+  pendingPhotoFile = null;
+  removePhoto = true;
+  document.getElementById('photo-file').value = '';
+  document.getElementById('photo-remove-btn').hidden = true;
+  showPhotoPreview(null, document.getElementById('first-name').value, document.getElementById('last-name').value);
+});
+// Add-new-hire flow: no photo yet, so the initials placeholder should
+// track the name as HR types it instead of staying blank.
+['first-name', 'last-name'].forEach((id) => {
+  document.getElementById(id).addEventListener('input', () => {
+    if (pendingPhotoFile || (editingId && !removePhoto && allEmployees.find((e) => e.id === editingId)?.photo_url)) return;
+    showPhotoPreview(null, document.getElementById('first-name').value, document.getElementById('last-name').value);
+  });
+});
 
 function escapeHtml(str) {
   const div = document.createElement('div');
@@ -408,7 +519,7 @@ function render() {
   emptyState.hidden = visible.length > 0;
 
   rowsEl.querySelectorAll('tr').forEach((tr) => {
-    tr.addEventListener('click', () => openEdit(tr.dataset.id));
+    tr.addEventListener('click', () => { window.location.href = `employeeprofile.html?id=${encodeURIComponent(tr.dataset.id)}`; });
   });
 
   const activeCount = allEmployees.filter((e) => e.status !== 'terminated' && !e.is_test).length;
@@ -488,6 +599,8 @@ function populateManagerSelects(excludeId, keepIds = []) {
 function openAdd() {
   editingId = null;
   form.reset();
+  resetPhotoField();
+  showPhotoPreview(null, '', '');
   populateManagerSelects(null);
   document.getElementById('modal-title').textContent = 'Add new hire';
   document.getElementById('emp-id').value = '';
@@ -536,6 +649,11 @@ function openEdit(id) {
   setEmpField('dotted-line', emp.dotted_line_emp_id || '', managerPickerPool);
   document.getElementById('hire-date').value = emp.hire_date || '';
   document.getElementById('phone').value = emp.phone || '';
+  document.getElementById('birth-month').value = emp.birth_month || '';
+  document.getElementById('birth-day').value = emp.birth_day || '';
+  resetPhotoField();
+  showPhotoPreview(emp.photo_url || null, emp.first_name, emp.last_name);
+  if (emp.photo_url) document.getElementById('photo-remove-btn').hidden = false;
   document.getElementById('emergency-name').value = emp.emergency_contact_name || '';
   document.getElementById('emergency-phone').value = emp.emergency_contact_phone || '';
   document.getElementById('is-test').checked = !!emp.is_test;
@@ -582,6 +700,8 @@ form.addEventListener('submit', async (e) => {
     dotted_line_emp_id: document.getElementById('dotted-line').value || null,
     hire_date: document.getElementById('hire-date').value,
     phone: document.getElementById('phone').value.trim(),
+    birth_month: document.getElementById('birth-month').value ? Number(document.getElementById('birth-month').value) : null,
+    birth_day: document.getElementById('birth-day').value ? Number(document.getElementById('birth-day').value) : null,
     emergency_contact_name: document.getElementById('emergency-name').value.trim(),
     emergency_contact_phone: document.getElementById('emergency-phone').value.trim(),
     is_test: document.getElementById('is-test').checked,
@@ -626,7 +746,27 @@ form.addEventListener('submit', async (e) => {
     }
   }
 
+  const finalId = editingId || newId;
+  const currentEmp = editingId ? allEmployees.find((e) => e.id === editingId) : null;
+
   try {
+    if (pendingPhotoFile) {
+      // Replace, not accumulate — delete the old blob first if this
+      // employee already had a different one on file.
+      if (currentEmp?.photo_path && currentEmp.photo_path !== `employee_photos/${finalId}/${pendingPhotoFile.name}`) {
+        try { await deleteObject(ref(storage, currentEmp.photo_path)); } catch { /* already gone — fine */ }
+      }
+      const photoPath = `employee_photos/${finalId}/${pendingPhotoFile.name}`;
+      const photoRef = ref(storage, photoPath);
+      await uploadBytes(photoRef, pendingPhotoFile);
+      data.photo_url = await getDownloadURL(photoRef);
+      data.photo_path = photoPath;
+    } else if (removePhoto && currentEmp?.photo_path) {
+      try { await deleteObject(ref(storage, currentEmp.photo_path)); } catch { /* already gone — fine */ }
+      data.photo_url = null;
+      data.photo_path = null;
+    }
+
     if (editingId) {
       await updateDoc(doc(db, 'employees', editingId), data);
 
@@ -940,6 +1080,12 @@ if (urlStatus) document.getElementById('status-filter').value = urlStatus;
 
 await loadEmployees();
 await loadManagerIds();
+
+// Deep link from the profile page's "Edit details" button — jump
+// straight into that employee's edit modal instead of making HR find
+// them again in the table.
+const deepEditId = new URLSearchParams(window.location.search).get('edit');
+if (deepEditId && allEmployees.some((e) => e.id === deepEditId)) openEdit(deepEditId);
 </script>
 </body>
 </html>
