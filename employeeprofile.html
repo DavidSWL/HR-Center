@@ -159,7 +159,7 @@ const tenureLine = emp.status === 'terminated'
 
 document.getElementById('hero-card').innerHTML = `
   <div class="p-hero">
-    <div class="p-ava">${emp.photo_url ? `<img src="${escapeHtml(emp.photo_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : escapeHtml(initials)}</div>
+    <div class="p-ava">${emp.photo_data_url ? `<img src="${escapeHtml(emp.photo_data_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : escapeHtml(initials)}</div>
     <div>
       <div class="p-name">${escapeHtml(fullName)}</div>
       <div class="p-meta"><b>${escapeHtml(emp.position) || 'No title on file'}</b><span class="sep">&middot;</span>${escapeHtml(emp.division) || '—'}<span class="sep">&middot;</span>${escapeHtml(emp.location) || '—'}<span class="sep">&middot;</span><span class="mono">ID ${escapeHtml(emp.id)}</span></div>

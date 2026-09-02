@@ -91,6 +91,32 @@ for (const field of ['pay_rate', 'salary', 'ssn', 'dob', 'date_of_birth', 'bank_
   });
 }
 
+// ---- employee photo size guard --------------------------------------------
+
+test('a reasonably-sized photo_data_url is accepted', async () => {
+  await assertSucceeds(
+    as(TANYA).collection('employees').doc('E100').set({
+      first_name: 'Jordan',
+      last_name: 'Ruiz',
+      division: 'Maintenance',
+      hire_date: '2024-03-01',
+      photo_data_url: `data:image/jpeg;base64,${'A'.repeat(1000)}`,
+    })
+  );
+});
+
+test('an oversized photo_data_url is rejected', async () => {
+  await assertFails(
+    as(TANYA).collection('employees').doc('E100').set({
+      first_name: 'Jordan',
+      last_name: 'Ruiz',
+      division: 'Maintenance',
+      hire_date: '2024-03-01',
+      photo_data_url: `data:image/jpeg;base64,${'A'.repeat(700001)}`,
+    })
+  );
+});
+
 test('forbidden-field check also applies to subcollections', async () => {
   await assertFails(
     as(TANYA)
