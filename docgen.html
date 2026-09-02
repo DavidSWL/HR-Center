@@ -937,13 +937,6 @@ function renderTermination() {
         </div>
         <div class="field" id="term-reason-other-field" hidden><label class="f-lab">Other — describe</label><input class="f-in" id="term-reason-other"></div>
         <div class="field"><label class="f-lab">Description of circumstances</label><textarea class="f-in" id="term-circumstances" rows="3" style="resize:vertical"></textarea></div>
-        <div class="field"><label class="f-lab">Rehire eligibility</label>
-          <select class="f-in" id="term-rehire">
-            <option value="yes">Yes</option>
-            <option value="maybe">Maybe</option>
-            <option value="no">No</option>
-          </select>
-        </div>
 
         <div class="field" style="margin-top:10px"><label class="f-lab" style="color:var(--alertTx)">Final hours &amp; pay — printed on the form only, never saved</label></div>
         <div class="frow">
@@ -1010,7 +1003,6 @@ function renderTermination() {
     ['term-lastday', 'term-date', 'term-final-check-date', 'term-date-delivered'].forEach((id) => {
       document.getElementById(id).value = today;
     });
-    document.getElementById('term-rehire').value = 'maybe';
     NOTICE_ITEMS.forEach((n) => { document.getElementById(`term-notice-${n.key}-date`).value = today; });
   });
   document.getElementById('term-cancel-btn').addEventListener('click', () => {
@@ -1156,7 +1148,6 @@ function buildTerminationRecord() {
     last_day_worked: document.getElementById('term-lastday').value,
     termination_date: document.getElementById('term-date').value,
     reason, circumstances: document.getElementById('term-circumstances').value.trim(),
-    rehire_eligible: document.getElementById('term-rehire').value,
     separation_type: involuntaryReasons.has(reason) ? 'involuntary' : 'voluntary',
     delivery_method: document.getElementById('term-delivery-method').value,
     property_returned: propertyReturned,
@@ -1251,8 +1242,6 @@ function renderTerminationSheet(r, finalPay = {}, lang = 'en') {
       <div class="form-checks">${TERM_REASONS.filter(rs => rs !== 'Other').map(rs => `<label>${rs === r.reason ? '☑' : '☐'} ${reasonLabel(rs)}</label>`).join('')}<label>${!TERM_REASONS.includes(r.reason) ? '☑' : '☐'} ${isEs ? 'Otro' : 'Other'}: ${!TERM_REASONS.includes(r.reason) ? escapeHtml(r.reason) : ''}</label></div>
       <div class="form-section">${isEs ? 'Descripción de las Circunstancias' : 'Description of Circumstances'}</div>
       <div class="form-box">${escapeHtml(r.circumstances) || '—'}</div>
-      <div class="form-section">${isEs ? 'Elegibilidad para Recontratación' : 'Rehire Eligibility'}</div>
-      <div class="form-checks">${[['yes', isEs ? 'Sí' : 'Yes'], ['maybe', isEs ? 'Tal vez' : 'Maybe'], ['no', 'No']].map(([v, label]) => `<label>${(r.rehire_eligible || 'maybe') === v ? '☑' : '☐'} ${label}</label>`).join('')}</div>
       <div class="form-section">${isEs ? 'Horas Finales' : 'Final Hours'}</div>
       <div class="form-grid c3">
         <div class="form-cell"><b>${isEs ? 'Horas Regulares' : 'Regular Hours'}</b>${finalPay.regHours || ''}</div>
