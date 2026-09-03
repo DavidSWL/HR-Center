@@ -18,6 +18,17 @@
 .app-name-cell{font-weight:600}
 .app-name-btn{background:none;border:none;padding:0;margin:0;font:inherit;font-weight:600;color:inherit;cursor:pointer;text-decoration:underline;text-decoration-color:var(--faint);text-underline-offset:2px}
 .app-name-btn:hover{color:var(--accentTx);text-decoration-color:var(--accentTx)}
+.kanban{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;overflow-x:auto;padding-bottom:2px}
+.kanban-col{background:var(--panel);border:1px solid var(--line);min-width:150px;display:flex;flex-direction:column}
+.kanban-col-h{padding:8px 10px;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:6px}
+.kanban-col-body{padding:8px;display:flex;flex-direction:column;gap:8px;min-height:60px}
+.kanban-col.drag-over{background:var(--hover)}
+.kanban-card{background:var(--raise);border:1px solid var(--edge);padding:8px 10px;cursor:grab;font-size:12.5px}
+.kanban-card:active{cursor:grabbing}
+.kanban-card .nm{font-weight:600}
+.kanban-card .meta{color:var(--faint);font-size:11px;margin-top:2px}
+.kanban-empty{font-size:11px;padding:6px 0;text-align:center}
+.dup-warning{background:var(--hover);color:var(--muted);border:1px solid var(--line);padding:8px 10px;font-size:12px;margin-top:6px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -40,8 +51,18 @@
     <section class="view">
 
       <div class="card" style="margin-bottom:16px">
-        <div class="card-h"><h3>Pipeline</h3><span id="pipeline-summary">—</span></div>
+        <div class="card-h">
+          <h3>Pipeline</h3>
+          <div style="display:flex;align-items:center;gap:14px">
+            <span id="pipeline-summary">—</span>
+            <div class="toggle" id="pipeline-view-toggle">
+              <button class="on" data-v="funnel" type="button">Funnel</button>
+              <button data-v="board" type="button">Board</button>
+            </div>
+          </div>
+        </div>
         <div class="card-body" id="pipeline-body"></div>
+        <div class="card-body" id="pipeline-board" hidden></div>
         <div class="card-h" style="border-top:1px solid var(--line)"><h3>Resume on file pool</h3><span>Worth a call the next time a role opens</span></div>
         <div class="card-body" id="pipeline-resume-pool"></div>
       </div>
@@ -92,6 +113,7 @@
             <div class="field">
               <label class="f-lab" for="new-app-name">Name</label>
               <input class="f-in" id="new-app-name" placeholder="First and last name">
+              <div id="new-app-dup-warning"></div>
             </div>
             <div class="field">
               <label class="f-lab" for="new-app-source">How they applied</label>
@@ -256,6 +278,7 @@
       <div class="field">
         <label class="f-lab" for="edit-app-name">Name</label>
         <input class="f-in" id="edit-app-name">
+        <div id="edit-app-dup-warning"></div>
       </div>
       <div class="frow">
         <div class="field">
@@ -537,7 +560,121 @@ function renderPipeline() {
   document.querySelectorAll('.pool-app-btn').forEach((btn) => {
     btn.addEventListener('click', () => openEditApplicant(btn.dataset.id));
   });
+
+  if (!document.getElementById('pipeline-board').hidden) renderKanban();
 }
+
+// ---- Pipeline board -- a drag-and-drop view of the same "active
+// pipeline" set the funnel above already computes, just bucketed by
+// column instead of counted. Columns 0-4 reuse FUNNEL_STAGES' own
+// tests (furthest stage reached, not "first stage not yet done" --
+// same semantics the funnel already uses); Hired is a 6th column since
+// it isn't one of FUNNEL_STAGES' tests. Closed-out applicants (rejected
+// / not selected / resume on file / not interested / didn't pass
+// interview) don't appear here, same as the table's default "Active
+// pipeline" filter -- there's no single field to set by dropping a
+// card there, so it isn't offered as a destination. ----
+const KANBAN_COLUMNS = [
+  { label: 'Applied' },
+  { label: 'Pre-screen passed' },
+  { label: 'Interview passed' },
+  { label: 'Physical / drug exam passed' },
+  { label: 'Orientation completed' },
+  { label: 'Hired' },
+];
+function kanbanColumnIndex(a) {
+  if (a.outcome === 'hired') return 5;
+  for (let i = FUNNEL_STAGES.length - 1; i >= 0; i--) {
+    if (FUNNEL_STAGES[i].test(a)) return i;
+  }
+  return 0;
+}
+
+// Forward drag (further along) sets just that stage's own field, same
+// as clicking that column's checkbox in the table -- no cascading
+// earlier stages, since the table doesn't cascade either. Backward
+// drag clears every stage field strictly past the target column,
+// after a confirm() since it can silently undo real progress.
+function applyKanbanMove(applicantId, targetIndex) {
+  const a = applicants.find((x) => x.id === applicantId);
+  if (!a) return;
+  const currentIndex = kanbanColumnIndex(a);
+  if (targetIndex === currentIndex) return;
+
+  if (targetIndex > currentIndex) {
+    const forwardFields = [
+      {}, { prescreen_passed: true }, { interview_status: 'passed' },
+      { physical_passed: true }, { orientation_completed: true },
+      { outcome: 'hired', hired: true, hired_at: todayStr },
+    ];
+    updateApplicant(applicantId, forwardFields[targetIndex]);
+    return;
+  }
+
+  const label = KANBAN_COLUMNS[targetIndex].label;
+  if (!confirm(`Move ${a.name} back to "${label}"? This clears any later progress.`)) return;
+  const clearFields = {};
+  if (currentIndex === 5) { clearFields.outcome = ''; clearFields.hired = false; clearFields.hired_at = null; }
+  if (targetIndex < 4) clearFields.orientation_completed = false;
+  if (targetIndex < 3) clearFields.physical_passed = false;
+  if (targetIndex < 2) clearFields.interview_status = 'pending';
+  if (targetIndex < 1) clearFields.prescreen_passed = false;
+  updateApplicant(applicantId, clearFields);
+}
+
+function renderKanban() {
+  const active = applicants.filter((a) => a.interview_status !== 'not_passed'
+    && !['rejected', 'not_selected', 'resume_on_file', 'not_interested'].includes(a.outcome));
+  const byCol = KANBAN_COLUMNS.map(() => []);
+  active.forEach((a) => { byCol[kanbanColumnIndex(a)].push(a); });
+
+  document.getElementById('pipeline-board').innerHTML = `
+    <div class="kanban">
+      ${KANBAN_COLUMNS.map((c, i) => `
+        <div class="kanban-col" data-col="${i}">
+          <div class="kanban-col-h"><span>${c.label}</span><span>${byCol[i].length}</span></div>
+          <div class="kanban-col-body">
+            ${byCol[i].map((a) => `
+              <div class="kanban-card" draggable="true" data-id="${a.id}">
+                <div class="nm">${escapeHtml(a.name)}</div>
+                <div class="meta">${escapeHtml(a.position_applied) || '—'}</div>
+                ${a.source === 'referral' ? '<span class="pill" style="margin-top:4px;display:inline-block">Referral</span>' : ''}
+              </div>
+            `).join('') || '<div class="kanban-empty dim">—</div>'}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  document.querySelectorAll('.kanban-card').forEach((card) => {
+    card.addEventListener('click', () => openEditApplicant(card.dataset.id));
+    card.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', card.dataset.id);
+      e.dataTransfer.effectAllowed = 'move';
+    });
+  });
+  document.querySelectorAll('.kanban-col').forEach((col) => {
+    col.addEventListener('dragover', (e) => { e.preventDefault(); col.classList.add('drag-over'); });
+    col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+    col.addEventListener('drop', (e) => {
+      e.preventDefault();
+      col.classList.remove('drag-over');
+      const id = e.dataTransfer.getData('text/plain');
+      if (id) applyKanbanMove(id, Number(col.dataset.col));
+    });
+  });
+}
+
+document.querySelectorAll('#pipeline-view-toggle button').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#pipeline-view-toggle button').forEach((b) => b.classList.toggle('on', b === btn));
+    const isBoard = btn.dataset.v === 'board';
+    document.getElementById('pipeline-body').hidden = isBoard;
+    document.getElementById('pipeline-board').hidden = !isBoard;
+    if (isBoard) renderKanban();
+  });
+});
 
 // ---- Open jobs -- entry only. Viewing, marking filled (with an
 // optional tag back to the applicant who filled it), cancelling, and
@@ -577,6 +714,35 @@ function empName(empId) {
   const e = employees.find((x) => x.id === empId);
   return e ? `${e.first_name} ${e.last_name}` : '';
 }
+
+// ---- Duplicate detection -- a live, non-blocking warning while typing
+// a name, checked against every applicant ever entered (any outcome,
+// not just the active pipeline) since a rejected or hired-elsewhere
+// candidate reapplying is exactly the case worth flagging. Exact match
+// only after trimming/case/whitespace normalization -- not fuzzy --
+// so it never second-guesses a genuinely different name. ----
+function normalizeApplicantName(name) {
+  return (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+function findDuplicateApplicants(name, excludeId = null) {
+  const norm = normalizeApplicantName(name);
+  if (!norm) return [];
+  return applicants.filter((a) => a.id !== excludeId && normalizeApplicantName(a.name) === norm);
+}
+function duplicateWarningHtml(matches) {
+  if (!matches.length) return '';
+  return `<div class="dup-warning">Possible duplicate — already in the tracker:${matches.map((m) => `
+    <div style="margin-top:4px"><b>${escapeHtml(m.name)}</b> — applied ${m.applied_date === 'N/A' ? 'N/A' : formatDate(m.applied_date)}${m.position_applied ? ` for ${escapeHtml(m.position_applied)}` : ''}${m.outcome ? `, ${escapeHtml(m.outcome.replace(/_/g, ' '))}` : ', still active'}</div>
+  `).join('')}</div>`;
+}
+document.getElementById('new-app-name').addEventListener('input', () => {
+  document.getElementById('new-app-dup-warning').innerHTML =
+    duplicateWarningHtml(findDuplicateApplicants(document.getElementById('new-app-name').value));
+});
+document.getElementById('edit-app-name').addEventListener('input', () => {
+  document.getElementById('edit-app-dup-warning').innerHTML =
+    duplicateWarningHtml(findDuplicateApplicants(document.getElementById('edit-app-name').value, editTargetApplicantId));
+});
 
 function render() {
   const q = document.getElementById('search').value.trim().toLowerCase();
@@ -812,6 +978,7 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
       entered_at: serverTimestamp(),
     });
     document.getElementById('new-app-name').value = '';
+    document.getElementById('new-app-dup-warning').innerHTML = '';
     document.getElementById('new-app-referrer-search').value = '';
     document.getElementById('new-app-referrer').value = '';
     document.getElementById('new-app-position').value = '';
@@ -1053,6 +1220,8 @@ function openEditApplicant(applicantId) {
   if (!a) return;
   editTargetApplicantId = applicantId;
   document.getElementById('edit-app-name').value = a.name || '';
+  document.getElementById('edit-app-dup-warning').innerHTML =
+    duplicateWarningHtml(findDuplicateApplicants(a.name, applicantId));
   document.getElementById('edit-app-source').value = a.source || 'walk_in';
   setAppliedDate('edit-app-applied-date', 'edit-app-applied-na', a.applied_date || '');
   document.getElementById('edit-app-referrer-field').hidden = a.source !== 'referral';
