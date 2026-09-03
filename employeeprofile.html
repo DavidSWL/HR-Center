@@ -76,11 +76,13 @@
           <div class="tab active" data-tab="personal">Personal</div>
           <div class="tab" data-tab="employment">Employment</div>
           <div class="tab" data-tab="records">Records</div>
+          <div class="tab" data-tab="documents">Documents</div>
         </div>
 
         <div class="card" id="tab-personal"></div>
         <div class="card" id="tab-employment" hidden></div>
         <div class="card" id="tab-records" hidden></div>
+        <div class="card" id="tab-documents" hidden></div>
       </div>
     </section>
   </div>
@@ -241,13 +243,101 @@ document.getElementById('tab-records').innerHTML = `
   <a class="rec-row" href="compliance.html"><div class="l"><b>Policy &amp; training compliance</b><small>Acknowledgments and harassment training</small></div><div class="v"></div><div class="go">&rarr;</div></a>
 `;
 
+// Documents — every document this employee has actually SIGNED (not
+// drafted or pending), pulled from each generator's own collection and
+// linked back to wherever that type is actually viewed/resumed. Write-
+// ups are David-only, same restriction as the Records tab and the
+// Document Generator's Employee file packet — skipped for anyone else
+// rather than risking the whole Promise.all on a denied read.
+//
+// Offer/increase/promotion letters are deliberately left out: unlike
+// every other signable type, letterRecordBase() never writes an emp_id
+// (see docgen.html) — only free-text emp_first/emp_last strings. There's
+// no reliable way to match those back to this employee's ID without
+// risking a false match on a similar name, so they're skipped rather
+// than shown (possibly) wrong.
+const TRAINING_DOC_LABELS = {
+  timecard: 'Time card adjustment',
+  mealpenalty: 'Missed meal period',
+  mileage: 'Mileage reimbursement',
+  refusal: 'Medical Treatment Refusal',
+  mealwaiver2: 'Second Meal Period Waiver',
+};
+
+let documentsLoaded = false;
+async function loadDocumentsTab() {
+  if (documentsLoaded) return;
+  documentsLoaded = true;
+
+  const [discSnap, pipSnap, termSnap, incSnap, trainSnap, reviewsForDocsSnap] = await Promise.all([
+    isDavid ? getDocs(query(collection(db, 'disciplinary_actions'), where('emp_id', '==', emp.id))) : Promise.resolve({ docs: [] }),
+    getDocs(query(collection(db, 'pips'), where('emp_id', '==', emp.id))),
+    getDocs(query(collection(db, 'terminations'), where('emp_id', '==', emp.id))),
+    getDocs(query(collection(db, 'incidents'), where('emp_id', '==', emp.id))),
+    getDocs(query(collection(db, 'training_documents'), where('emp_id', '==', emp.id))),
+    getDocs(collection(db, 'employees', emp.id, 'reviews')),
+  ]);
+
+  const rows = [];
+
+  discSnap.docs.forEach((d) => {
+    const x = d.data();
+    if (!x.signature_data_url) return;
+    rows.push({ label: 'Write-up', date: x.infraction_date, href: `discipline.html?doc=${d.id}` });
+  });
+
+  pipSnap.docs.forEach((d) => {
+    const x = d.data();
+    if (!x.signature_data_url) return;
+    rows.push({ label: 'Performance Improvement Plan', date: x.start_date, href: `docgen.html?open=pip&doc=${d.id}` });
+  });
+
+  termSnap.docs.forEach((d) => {
+    const x = d.data();
+    if (!x.signature_data_url) return;
+    rows.push({ label: 'Termination', date: x.termination_date, href: `docgen.html?open=termination&doc=${d.id}` });
+  });
+
+  incSnap.docs.forEach((d) => {
+    const x = d.data();
+    if (!x.employee_signature_data_url) return;
+    rows.push({ label: `Incident report — ${x.incident_type || 'Incident'}`, date: x.date, href: `docgen.html?open=incidentreport&doc=${d.id}` });
+  });
+
+  trainSnap.docs.forEach((d) => {
+    const x = d.data();
+    if (x.status !== 'signed' || !TRAINING_DOC_LABELS[x.content_type]) return;
+    rows.push({ label: x.title || TRAINING_DOC_LABELS[x.content_type], date: x.date || x.period_end, href: `docgen.html?open=${x.content_type}&doc=${d.id}` });
+  });
+
+  reviewsForDocsSnap.docs.forEach((d) => {
+    const x = d.data();
+    if (!x.signature_data_url) return;
+    rows.push({ label: `${x.milestone || d.id}-day review`, date: x.completed_at || x.due_date, href: `docgen.html?open=review&doc=${emp.id}:${d.id}` });
+  });
+
+  rows.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+  document.getElementById('tab-documents').innerHTML = `
+    <div class="card-h"><h3>Documents</h3><span>Everything this employee has actually signed</span></div>
+    ${rows.length ? rows.map((r) => `
+      <a class="rec-row" href="${r.href}">
+        <div class="l"><b>${escapeHtml(r.label)}</b></div>
+        <div class="v">${formatDate(r.date)}</div>
+        <div class="go">&rarr;</div>
+      </a>
+    `).join('') : '<div class="card-body dim">Nothing signed yet.</div>'}
+  `;
+}
+
 // tabs
 document.querySelectorAll('#tab-strip .tab').forEach((btn) => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('#tab-strip .tab').forEach((b) => b.classList.toggle('active', b === btn));
-    ['personal', 'employment', 'records'].forEach((key) => {
+    ['personal', 'employment', 'records', 'documents'].forEach((key) => {
       document.getElementById(`tab-${key}`).hidden = key !== btn.dataset.tab;
     });
+    if (btn.dataset.tab === 'documents') loadDocumentsTab();
   });
 });
 </script>
