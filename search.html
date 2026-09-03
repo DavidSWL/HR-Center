@@ -152,7 +152,7 @@ function render() {
 
   document.querySelectorAll('.result-row[data-kind="emp"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      window.location.href = `docgen.html?open=employeefile&emp=${btn.dataset.id}&auto=1`;
+      window.location.href = `employeeprofile.html?id=${btn.dataset.id}`;
     });
   });
   document.querySelectorAll('.result-row[data-kind="applicant"]').forEach((btn) => {

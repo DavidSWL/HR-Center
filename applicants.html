@@ -18,6 +18,17 @@
 .app-name-cell{font-weight:600}
 .app-name-btn{background:none;border:none;padding:0;margin:0;font:inherit;font-weight:600;color:inherit;cursor:pointer;text-decoration:underline;text-decoration-color:var(--faint);text-underline-offset:2px}
 .app-name-btn:hover{color:var(--accentTx);text-decoration-color:var(--accentTx)}
+.kanban{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;overflow-x:auto;padding-bottom:2px}
+.kanban-col{background:var(--panel);border:1px solid var(--line);min-width:150px;display:flex;flex-direction:column}
+.kanban-col-h{padding:8px 10px;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:6px}
+.kanban-col-body{padding:8px;display:flex;flex-direction:column;gap:8px;min-height:60px}
+.kanban-col.drag-over{background:var(--hover)}
+.kanban-card{background:var(--raise);border:1px solid var(--edge);padding:8px 10px;cursor:grab;font-size:12.5px}
+.kanban-card:active{cursor:grabbing}
+.kanban-card .nm{font-weight:600}
+.kanban-card .meta{color:var(--faint);font-size:11px;margin-top:2px}
+.kanban-empty{font-size:11px;padding:6px 0;text-align:center}
+.dup-warning{background:var(--hover);color:var(--muted);border:1px solid var(--line);padding:8px 10px;font-size:12px;margin-top:6px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -40,8 +51,18 @@
     <section class="view">
 
       <div class="card" style="margin-bottom:16px">
-        <div class="card-h"><h3>Pipeline</h3><span id="pipeline-summary">—</span></div>
+        <div class="card-h">
+          <h3>Pipeline</h3>
+          <div style="display:flex;align-items:center;gap:14px">
+            <span id="pipeline-summary">—</span>
+            <div class="toggle" id="pipeline-view-toggle">
+              <button class="on" data-v="funnel" type="button">Funnel</button>
+              <button data-v="board" type="button">Board</button>
+            </div>
+          </div>
+        </div>
         <div class="card-body" id="pipeline-body"></div>
+        <div class="card-body" id="pipeline-board" hidden></div>
         <div class="card-h" style="border-top:1px solid var(--line)"><h3>Resume on file pool</h3><span>Worth a call the next time a role opens</span></div>
         <div class="card-body" id="pipeline-resume-pool"></div>
       </div>
@@ -86,12 +107,18 @@
       </div>
 
       <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>Open roles</h3><span id="open-roles-summary">—</span></div>
+        <div class="card-body" id="open-roles-body"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
         <div class="card-h"><h3>New applicant</h3><span>Name and how they applied — everything else is tracked below</span></div>
         <div class="card-body">
           <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr 1.4fr;gap:12px">
             <div class="field">
               <label class="f-lab" for="new-app-name">Name</label>
               <input class="f-in" id="new-app-name" placeholder="First and last name">
+              <div id="new-app-dup-warning"></div>
             </div>
             <div class="field">
               <label class="f-lab" for="new-app-source">How they applied</label>
@@ -111,6 +138,12 @@
               <label class="f-lab" for="new-app-position">Applied for</label>
               <select class="f-in" id="new-app-position"></select>
             </div>
+          </div>
+          <div class="field" style="margin-top:2px">
+            <label class="f-lab" for="new-app-job">Which opening? (optional)</label>
+            <select class="f-in" id="new-app-job">
+              <option value="">— Not tied to a specific opening —</option>
+            </select>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:2px">
             <div class="field" id="new-app-referrer-field" hidden>
@@ -256,6 +289,7 @@
       <div class="field">
         <label class="f-lab" for="edit-app-name">Name</label>
         <input class="f-in" id="edit-app-name">
+        <div id="edit-app-dup-warning"></div>
       </div>
       <div class="frow">
         <div class="field">
@@ -282,6 +316,12 @@
         <label class="f-lab" for="edit-app-position">Applied for</label>
         <select class="f-in" id="edit-app-position"></select>
         <input class="f-in" id="edit-app-position-other" placeholder="Role title" style="margin-top:6px" hidden>
+      </div>
+      <div class="field">
+        <label class="f-lab" for="edit-app-job">Which opening? (optional)</label>
+        <select class="f-in" id="edit-app-job">
+          <option value="">— Not tied to a specific opening —</option>
+        </select>
       </div>
 
       <div style="margin:16px 0 10px;padding-top:14px;border-top:1px solid var(--line);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)">Where they are</div>
@@ -407,6 +447,8 @@ let employees = [];
 let allEmployeesEver = []; // includes terminated -- only for the Add to Roster Employee ID uniqueness check, so a reused ID can never silently overwrite someone's old record
 let departmentList = [];
 let davidUid = null;
+let openJobs = [];
+let expandedJobId = null; // which Open roles row currently shows its linked candidates
 
 // Click-to-sort table headers, same pattern as Roster -- defaults to
 // Name A-Z so that's what loads without touching anything.
@@ -458,6 +500,83 @@ async function loadDavidUid() {
   davidUid = david ? david.id : null;
 }
 
+// ---- Open roles -- loaded here too (not just Reports -> Time to
+// fill), so an applicant can be tied to a specific opening and a
+// stale req shows up where HR is actually working the pipeline.
+// Full management (mark filled by hand, cancel, delete) still lives
+// on Reports; this is read-mostly plus the "which opening" link.
+const STALE_DAYS = 45; // matches the threshold Reports already flags at
+
+async function loadOpenJobs() {
+  const snap = await getDocs(collection(db, 'open_jobs'));
+  openJobs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  populateJobOptions();
+}
+
+function jobDaysOpen(job) {
+  const start = new Date(job.opened_date + 'T00:00:00');
+  return Math.max(0, Math.round((Date.now() - start.getTime()) / 86400000));
+}
+
+function jobLabel(job) {
+  return `${job.title || 'Unspecified'} — ${job.division || 'Unspecified'}${job.location ? `, ${job.location}` : ''}`;
+}
+
+function populateJobOptions() {
+  const open = openJobs.filter((j) => j.status === 'open');
+  const opts = open.map((j) => `<option value="${j.id}">${escapeHtml(jobLabel(j))}</option>`).join('');
+  ['new-app-job', 'edit-app-job'].forEach((id) => {
+    const sel = document.getElementById(id);
+    const current = sel.value;
+    sel.innerHTML = '<option value="">— Not tied to a specific opening —</option>' + opts;
+    if (open.some((j) => j.id === current)) sel.value = current;
+  });
+}
+
+function renderOpenRoles() {
+  const open = openJobs.filter((j) => j.status === 'open').sort((a, b) => (a.opened_date || '').localeCompare(b.opened_date || ''));
+  document.getElementById('open-roles-summary').textContent = `${open.length} open`;
+  document.getElementById('open-roles-body').innerHTML = open.length ? open.map((j) => {
+    const days = jobDaysOpen(j);
+    const stale = days > STALE_DAYS;
+    const candidates = applicants.filter((a) => a.applied_job_id === j.id);
+    const expanded = expandedJobId === j.id;
+    return `
+      <div style="border-bottom:1px solid var(--line);padding:10px 0">
+        <button type="button" class="job-row-btn" data-id="${j.id}" style="width:100%;text-align:left;background:none;border:0;cursor:pointer;display:grid;grid-template-columns:1.6fr 1fr 1fr auto auto;gap:10px;align-items:center;color:inherit;font:inherit">
+          <span><b>${escapeHtml(j.title || 'Unspecified')}</b></span>
+          <span class="dim" style="font-size:12.5px">${escapeHtml(j.division) || '—'}</span>
+          <span class="dim" style="font-size:12.5px">${escapeHtml(j.location) || '—'}</span>
+          <span class="mono" style="font-size:12px;${stale ? 'color:var(--alertTx);font-weight:700' : ''}">${days}d open${stale ? ' · stale' : ''}</span>
+          <span class="dim mono" style="font-size:11px">${candidates.length} candidate${candidates.length === 1 ? '' : 's'} ${expanded ? '▲' : '▼'}</span>
+        </button>
+        ${expanded ? `
+          <div style="margin-top:8px;padding-left:4px">
+            ${candidates.length ? candidates.map((a) => `
+              <button type="button" class="gh job-candidate-btn" data-id="${a.id}" style="font-size:11.5px;padding:4px 10px;margin:0 6px 6px 0">
+                ${escapeHtml(a.name)}${a.outcome ? ` <span class="dim">— ${escapeHtml(a.outcome.replace(/_/g, ' '))}</span>` : ''}
+              </button>
+            `).join('') : '<span class="dim" style="font-size:12px">No applicants linked to this opening yet.</span>'}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }).join('') : '<span class="dim" style="font-size:12.5px">No open roles right now — add one above.</span>';
+
+  document.querySelectorAll('.job-row-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      expandedJobId = expandedJobId === btn.dataset.id ? null : btn.dataset.id;
+      renderOpenRoles();
+    });
+  });
+  document.querySelectorAll('.job-candidate-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openEditApplicant(btn.dataset.id);
+    });
+  });
+}
+
 // Small local copy of the employee-search pattern used elsewhere in the
 // app (type a name, resolve to the matching employee's id via a hidden
 // datalist-backed input) -- duplicated here rather than shared, same as
@@ -488,6 +607,7 @@ async function loadApplicants() {
     .sort((a, b) => (b.entered_at?.seconds || 0) - (a.entered_at?.seconds || 0));
   render();
   renderPipeline();
+  renderOpenRoles();
 }
 
 // ---- Pipeline funnel -- at-a-glance "who's moving on," computed only
@@ -537,7 +657,121 @@ function renderPipeline() {
   document.querySelectorAll('.pool-app-btn').forEach((btn) => {
     btn.addEventListener('click', () => openEditApplicant(btn.dataset.id));
   });
+
+  if (!document.getElementById('pipeline-board').hidden) renderKanban();
 }
+
+// ---- Pipeline board -- a drag-and-drop view of the same "active
+// pipeline" set the funnel above already computes, just bucketed by
+// column instead of counted. Columns 0-4 reuse FUNNEL_STAGES' own
+// tests (furthest stage reached, not "first stage not yet done" --
+// same semantics the funnel already uses); Hired is a 6th column since
+// it isn't one of FUNNEL_STAGES' tests. Closed-out applicants (rejected
+// / not selected / resume on file / not interested / didn't pass
+// interview) don't appear here, same as the table's default "Active
+// pipeline" filter -- there's no single field to set by dropping a
+// card there, so it isn't offered as a destination. ----
+const KANBAN_COLUMNS = [
+  { label: 'Applied' },
+  { label: 'Pre-screen passed' },
+  { label: 'Interview passed' },
+  { label: 'Physical / drug exam passed' },
+  { label: 'Orientation completed' },
+  { label: 'Hired' },
+];
+function kanbanColumnIndex(a) {
+  if (a.outcome === 'hired') return 5;
+  for (let i = FUNNEL_STAGES.length - 1; i >= 0; i--) {
+    if (FUNNEL_STAGES[i].test(a)) return i;
+  }
+  return 0;
+}
+
+// Forward drag (further along) sets just that stage's own field, same
+// as clicking that column's checkbox in the table -- no cascading
+// earlier stages, since the table doesn't cascade either. Backward
+// drag clears every stage field strictly past the target column,
+// after a confirm() since it can silently undo real progress.
+function applyKanbanMove(applicantId, targetIndex) {
+  const a = applicants.find((x) => x.id === applicantId);
+  if (!a) return;
+  const currentIndex = kanbanColumnIndex(a);
+  if (targetIndex === currentIndex) return;
+
+  if (targetIndex > currentIndex) {
+    const forwardFields = [
+      {}, { prescreen_passed: true }, { interview_status: 'passed' },
+      { physical_passed: true }, { orientation_completed: true },
+      { outcome: 'hired', hired: true, hired_at: todayStr },
+    ];
+    updateApplicant(applicantId, forwardFields[targetIndex]);
+    return;
+  }
+
+  const label = KANBAN_COLUMNS[targetIndex].label;
+  if (!confirm(`Move ${a.name} back to "${label}"? This clears any later progress.`)) return;
+  const clearFields = {};
+  if (currentIndex === 5) { clearFields.outcome = ''; clearFields.hired = false; clearFields.hired_at = null; }
+  if (targetIndex < 4) clearFields.orientation_completed = false;
+  if (targetIndex < 3) clearFields.physical_passed = false;
+  if (targetIndex < 2) clearFields.interview_status = 'pending';
+  if (targetIndex < 1) clearFields.prescreen_passed = false;
+  updateApplicant(applicantId, clearFields);
+}
+
+function renderKanban() {
+  const active = applicants.filter((a) => a.interview_status !== 'not_passed'
+    && !['rejected', 'not_selected', 'resume_on_file', 'not_interested'].includes(a.outcome));
+  const byCol = KANBAN_COLUMNS.map(() => []);
+  active.forEach((a) => { byCol[kanbanColumnIndex(a)].push(a); });
+
+  document.getElementById('pipeline-board').innerHTML = `
+    <div class="kanban">
+      ${KANBAN_COLUMNS.map((c, i) => `
+        <div class="kanban-col" data-col="${i}">
+          <div class="kanban-col-h"><span>${c.label}</span><span>${byCol[i].length}</span></div>
+          <div class="kanban-col-body">
+            ${byCol[i].map((a) => `
+              <div class="kanban-card" draggable="true" data-id="${a.id}">
+                <div class="nm">${escapeHtml(a.name)}</div>
+                <div class="meta">${escapeHtml(a.position_applied) || '—'}</div>
+                ${a.source === 'referral' ? '<span class="pill" style="margin-top:4px;display:inline-block">Referral</span>' : ''}
+              </div>
+            `).join('') || '<div class="kanban-empty dim">—</div>'}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  document.querySelectorAll('.kanban-card').forEach((card) => {
+    card.addEventListener('click', () => openEditApplicant(card.dataset.id));
+    card.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', card.dataset.id);
+      e.dataTransfer.effectAllowed = 'move';
+    });
+  });
+  document.querySelectorAll('.kanban-col').forEach((col) => {
+    col.addEventListener('dragover', (e) => { e.preventDefault(); col.classList.add('drag-over'); });
+    col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+    col.addEventListener('drop', (e) => {
+      e.preventDefault();
+      col.classList.remove('drag-over');
+      const id = e.dataTransfer.getData('text/plain');
+      if (id) applyKanbanMove(id, Number(col.dataset.col));
+    });
+  });
+}
+
+document.querySelectorAll('#pipeline-view-toggle button').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#pipeline-view-toggle button').forEach((b) => b.classList.toggle('on', b === btn));
+    const isBoard = btn.dataset.v === 'board';
+    document.getElementById('pipeline-body').hidden = isBoard;
+    document.getElementById('pipeline-board').hidden = !isBoard;
+    if (isBoard) renderKanban();
+  });
+});
 
 // ---- Open jobs -- entry only. Viewing, marking filled (with an
 // optional tag back to the applicant who filled it), cancelling, and
@@ -566,7 +800,9 @@ document.getElementById('add-job-btn').addEventListener('click', async () => {
     document.getElementById('new-job-division').value = '';
     document.getElementById('new-job-location').value = '';
     document.getElementById('new-job-opened').value = todayStr;
-    showToast('Job opening added — manage it from Reports → Time to fill.');
+    showToast('Job opening added.');
+    await loadOpenJobs();
+    renderOpenRoles();
   } catch (err) {
     console.error(err);
     showToast('Could not add — ' + err.message, 'error');
@@ -577,6 +813,35 @@ function empName(empId) {
   const e = employees.find((x) => x.id === empId);
   return e ? `${e.first_name} ${e.last_name}` : '';
 }
+
+// ---- Duplicate detection -- a live, non-blocking warning while typing
+// a name, checked against every applicant ever entered (any outcome,
+// not just the active pipeline) since a rejected or hired-elsewhere
+// candidate reapplying is exactly the case worth flagging. Exact match
+// only after trimming/case/whitespace normalization -- not fuzzy --
+// so it never second-guesses a genuinely different name. ----
+function normalizeApplicantName(name) {
+  return (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+function findDuplicateApplicants(name, excludeId = null) {
+  const norm = normalizeApplicantName(name);
+  if (!norm) return [];
+  return applicants.filter((a) => a.id !== excludeId && normalizeApplicantName(a.name) === norm);
+}
+function duplicateWarningHtml(matches) {
+  if (!matches.length) return '';
+  return `<div class="dup-warning">Possible duplicate — already in the tracker:${matches.map((m) => `
+    <div style="margin-top:4px"><b>${escapeHtml(m.name)}</b> — applied ${m.applied_date === 'N/A' ? 'N/A' : formatDate(m.applied_date)}${m.position_applied ? ` for ${escapeHtml(m.position_applied)}` : ''}${m.outcome ? `, ${escapeHtml(m.outcome.replace(/_/g, ' '))}` : ', still active'}</div>
+  `).join('')}</div>`;
+}
+document.getElementById('new-app-name').addEventListener('input', () => {
+  document.getElementById('new-app-dup-warning').innerHTML =
+    duplicateWarningHtml(findDuplicateApplicants(document.getElementById('new-app-name').value));
+});
+document.getElementById('edit-app-name').addEventListener('input', () => {
+  document.getElementById('edit-app-dup-warning').innerHTML =
+    duplicateWarningHtml(findDuplicateApplicants(document.getElementById('edit-app-name').value, editTargetApplicantId));
+});
 
 function render() {
   const q = document.getElementById('search').value.trim().toLowerCase();
@@ -761,10 +1026,38 @@ async function updateApplicant(id, fields) {
     if (a) Object.assign(a, fields);
     render();
     renderPipeline();
+    renderOpenRoles();
+    if (fields.outcome === 'hired' && a?.applied_job_id) await maybeCloseLinkedJob(a);
   } catch (err) {
     console.error(err);
     showToast('Could not update — ' + err.message, 'error');
     await loadApplicants();
+  }
+}
+
+// A hire linked to a specific opening is the natural moment to close
+// that opening too -- optional, confirmed, never automatic. Writes the
+// exact same fields Reports -> Time to fill's own "Mark filled" already
+// writes, so a job closed from either place looks identical.
+async function maybeCloseLinkedJob(a) {
+  const job = openJobs.find((j) => j.id === a.applied_job_id);
+  if (!job || job.status !== 'open') return;
+  if (!confirm(`Mark "${jobLabel(job)}" as filled with this hire?`)) return;
+  try {
+    await updateDoc(doc(db, 'open_jobs', job.id), {
+      status: 'filled',
+      filled_date: new Date().toISOString().slice(0, 10),
+      filled_applicant_id: a.id,
+      filled_applicant_name: a.name,
+      entered_by: profile.uid,
+      updated_at: serverTimestamp(),
+    });
+    showToast('Opening marked filled.');
+    await loadOpenJobs();
+    renderOpenRoles();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not mark the opening filled — ' + err.message, 'error');
   }
 }
 
@@ -796,6 +1089,7 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
       name, source,
       referred_by_emp_id: source === 'referral' ? referredByEmpId : '',
       position_applied: readPositionField('new-app-position', 'new-app-position-other'),
+      applied_job_id: document.getElementById('new-app-job').value || null,
       applied_date: appliedDate,
       prescreen_passed: false,
       interview_status: 'pending',
@@ -812,11 +1106,13 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
       entered_at: serverTimestamp(),
     });
     document.getElementById('new-app-name').value = '';
+    document.getElementById('new-app-dup-warning').innerHTML = '';
     document.getElementById('new-app-referrer-search').value = '';
     document.getElementById('new-app-referrer').value = '';
     document.getElementById('new-app-position').value = '';
     document.getElementById('new-app-position-other').value = '';
     document.getElementById('new-app-position-other-field').hidden = true;
+    document.getElementById('new-app-job').value = '';
     setAppliedDate('new-app-applied-date', 'new-app-applied-na', todayStr);
     showToast('Applicant added.');
     await loadApplicants();
@@ -1053,6 +1349,8 @@ function openEditApplicant(applicantId) {
   if (!a) return;
   editTargetApplicantId = applicantId;
   document.getElementById('edit-app-name').value = a.name || '';
+  document.getElementById('edit-app-dup-warning').innerHTML =
+    duplicateWarningHtml(findDuplicateApplicants(a.name, applicantId));
   document.getElementById('edit-app-source').value = a.source || 'walk_in';
   setAppliedDate('edit-app-applied-date', 'edit-app-applied-na', a.applied_date || '');
   document.getElementById('edit-app-referrer-field').hidden = a.source !== 'referral';
@@ -1061,6 +1359,18 @@ function openEditApplicant(applicantId) {
   const isOther = !!a.position_applied && !ROLE_TITLES.includes(a.position_applied);
   document.getElementById('edit-app-position-other').hidden = !isOther;
   document.getElementById('edit-app-position-other').value = isOther ? a.position_applied : '';
+  const jobSel = document.getElementById('edit-app-job');
+  // The linked job may have since been filled/cancelled -- populateJobOptions()
+  // only lists currently-open ones, so add it back in rather than silently
+  // dropping the link the moment the opening closes.
+  if (a.applied_job_id && ![...jobSel.options].some((o) => o.value === a.applied_job_id)) {
+    const closedJob = openJobs.find((j) => j.id === a.applied_job_id);
+    const opt = document.createElement('option');
+    opt.value = a.applied_job_id;
+    opt.textContent = closedJob ? `${jobLabel(closedJob)} (closed)` : 'Linked opening (no longer found)';
+    jobSel.appendChild(opt);
+  }
+  jobSel.value = a.applied_job_id || '';
   renderEditAppProgress(applicantId);
   document.getElementById('edit-app-overlay').hidden = false;
 }
@@ -1089,6 +1399,7 @@ document.getElementById('edit-app-save-btn').addEventListener('click', async () 
     name, source, applied_date: appliedDate,
     referred_by_emp_id: source === 'referral' ? referredByEmpId : '',
     position_applied: readPositionField('edit-app-position', 'edit-app-position-other'),
+    applied_job_id: document.getElementById('edit-app-job').value || null,
   });
   showToast('Applicant updated.');
   closeEditApplicant();
@@ -1145,6 +1456,7 @@ wireEmpSearch('edit-app-referrer');
 await loadEmployees();
 await loadDepartmentList();
 await loadDavidUid();
+await loadOpenJobs();
 await loadApplicants();
 
 // Deep link from Search -- show every applicant regardless of pipeline

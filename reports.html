@@ -75,9 +75,11 @@
 
 <script type="module">
 import { requireAuth } from './auth.js';
-import { initShell, formatDate } from './app.js';
+import { initShell, formatDate, showToast } from './app.js';
 import { db } from './firebaseconfig.js';
-import { collection, collectionGroup, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import {
+  collection, collectionGroup, getDocs, doc, updateDoc, deleteDoc, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
@@ -106,6 +108,12 @@ document.getElementById('report-tiles').innerHTML = REPORTS.map((r) => `
     <p>${r.desc}</p>
   </button>
 `).join('');
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
 
 let data = {}; // lazy-loaded collections cache
 async function ensureLoaded(names) {
@@ -232,6 +240,153 @@ function statLine(range, denominatorNote) {
   return `<p class="dim mono" style="font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:16px">
     ${formatDate(range.start)} – ${formatDate(range.end)} · ${denominatorNote}
   </p>`;
+}
+
+// ---- Open jobs management -- lives on the Time to fill report since
+// this is where a job's status and days-open/to-fill are actually seen,
+// not on the Applicants tab (that's entry-only). Tagging a fill to an
+// applicant is optional free-text matched against a datalist, same
+// pattern used for every other name-search field in this app. ----
+
+let fillingJobId = null; // job currently showing the "who filled this" mini-form
+let expandedCandidatesJobId = null; // job currently showing its linked-candidate list
+
+// Same short status label the Applicants tracker's own progress
+// summary uses, condensed to one line for a table cell.
+function candidateStatusLabel(a) {
+  if (a.outcome) return a.outcome.replace(/_/g, ' ');
+  if (a.interview_status === 'not_passed') return 'did not pass interview';
+  if (a.orientation_completed) return 'orientation done';
+  if (a.physical_passed) return 'physical passed';
+  if (a.interview_status === 'passed') return 'interview passed';
+  if (a.prescreen_passed) return 'pre-screen passed';
+  return 'applied';
+}
+
+function jobDaysOpen(job) {
+  const start = new Date(job.opened_date + 'T00:00:00');
+  const end = job.filled_date ? new Date(job.filled_date + 'T00:00:00') : new Date();
+  return Math.max(0, daysBetween(end, start));
+}
+
+function renderJobsManageTable() {
+  const jobs = data.open_jobs.slice().sort((a, b) => {
+    if (a.status === 'open' && b.status !== 'open') return -1;
+    if (a.status !== 'open' && b.status === 'open') return 1;
+    return (a.opened_date || '').localeCompare(b.opened_date || '');
+  });
+  document.getElementById('jobs-manage-rows').innerHTML = jobs.length ? jobs.map((j) => {
+    const days = jobDaysOpen(j);
+    const statusPill = j.status === 'open' ? '<span class="pill">Open</span>'
+      : j.status === 'filled' ? '<span class="pill ok">Filled</span>'
+      : '<span class="pill bad">Cancelled</span>';
+    const filledByNote = j.status === 'filled' && j.filled_applicant_name
+      ? `<div class="dim" style="font-size:11px;margin-top:2px">Filled by ${escapeHtml(j.filled_applicant_name)}</div>` : '';
+    let actionsCell;
+    if (fillingJobId === j.id) {
+      actionsCell = `
+        <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:wrap">
+          <input class="inp fill-applicant-search" data-id="${j.id}" list="jobs-applicant-opts" placeholder="Filled by (optional)…" autocomplete="off" style="height:30px;font-size:11.5px;min-width:170px">
+          <button class="gh solid confirm-fill-btn" data-id="${j.id}" type="button" style="font-size:11.5px;padding:4px 8px">Confirm</button>
+          <button class="gh cancel-fill-btn" type="button" style="font-size:11.5px;padding:4px 8px">Back</button>
+        </div>
+      `;
+    } else if (j.status === 'open') {
+      actionsCell = `<button class="gh start-fill-btn" data-id="${j.id}" type="button">Mark filled</button> <button class="gh cancel-job-btn" data-id="${j.id}" type="button">Cancel</button>`;
+    } else {
+      actionsCell = `<button class="gh delete-job-btn" data-id="${j.id}" type="button" style="color:var(--alertTx)">Delete</button>`;
+    }
+    const candidates = data.applicants.filter((a) => a.applied_job_id === j.id);
+    const expanded = expandedCandidatesJobId === j.id;
+    const candidatesRow = expanded ? `
+      <tr${j.status !== 'open' ? ' style="opacity:.6"' : ''}>
+        <td colspan="8" style="background:var(--hover)">
+          ${candidates.length ? candidates.map((a) => `<span class="pill" style="margin:2px 6px 2px 0">${escapeHtml(a.name)} — ${escapeHtml(candidateStatusLabel(a))}</span>`).join('')
+            : '<span class="dim" style="font-size:12px">No applicants linked to this opening.</span>'}
+        </td>
+      </tr>
+    ` : '';
+    return `
+      <tr${j.status !== 'open' ? ' style="opacity:.6"' : ''}>
+        <td>${escapeHtml(j.title || 'Unspecified')}${filledByNote}</td>
+        <td class="dim">${escapeHtml(j.division) || '—'}</td>
+        <td class="dim">${escapeHtml(j.location) || '—'}</td>
+        <td class="mono dim">${formatDate(j.opened_date)}</td>
+        <td class="mono" style="${j.status === 'open' && days > 45 ? 'color:var(--alertTx);font-weight:700' : ''}">${days}</td>
+        <td>${statusPill}</td>
+        <td><button type="button" class="gh candidates-toggle-btn" data-id="${j.id}" style="font-size:11.5px;padding:3px 8px">${candidates.length} ${expanded ? '▲' : '▼'}</button></td>
+        <td style="text-align:right;white-space:nowrap">${actionsCell}</td>
+      </tr>
+      ${candidatesRow}
+    `;
+  }).join('') : '<tr><td colspan="8" class="dim">No job openings yet — add one from the Applicants tab.</td></tr>';
+
+  document.querySelectorAll('.candidates-toggle-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      expandedCandidatesJobId = expandedCandidatesJobId === btn.dataset.id ? null : btn.dataset.id;
+      renderJobsManageTable();
+    });
+  });
+  document.querySelectorAll('.start-fill-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { fillingJobId = btn.dataset.id; renderJobsManageTable(); });
+  });
+  document.querySelectorAll('.cancel-fill-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { fillingJobId = null; renderJobsManageTable(); });
+  });
+  document.querySelectorAll('.confirm-fill-btn').forEach((btn) => {
+    btn.addEventListener('click', () => confirmJobFilled(btn.dataset.id));
+  });
+  document.querySelectorAll('.cancel-job-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (confirm('Cancel this opening? It stays on record but drops out of "currently open."')) updateJobRecord(btn.dataset.id, { status: 'cancelled' });
+    });
+  });
+  document.querySelectorAll('.delete-job-btn').forEach((btn) => {
+    btn.addEventListener('click', () => deleteJobRecord(btn.dataset.id));
+  });
+}
+
+async function confirmJobFilled(id) {
+  const input = document.querySelector(`.fill-applicant-search[data-id="${id}"]`);
+  const typed = input ? input.value.trim() : '';
+  let filledApplicantId = null;
+  let filledApplicantName = null;
+  if (typed) {
+    const m = typed.match(/\(([^()]+)\)\s*$/);
+    const match = m && data.applicants.find((a) => a.id === m[1]);
+    if (!match) { showToast('Pick a name from the list, or leave it blank.', 'error'); return; }
+    filledApplicantId = match.id;
+    filledApplicantName = match.name;
+  }
+  fillingJobId = null;
+  await updateJobRecord(id, {
+    status: 'filled', filled_date: new Date().toISOString().slice(0, 10),
+    filled_applicant_id: filledApplicantId, filled_applicant_name: filledApplicantName,
+  });
+}
+
+async function updateJobRecord(id, fields) {
+  try {
+    await updateDoc(doc(db, 'open_jobs', id), { ...fields, entered_by: profile.uid, updated_at: serverTimestamp() });
+    delete data.open_jobs;
+    await renderReport(currentKey);
+  } catch (err) {
+    console.error(err);
+    showToast('Could not update — ' + err.message, 'error');
+  }
+}
+
+async function deleteJobRecord(id) {
+  if (!confirm('Delete this job opening record? This cannot be undone.')) return;
+  try {
+    await deleteDoc(doc(db, 'open_jobs', id));
+    delete data.open_jobs;
+    showToast('Deleted.');
+    await renderReport(currentKey);
+  } catch (err) {
+    console.error(err);
+    showToast('Could not delete — ' + err.message, 'error');
+  }
 }
 
 async function renderReport(key) {
@@ -722,7 +877,7 @@ async function renderReport(key) {
   }
 
   else if (key === 'timetofill') {
-    await ensureLoaded(['open_jobs']);
+    await ensureLoaded(['open_jobs', 'applicants']);
     const todayStr = new Date().toISOString().slice(0, 10);
     // Days from opened_date to either "now" (still-open reqs) or
     // filled_date (filled ones), averaged across whatever job list is passed in.
@@ -748,10 +903,6 @@ async function renderReport(key) {
     filledInRange.forEach((j) => { const d = j.division || 'Unspecified'; (byDivision[d] = byDivision[d] || []).push(j); });
     const byDivisionPairs = Object.entries(byDivision).map(([division, jobs]) => [division, avgDaysTo(jobs, 'filled_date')]);
 
-    const openRows = currentlyOpen
-      .map((j) => [j.title || 'Unspecified', j.division || '—', j.location || '—', j.opened_date, daysBetween(new Date(todayStr + 'T00:00:00'), new Date(j.opened_date + 'T00:00:00'))])
-      .sort((a, b) => b[4] - a[4]);
-
     body.innerHTML = statLine(range, `denominator: ${filledInRange.length} openings filled in range · ${currentlyOpen.length} open as of today`) + `
       <div class="big">
         <div><div class="v n">${currentlyOpen.length}</div><div class="k">Currently open</div></div>
@@ -770,22 +921,26 @@ async function renderReport(key) {
         </div>
       </div>
       <div class="card">
-        <div class="card-h"><h3>Currently open, oldest first</h3><span></span></div>
+        <div class="card-h"><h3>Manage openings</h3><span>${data.open_jobs.length} total</span></div>
+        <div style="overflow-x:auto">
         <table>
-          <thead><tr><th>Role</th><th>Division</th><th>Location</th><th>Opened</th><th>Days open</th></tr></thead>
-          <tbody>${openRows.map(([role, div, loc, opened, days]) => `
-            <tr><td>${role}</td><td class="dim">${div}</td><td class="dim">${loc}</td><td class="mono dim">${formatDate(opened)}</td><td class="mono" style="${days > 45 ? 'color:var(--alertTx);font-weight:700' : ''}">${days}</td></tr>
-          `).join('') || '<tr><td colspan="5" class="dim">No open jobs right now.</td></tr>'}</tbody>
+          <thead><tr><th>Role</th><th>Division</th><th>Location</th><th>Opened</th><th>Days</th><th>Status</th><th>Candidates</th><th></th></tr></thead>
+          <tbody id="jobs-manage-rows"></tbody>
         </table>
+        </div>
+        <datalist id="jobs-applicant-opts">${data.applicants.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+          .map((a) => `<option value="${escapeHtml(`${a.name} (${a.id})`)}">`).join('')}</datalist>
       </div>
-      <p class="dim" style="margin-top:10px;font-size:12px">Open jobs are entered and marked filled from the Applicants tab. "Filled in range" uses the date marked filled, not the date opened.</p>
+      <p class="dim" style="margin-top:10px;font-size:12px">New openings are entered from the Applicants tab; managed and marked filled here. "Filled in range" uses the date marked filled, not the date opened. Tagging a fill to an applicant is optional — leave it blank for a hire that didn't come through the tracker.</p>
     `;
+    renderJobsManageTable();
     lastCsv = [
       ['Metric', 'Count'],
       ['Currently open', currentlyOpen.length], ['Filled in range', filledInRange.length], ['Avg days to fill', avgDaysTo(filledInRange, 'filled_date')],
       ['By role (avg days to fill)', ''], ...byRolePairs,
       ['By division (avg days to fill)', ''], ...byDivisionPairs,
-      ['Open job', 'Division', 'Location', 'Opened', 'Days open'], ...openRows,
+      ['Open job', 'Division', 'Location', 'Opened', 'Days open', 'Status', 'Filled by'],
+      ...data.open_jobs.map((j) => [j.title || 'Unspecified', j.division || '', j.location || '', j.opened_date || '', daysBetween(new Date((j.filled_date || todayStr) + 'T00:00:00'), new Date(j.opened_date + 'T00:00:00')), j.status, j.filled_applicant_name || '']),
     ];
   }
 
