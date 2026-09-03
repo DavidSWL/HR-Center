@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Applicants — SWL HR</title>
+<title>ATS — SWL HR</title>
 <link rel="icon" href="favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,16 +19,23 @@
 .app-name-btn{background:none;border:none;padding:0;margin:0;font:inherit;font-weight:600;color:inherit;cursor:pointer;text-decoration:underline;text-decoration-color:var(--faint);text-underline-offset:2px}
 .app-name-btn:hover{color:var(--accentTx);text-decoration-color:var(--accentTx)}
 .kanban{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;overflow-x:auto;padding-bottom:2px}
-.kanban-col{background:var(--panel);border:1px solid var(--line);min-width:150px;display:flex;flex-direction:column}
-.kanban-col-h{padding:8px 10px;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:6px}
+.kanban-col{background:var(--panel);border:1px solid var(--edge);min-width:150px;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.kanban-col-h{padding:8px 10px;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--edge);display:flex;justify-content:space-between;gap:6px;background:var(--raise)}
 .kanban-col-body{padding:8px;display:flex;flex-direction:column;gap:8px;min-height:60px}
 .kanban-col.drag-over{background:var(--hover)}
-.kanban-card{background:var(--raise);border:1px solid var(--edge);padding:8px 10px;cursor:grab;font-size:12.5px}
+.kanban-card{background:var(--raise);border:1px solid var(--edge);box-shadow:0 1px 3px rgba(0,0,0,.08);padding:8px 10px;cursor:grab;font-size:12.5px}
 .kanban-card:active{cursor:grabbing}
 .kanban-card .nm{font-weight:600}
 .kanban-card .meta{color:var(--faint);font-size:11px;margin-top:2px}
 .kanban-empty{font-size:11px;padding:6px 0;text-align:center}
 .dup-warning{background:var(--hover);color:var(--muted);border:1px solid var(--line);padding:8px 10px;font-size:12px;margin-top:6px;line-height:1.5}
+.tabs{display:flex;gap:0;border:1px solid var(--line);width:fit-content;margin-bottom:16px}
+.tabs .tab{padding:9px 20px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;color:var(--faint);border-right:1px solid var(--line)}
+.tabs .tab:last-child{border-right:none}
+.tabs .tab.active{background:var(--accent);color:#fff}
+.card-h.clickable{cursor:pointer;user-select:none}
+.card-h.clickable:hover{background:var(--hover)}
+.card-h .chevron{font-family:var(--mono);font-size:11px;color:var(--faint);width:14px;text-align:center;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -38,7 +45,7 @@
 
   <div class="main" id="main" data-theme="light">
     <header class="bar">
-      <div><h1>Applicants</h1></div>
+      <div><h1>ATS</h1></div>
       <div style="display:flex;align-items:center;gap:18px">
         <div class="toggle">
           <button class="on" data-t="light" type="button">Light</button>
@@ -50,23 +57,25 @@
 
     <section class="view">
 
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-h">
-          <h3>Pipeline</h3>
-          <div style="display:flex;align-items:center;gap:14px">
-            <span id="pipeline-summary">—</span>
-            <div class="toggle" id="pipeline-view-toggle">
-              <button class="on" data-v="funnel" type="button">Funnel</button>
-              <button data-v="board" type="button">Board</button>
-            </div>
-          </div>
-        </div>
-        <div class="card-body" id="pipeline-body"></div>
-        <div class="card-body" id="pipeline-board" hidden></div>
-        <div class="card-h" style="border-top:1px solid var(--line)"><h3>Resume on file pool</h3><span>Worth a call the next time a role opens</span></div>
-        <div class="card-body" id="pipeline-resume-pool"></div>
+      <div class="tabs" id="ats-tab-strip">
+        <div class="tab active" data-tab="pipeline">Pipeline</div>
+        <div class="tab" data-tab="roles">Open roles</div>
+        <div class="tab" data-tab="tracker">Tracker</div>
       </div>
 
+      <div id="ats-tab-pipeline">
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>Pipeline</h3><span id="pipeline-summary">—</span></div>
+        <div class="card-body" id="pipeline-board"></div>
+        <div class="card-h clickable" id="resume-pool-toggle" style="border-top:1px solid var(--line)">
+          <h3>Resume on file pool</h3>
+          <span style="display:flex;align-items:center;gap:10px"><span id="resume-pool-summary" class="dim">Worth a call the next time a role opens</span><span class="chevron" id="resume-pool-chevron">▼</span></span>
+        </div>
+        <div class="card-body" id="pipeline-resume-pool" hidden></div>
+      </div>
+      </div>
+
+      <div id="ats-tab-roles" hidden>
       <div class="card" style="margin-bottom:16px">
         <div class="card-h"><h3>Open a job</h3><span>Entry only — manage, mark filled, and see trends on Reports &rarr; Time to fill</span></div>
         <div class="card-body">
@@ -110,7 +119,9 @@
         <div class="card-h"><h3>Open roles</h3><span id="open-roles-summary">—</span></div>
         <div class="card-body" id="open-roles-body"></div>
       </div>
+      </div>
 
+      <div id="ats-tab-tracker" hidden>
       <div class="card" style="margin-bottom:16px">
         <div class="card-h"><h3>New applicant</h3><span>Name and how they applied — everything else is tracked below</span></div>
         <div class="card-body">
@@ -208,6 +219,7 @@
         </table>
         <datalist id="hired-emp-opts"></datalist>
         </div>
+      </div>
       </div>
     </section>
   </div>
@@ -610,12 +622,11 @@ async function loadApplicants() {
   renderOpenRoles();
 }
 
-// ---- Pipeline funnel -- at-a-glance "who's moving on," computed only
-// (nothing stored) from the same fields the tracker table already
-// tracks. Counted against everyone still live in the pipeline -- a true
-// interview failure or a closed-out outcome (rejected, resume on file,
-// not interested, hired) isn't "still moving," so it's left out of the
-// funnel and rolled into the outcome tally underneath instead. ----
+// ---- Pipeline stages -- who's moving where, computed only (nothing
+// stored) from the same fields the tracker table already tracks. Drives
+// the board below; a true interview failure or a closed-out outcome
+// (rejected, resume on file, not interested, hired) isn't "still
+// moving," so those don't get a stage bucket here. ----
 const FUNNEL_STAGES = [
   { label: 'Applied', test: () => true },
   { label: 'Pre-screen passed', test: (a) => !!a.prescreen_passed },
@@ -623,19 +634,11 @@ const FUNNEL_STAGES = [
   { label: 'Physical / drug exam passed', test: (a) => !!a.physical_passed },
   { label: 'Orientation completed', test: (a) => !!a.orientation_completed },
 ];
+let resumePoolOpen = false;
+
 function renderPipeline() {
   const stillMoving = applicants.filter((a) => a.interview_status !== 'not_passed'
     && !['rejected', 'not_selected', 'resume_on_file', 'not_interested', 'hired'].includes(a.outcome));
-  const stageCounts = FUNNEL_STAGES.map((s) => ({ label: s.label, count: stillMoving.filter(s.test).length }));
-  const max = Math.max(1, stageCounts[0].count);
-  document.getElementById('pipeline-body').innerHTML = stageCounts.map((s) => `
-    <div style="display:grid;grid-template-columns:170px 1fr 34px;gap:10px;align-items:center;margin-bottom:8px">
-      <div class="dim" style="font-size:12.5px">${s.label}</div>
-      <div class="trk"><i style="width:${Math.round((s.count / max) * 100)}%"></i></div>
-      <div class="mono" style="text-align:right;font-size:12.5px">${s.count}</div>
-    </div>
-  `).join('');
-
   const hiredCount = applicants.filter((a) => a.outcome === 'hired').length;
   const rejectedCount = applicants.filter((a) => a.outcome === 'rejected' || a.interview_status === 'not_passed').length;
   const notSelectedCount = applicants.filter((a) => a.outcome === 'not_selected').length;
@@ -646,7 +649,11 @@ function renderPipeline() {
 
   // Resume on file isn't a dead end like Rejected -- it's a bench of
   // people worth a call the next time a role opens up, so it gets its
-  // own browsable pool here instead of just a number in the tally above.
+  // own browsable pool here -- collapsed by default (this can run to
+  // 20+ names) rather than always spread across the page.
+  document.getElementById('resume-pool-summary').textContent = `${resumePool.length} people — worth a call the next time a role opens`;
+  document.getElementById('resume-pool-chevron').textContent = resumePoolOpen ? '▲' : '▼';
+  document.getElementById('pipeline-resume-pool').hidden = !resumePoolOpen;
   document.getElementById('pipeline-resume-pool').innerHTML = resumePool.length
     ? resumePool.map((a) => `
         <button type="button" class="gh pool-app-btn" data-id="${a.id}" style="font-size:11.5px;padding:4px 10px;margin:0 6px 6px 0">
@@ -658,8 +665,24 @@ function renderPipeline() {
     btn.addEventListener('click', () => openEditApplicant(btn.dataset.id));
   });
 
-  if (!document.getElementById('pipeline-board').hidden) renderKanban();
+  renderKanban();
 }
+
+document.getElementById('resume-pool-toggle').addEventListener('click', () => {
+  resumePoolOpen = !resumePoolOpen;
+  renderPipeline();
+});
+
+// ---- Top-level tabs -- Pipeline / Open roles / Tracker, replacing
+// what used to be one long scrolling page. ----
+document.querySelectorAll('#ats-tab-strip .tab').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#ats-tab-strip .tab').forEach((b) => b.classList.toggle('active', b === btn));
+    ['pipeline', 'roles', 'tracker'].forEach((key) => {
+      document.getElementById(`ats-tab-${key}`).hidden = key !== btn.dataset.tab;
+    });
+  });
+});
 
 // ---- Pipeline board -- a drag-and-drop view of the same "active
 // pipeline" set the funnel above already computes, just bucketed by
@@ -762,16 +785,6 @@ function renderKanban() {
     });
   });
 }
-
-document.querySelectorAll('#pipeline-view-toggle button').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('#pipeline-view-toggle button').forEach((b) => b.classList.toggle('on', b === btn));
-    const isBoard = btn.dataset.v === 'board';
-    document.getElementById('pipeline-body').hidden = isBoard;
-    document.getElementById('pipeline-board').hidden = !isBoard;
-    if (isBoard) renderKanban();
-  });
-});
 
 // ---- Open jobs -- entry only. Viewing, marking filled (with an
 // optional tag back to the applicant who filled it), cancelling, and

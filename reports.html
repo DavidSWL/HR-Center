@@ -319,7 +319,7 @@ function renderJobsManageTable() {
       </tr>
       ${candidatesRow}
     `;
-  }).join('') : '<tr><td colspan="8" class="dim">No job openings yet — add one from the Applicants tab.</td></tr>';
+  }).join('') : '<tr><td colspan="8" class="dim">No job openings yet — add one from the ATS tab.</td></tr>';
 
   document.querySelectorAll('.candidates-toggle-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -866,7 +866,7 @@ async function renderReport(key) {
           ${rankHtml(topN(byRole, 8), 'No applicants in range.')}
         </div>
       </div>
-      <p class="dim" style="margin-top:10px;font-size:12px">Range is by date applied — an applicant with no known applied date (N/A) falls outside any dated range. Full tracker with names lives on the Applicants tab.</p>
+      <p class="dim" style="margin-top:10px;font-size:12px">Range is by date applied — an applicant with no known applied date (N/A) falls outside any dated range. Full tracker with names lives on the ATS tab.</p>
     `;
     lastCsv = [
       ['Metric', 'Count'],
@@ -931,7 +931,7 @@ async function renderReport(key) {
         <datalist id="jobs-applicant-opts">${data.applicants.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
           .map((a) => `<option value="${escapeHtml(`${a.name} (${a.id})`)}">`).join('')}</datalist>
       </div>
-      <p class="dim" style="margin-top:10px;font-size:12px">New openings are entered from the Applicants tab; managed and marked filled here. "Filled in range" uses the date marked filled, not the date opened. Tagging a fill to an applicant is optional — leave it blank for a hire that didn't come through the tracker.</p>
+      <p class="dim" style="margin-top:10px;font-size:12px">New openings are entered from the ATS tab; managed and marked filled here. "Filled in range" uses the date marked filled, not the date opened. Tagging a fill to an applicant is optional — leave it blank for a hire that didn't come through the tracker.</p>
     `;
     renderJobsManageTable();
     lastCsv = [
