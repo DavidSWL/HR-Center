@@ -50,32 +50,41 @@ function fblank(width) {
 export const ONBOARDING_FORMS = [
 
 // ---------------------------------------------------------------- 1 --
+// Fillable: employee name/address/phone and both emergency contacts can
+// be typed in, then signed and dated. Date of Birth has no field id on
+// purpose — CLAUDE.md forbids storing a birth year anywhere in this
+// system, so that line stays a blank print-only cell, never captured.
 {
   key: 'emergency',
   title: { en: 'Emergency Form', es: 'Formulario de Emergencia' },
+  fillable: true,
   blocks: [
     { t: 'section', en: 'Employee Information', es: 'Información del Empleado' },
-    { t: 'grid', cols: 2,
+    { t: 'grid', cols: 2, fill: true,
       cellsEn: [
-        { label: 'Employee Name' }, { label: 'Employee ID' },
-        { label: 'Address', span: true },
-        { label: 'Phone Number' }, { label: 'Date of Birth' },
+        { id: 'employee_name', label: 'Employee Name', prefill: (e) => `${e.first_name} ${e.last_name}` },
+        { id: 'employee_id', label: 'Employee ID', prefill: (e) => e.id, locked: true },
+        { id: 'address', label: 'Address', span: true },
+        { id: 'phone', label: 'Phone Number' }, { label: 'Date of Birth' },
       ],
       cellsEs: [
-        { label: 'Nombre del Empleado' }, { label: 'ID del Empleado' },
-        { label: 'Dirección', span: true },
-        { label: 'Número de Teléfono' }, { label: 'Fecha de Nacimiento' },
+        { id: 'employee_name', label: 'Nombre del Empleado', prefill: (e) => `${e.first_name} ${e.last_name}` },
+        { id: 'employee_id', label: 'ID del Empleado', prefill: (e) => e.id, locked: true },
+        { id: 'address', label: 'Dirección', span: true },
+        { id: 'phone', label: 'Número de Teléfono' }, { label: 'Fecha de Nacimiento' },
       ] },
     { t: 'section', en: 'Emergency Contact #1', es: 'Contacto de Emergencia #1' },
-    { t: 'grid', cols: 3,
-      cellsEn: [ { label: 'Name' }, { label: 'Phone Number' }, { label: 'Relationship to Employee' } ],
-      cellsEs: [ { label: 'Nombre' }, { label: 'Número de Teléfono' }, { label: 'Relación con el Empleado' } ] },
+    { t: 'grid', cols: 3, fill: true,
+      cellsEn: [ { id: 'c1_name', label: 'Name' }, { id: 'c1_phone', label: 'Phone Number' }, { id: 'c1_relationship', label: 'Relationship to Employee' } ],
+      cellsEs: [ { id: 'c1_name', label: 'Nombre' }, { id: 'c1_phone', label: 'Número de Teléfono' }, { id: 'c1_relationship', label: 'Relación con el Empleado' } ] },
     { t: 'section', en: 'Emergency Contact #2', es: 'Contacto de Emergencia #2' },
-    { t: 'grid', cols: 3,
-      cellsEn: [ { label: 'Name' }, { label: 'Phone Number' }, { label: 'Relationship to Employee' } ],
-      cellsEs: [ { label: 'Nombre' }, { label: 'Número de Teléfono' }, { label: 'Relación con el Empleado' } ] },
+    { t: 'grid', cols: 3, fill: true,
+      cellsEn: [ { id: 'c2_name', label: 'Name' }, { id: 'c2_phone', label: 'Phone Number' }, { id: 'c2_relationship', label: 'Relationship to Employee' } ],
+      cellsEs: [ { id: 'c2_name', label: 'Nombre' }, { id: 'c2_phone', label: 'Número de Teléfono' }, { id: 'c2_relationship', label: 'Relación con el Empleado' } ] },
     { t: 'section', en: 'Employee Certification', es: 'Certificación del Empleado' },
-    { t: 'sig', fieldsEn: ['Employee Signature', 'Date'], fieldsEs: ['Firma del Empleado', 'Fecha'] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
@@ -114,18 +123,23 @@ export const ONBOARDING_FORMS = [
 },
 
 // ---------------------------------------------------------------- 2 --
+// Fillable, except Social Security No. — that cell has no field id on
+// purpose, at David's explicit direction, so there is no way to type a
+// SSN into this form electronically. It stays a blank line to write by
+// hand, same as it would on the printed original.
 {
   key: 'directdeposit',
   title: { en: 'Authorization for Direct Deposit', es: 'Autorización de Depósito Directo' },
+  fillable: true,
   blocks: [
     { t: 'section', en: 'Bank Information', es: 'Información Bancaria' },
-    { t: 'grid', cols: 2,
-      cellsEn: [ { label: 'Bank Name' }, { label: 'Type of Account', value: '□ Checking&nbsp;&nbsp;&nbsp;□ Savings' }, { label: 'Bank Address' }, { label: 'City / State' } ],
-      cellsEs: [ { label: 'Nombre del Banco' }, { label: 'Tipo de Cuenta', value: '□ Corriente&nbsp;&nbsp;&nbsp;□ Ahorros' }, { label: 'Dirección del Banco' }, { label: 'Ciudad / Estado' } ] },
+    { t: 'grid', cols: 2, fill: true,
+      cellsEn: [ { id: 'bank_name', label: 'Bank Name' }, { label: 'Type of Account', value: '□ Checking&nbsp;&nbsp;&nbsp;□ Savings' }, { id: 'bank_address', label: 'Bank Address' }, { id: 'bank_city_state', label: 'City / State' } ],
+      cellsEs: [ { id: 'bank_name', label: 'Nombre del Banco' }, { label: 'Tipo de Cuenta', value: '□ Corriente&nbsp;&nbsp;&nbsp;□ Ahorros' }, { id: 'bank_address', label: 'Dirección del Banco' }, { id: 'bank_city_state', label: 'Ciudad / Estado' } ] },
     { t: 'section', en: 'Bank Account Information', es: 'Información de la Cuenta Bancaria' },
-    { t: 'grid', cols: 2,
-      cellsEn: [ { label: 'Routing Number' }, { label: 'Account Number' } ],
-      cellsEs: [ { label: 'Número de Ruta' }, { label: 'Número de Cuenta' } ] },
+    { t: 'grid', cols: 2, fill: true,
+      cellsEn: [ { id: 'routing_number', label: 'Routing Number' }, { id: 'account_number', label: 'Account Number' } ],
+      cellsEs: [ { id: 'routing_number', label: 'Número de Ruta' }, { id: 'account_number', label: 'Número de Cuenta' } ] },
     { t: 'fine', en: '(Please attach a copy of a voided check to this form)', es: '(Por favor adjunte una copia de un cheque a este formulario)' },
     { t: 'section', en: 'Authorization Agreement', es: 'Acuerdo de Autorización' },
     { t: 'p', en: 'I hereby authorize SouthWest Landscape Inc. to deposit my net pay at the financial institution named above. I understand that SouthWest Landscape Inc. may cause my account to be adjusted to the extent necessary to correct any over-deposit. I agree to hold the above named financial institution harmless for any erroneous deposits or adjustments not caused by the financial institution.',
@@ -133,9 +147,12 @@ export const ONBOARDING_FORMS = [
     { t: 'p', en: 'It is understood that this agreement may be terminated by me at any time by written notification to SouthWest Landscape Inc. Any such notification to SouthWest Landscape Inc. shall be effective only with respect to entries initiated by SouthWest Landscape Inc. after receipt of such notification and a reasonable opportunity to act on it. Any such notification to the receiving Bank by the employee is unacceptable. The receiving Bank may terminate this agreement by written notice to the employee for just cause.',
       es: 'Se entiende que este acuerdo puede ser terminado por mí en cualquier momento mediante notificación escrita a SouthWest Landscape Inc. Cualquier notificación a SouthWest Landscape Inc. surtirá efecto únicamente respecto a las entradas iniciadas por SouthWest Landscape Inc. después de recibir dicha notificación y una oportunidad razonable para actuar en consecuencia. Cualquier notificación al Banco receptor por parte del empleado no será aceptable. El Banco receptor puede terminar este acuerdo mediante notificación escrita al empleado por causa justificada.' },
     { t: 'section', en: 'Employee Acknowledgment', es: 'Reconocimiento del Empleado' },
-    { t: 'grid', cols: 2,
-      cellsEn: [ { label: 'Employee Name' }, { label: 'Social Security No.' }, { label: 'Employee Signature' }, { label: 'Date' } ],
-      cellsEs: [ { label: 'Nombre del Empleado' }, { label: 'Número de Seguro Social' }, { label: 'Firma del Empleado' }, { label: 'Fecha' } ] },
+    { t: 'grid', cols: 2, fill: true,
+      cellsEn: [ { id: 'employee_name', label: 'Employee Name', prefill: (e) => `${e.first_name} ${e.last_name}` }, { label: 'Social Security No.' } ],
+      cellsEs: [ { id: 'employee_name', label: 'Nombre del Empleado', prefill: (e) => `${e.first_name} ${e.last_name}` }, { label: 'Número de Seguro Social' } ] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
     { t: 'fine', en: 'Please allow 2 pay periods of testing prior to the direct deposit commencement to verify the information indicated above. During the testing periods, you will receive a paycheck.',
       es: 'Por favor permita 2 períodos de pago de prueba antes del inicio del depósito directo para verificar la información indicada arriba. Durante los períodos de prueba, usted recibirá un cheque de pago.' },
   ],
@@ -145,12 +162,23 @@ export const ONBOARDING_FORMS = [
 {
   key: 'employeepackage',
   title: { en: 'Employee Package — Acknowledgment of Company Property', es: 'Paquete de Empleo — Reconocimiento de Propiedad de la Compañía' },
+  fillable: true,
   blocks: [
-    { t: 'grid', cols: 1, cellsEn: [{ label: 'Department' }], cellsEs: [{ label: 'Departamento' }] },
+    { t: 'grid', cols: 1, fill: true, cellsEn: [{ id: 'department', label: 'Department' }], cellsEs: [{ id: 'department', label: 'Departamento' }] },
     { t: 'section', en: 'Items Provided by the Company', es: 'Artículos Proporcionados por la Compañía' },
-    { t: 'list', check: true,
-      itemsEn: ['Company Hat', 'Safety Vest with Company Logo', 'Company Shirts (3) to start, once introductory period is completed (2)', 'PPE – Gloves', 'PPE – Safety Glasses', 'PPE – Hearing Protection', 'Company Fuel Card'],
-      itemsEs: ['Gorra de la Compañía', 'Chaleco de Seguridad con Logo de la Compañía', 'Camisas de la Compañía (3) al iniciar, una vez completado el período introductorio (2)', 'EPP – Guantes', 'EPP – Gafas de Seguridad', 'EPP – Protección Auditiva', 'Tarjeta de Combustible de la Compañía'] },
+    { t: 'list', check: true, fill: true,
+      itemsEn: [
+        { id: 'item_hat', text: 'Company Hat' }, { id: 'item_vest', text: 'Safety Vest with Company Logo' },
+        { id: 'item_shirts', text: 'Company Shirts (3) to start, once introductory period is completed (2)' },
+        { id: 'item_gloves', text: 'PPE – Gloves' }, { id: 'item_glasses', text: 'PPE – Safety Glasses' },
+        { id: 'item_hearing', text: 'PPE – Hearing Protection' }, { id: 'item_fuelcard', text: 'Company Fuel Card' },
+      ],
+      itemsEs: [
+        { id: 'item_hat', text: 'Gorra de la Compañía' }, { id: 'item_vest', text: 'Chaleco de Seguridad con Logo de la Compañía' },
+        { id: 'item_shirts', text: 'Camisas de la Compañía (3) al iniciar, una vez completado el período introductorio (2)' },
+        { id: 'item_gloves', text: 'EPP – Guantes' }, { id: 'item_glasses', text: 'EPP – Gafas de Seguridad' },
+        { id: 'item_hearing', text: 'EPP – Protección Auditiva' }, { id: 'item_fuelcard', text: 'Tarjeta de Combustible de la Compañía' },
+      ] },
     { t: 'section', en: 'Acknowledgment', es: 'Reconocimiento' },
     { t: 'p', en: 'I acknowledge the receipt of the above checked items. I understand that the company issued items are for company use only. Any loss or use charges other than for company business will be the responsibility of the employee.',
       es: 'Reconozco haber recibido los artículos marcados anteriormente. Entiendo que los artículos proporcionados por la compañía son para uso exclusivo de la compañía. Cualquier pérdida o cargo por uso distinto al negocio de la compañía será responsabilidad del empleado.' },
@@ -159,7 +187,9 @@ export const ONBOARDING_FORMS = [
     { t: 'p', en: 'Employees assigned a company-provided cell phone must use it primarily for business purposes. Personal use must be limited to emergencies. Employees are responsible for any charges resulting from personal use exceeding assigned minutes or plan limits.',
       es: 'Los empleados a quienes se les asigne un teléfono celular proporcionado por la compañía deben usarlo principalmente para fines comerciales. El uso personal debe limitarse a emergencias. Los empleados son responsables de cualquier cargo resultante del uso personal que exceda los minutos asignados o los límites del plan.' },
     { t: 'section', en: 'Employee Acknowledgment', es: 'Reconocimiento del Empleado' },
-    { t: 'sig', fieldsEn: ['Employee Name', 'Employee Signature', 'Date'], fieldsEs: ['Nombre del Empleado', 'Firma del Empleado', 'Fecha'] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_name', label: 'Employee Name', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_name', label: 'Nombre del Empleado', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
