@@ -3630,6 +3630,7 @@ function fblank(width) {
 function renderFormBlocks(blocks, lang, ctx) {
   const interactive = !!(ctx && ctx.interactive);
   const formKey = ctx && ctx.formKey;
+  const emp = ctx && ctx.emp;
   const saved = (ctx && ctx.saved) || {};
   const fields = saved.fields || {};
   const sigs = saved.signatures || {};
@@ -3637,7 +3638,18 @@ function renderFormBlocks(blocks, lang, ctx) {
   return blocks.map((b) => {
     const en = b.en, es = b.es;
     if (b.t === 'section') return `<div class="form-section">${lang === 'es' ? es : en}</div>`;
-    if (b.t === 'p') return `<p style="margin:0 0 9px;line-height:1.5">${b.bold ? `<b>${(lang === 'es' ? b.boldEs : b.boldEn)}</b> ` : ''}${lang === 'es' ? es : en}</p>`;
+    if (b.t === 'p') {
+      // A `dyn` paragraph computes its text from the employee record at
+      // render time (Notice to Employee's pre-filled name/job title) —
+      // never stored, just interpolated, same as "compute don't store"
+      // elsewhere in this app. Everything else is the plain static text.
+      // A block with no `es` (the Arbitration Agreement's numbered legal
+      // clauses — see onboardingformsdata.js) falls back to English
+      // rather than showing nothing, since there's no official Spanish
+      // text to show instead.
+      const text = b.dyn ? (lang === 'es' ? b.esFn(emp) : b.enFn(emp)) : (lang === 'es' && es != null ? es : en);
+      return `<p style="margin:0 0 9px;line-height:1.5">${b.bold ? `<b>${(lang === 'es' ? b.boldEs : b.boldEn)}</b> ` : ''}${text}</p>`;
+    }
     if (b.t === 'callout') return `<div class="form-callout">${lang === 'es' ? es : en}</div>`;
     if (b.t === 'pdflink') {
       const printText = lang === 'es' ? b.printEs : b.printEn;
