@@ -273,6 +273,11 @@ const TRAINING_DOC_LABELS = {
 // packet and scrolling to that one form instead of a doc-specific link.
 const ONBOARDING_FORM_KEYS = new Set(ONBOARDING_FORMS.filter((f) => f.fillable).map((f) => f.key));
 ONBOARDING_FORMS.filter((f) => f.fillable).forEach((f) => { TRAINING_DOC_LABELS[f.key] = f.title.en; });
+// The Job Description acknowledgment (employee + manager sign-off,
+// embedded in the onboarding packet) isn't in ONBOARDING_FORMS — it's
+// generated from JOB_DESCRIPTIONS instead — so it's added by hand here.
+TRAINING_DOC_LABELS.jobdesc_ack = 'Job Description — Acknowledgment';
+ONBOARDING_FORM_KEYS.add('jobdesc_ack');
 
 let documentsLoaded = false;
 async function loadDocumentsTab() {

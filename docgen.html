@@ -2093,6 +2093,13 @@ async function renderOnboarding(lang) {
       const d = await getDoc(doc(db, 'training_documents', `${empId}_${f.key}`));
       if (d.exists()) savedByFormKey[f.key] = d.data();
     }));
+    const jdAckSnap = await getDoc(doc(db, 'training_documents', `${empId}_jobdesc_ack`));
+    const savedJdAck = jdAckSnap.exists() ? jdAckSnap.data() : null;
+
+    // The rest of the packet -- the employee's actual Job Description,
+    // appended right after the checklist so Load + Print produces the
+    // whole orientation packet in one go, not just the checklist.
+    const matchedRole = JOB_DESCRIPTIONS.find((r) => r.title.en.toLowerCase() === (emp.position || '').trim().toLowerCase());
 
     const sheet = document.getElementById('onb-sheet');
     sheet.hidden = false;
@@ -2131,24 +2138,16 @@ async function renderOnboarding(lang) {
           <div>${isEs ? 'Fecha' : 'Date'}: ${formatDate(new Date().toISOString().slice(0, 10))}</div>
         </div>
       </div>
-      ${(() => {
-        // The rest of the packet -- the employee's actual Job Description,
-        // appended right after the checklist so Load + Print produces the
-        // whole orientation packet in one go, not just the checklist.
-        const role = JOB_DESCRIPTIONS.find((r) => r.title.en.toLowerCase() === (emp.position || '').trim().toLowerCase());
-        if (!role) {
-          return `<p class="no-print" style="background:#FDEDEC;border:1px solid #E0A8A0;color:#7A1F2B;font-size:11px;padding:8px 10px;margin:16px 0 0">${isEs
-            ? `No se encontró una Descripción del Puesto que coincida con "${escapeHtml(emp.position || '')}" — agréguela desde el generador de Descripción del Puesto si hace falta.`
-            : `No Job Description on file matching "${escapeHtml(emp.position || '')}" — add one from the Job Description generator if this role is missing.`}</p>`;
-        }
-        return `<div class="jd-doc form-page-break" style="margin-top:24px">${buildJobDescriptionHtml(role, isEs ? 'es' : 'en')}</div>`;
-      })()}
+      ${matchedRole ? `<div class="jd-doc form-page-break" id="onb-form-jobdesc_ack" style="margin-top:24px">${buildJobDescriptionHtml(matchedRole, isEs ? 'es' : 'en', { interactive: true, emp, saved: savedJdAck })}</div>` : `<p class="no-print" style="background:#FDEDEC;border:1px solid #E0A8A0;color:#7A1F2B;font-size:11px;padding:8px 10px;margin:16px 0 0">${isEs
+        ? `No se encontró una Descripción del Puesto que coincida con "${escapeHtml(emp.position || '')}" — agréguela desde el generador de Descripción del Puesto si hace falta.`
+        : `No Job Description on file matching "${escapeHtml(emp.position || '')}" — add one from the Job Description generator if this role is missing.`}</p>`}
       ${ONBOARDING_FORMS.map((form) => `
         <div class="form-doc-inner form-page-break" id="onb-form-${form.key}" style="margin-top:24px">${buildOnboardingFormHtml(form, isEs ? 'es' : 'en', { interactive: true, formKey: form.key, saved: savedByFormKey[form.key], emp })}</div>
       `).join('')}
     `;
 
     fillableForms.forEach((form) => wireFillableOnboardingForm(form, isEs ? 'es' : 'en', empId, savedByFormKey[form.key]));
+    if (matchedRole) wireJobDescriptionAck(isEs ? 'es' : 'en', empId, savedJdAck);
 
     if (window.location.hash) {
       const target = document.getElementById(window.location.hash.slice(1));
@@ -3437,7 +3436,7 @@ function jdField(role, base, lang) {
 // wrapper's contents) so it can be dropped into the standalone Job
 // Description generator AND embedded inside the onboarding packet,
 // without duplicating this whole template in two places.
-function buildJobDescriptionHtml(role, lang) {
+function buildJobDescriptionHtml(role, lang, ctx) {
   const t = {
     en: { doctype: 'Job Description', sub: 'Employee Review & Signature Document', ack: 'Acknowledgment', equipTitle: 'Equipment — Must Operate Safely', category: 'Category',
           physReq: 'Physical Requirement', physNotes: 'Notes', ada: 'Reasonable accommodations will be evaluated through the ADA interactive process in partnership with HR.',
@@ -3507,14 +3506,103 @@ function buildJobDescriptionHtml(role, lang) {
       <div class="jd-ada">${escapeHtml(adaNote)}</div>
       <div class="jd-ack">
         <b>${t.ack}:</b> ${escapeHtml(ack)}
-        <div class="jd-sig">
-          <div><b>${t.empName}</b><div class="line"></div><b>${t.empSig}</b><div class="line"></div><b>${t.date}</b><div class="line"></div></div>
-          <div><b>${t.mgrName}</b><div class="line"></div><b>${t.mgrSig}</b><div class="line"></div><b>${t.date}</b><div class="line"></div></div>
-        </div>
+        ${buildJobDescriptionSigBlock(t, lang, ctx)}
       </div>
       <div class="jd-footer">${escapeHtml(footer)}</div>
     </div>
   `;
+}
+
+// The acknowledgment signature block is static (blank print lines) on
+// the standalone Job Description generator, but interactive when
+// embedded in a specific new hire's onboarding packet (ctx.interactive)
+// — employee types their name, signs, and dates; the manager's name/
+// signature/date can be left blank and filled in later, since they
+// often aren't in the room for onboarding, and reopening the packet
+// (docgen.html?open=onboarding&emp=<id>) preloads whatever's already
+// on file instead of losing it.
+function buildJobDescriptionSigBlock(t, lang, ctx) {
+  if (!ctx || !ctx.interactive) {
+    return `
+      <div class="jd-sig">
+        <div><b>${t.empName}</b><div class="line"></div><b>${t.empSig}</b><div class="line"></div><b>${t.date}</b><div class="line"></div></div>
+        <div><b>${t.mgrName}</b><div class="line"></div><b>${t.mgrSig}</b><div class="line"></div><b>${t.date}</b><div class="line"></div></div>
+      </div>
+    `;
+  }
+  const fields = (ctx.saved && ctx.saved.fields) || {};
+  const inputStyle = 'width:100%;border:none;border-bottom:1px solid #999;background:transparent;font:inherit;padding:2px 0';
+  const empName = fields.emp_name != null ? fields.emp_name : `${ctx.emp.first_name} ${ctx.emp.last_name}`;
+  return `
+    <div class="jd-sig">
+      <div>
+        <b>${t.empName}</b><input class="ff-text" id="jd__emp_name" type="text" value="${escapeHtml(empName)}" style="${inputStyle}">
+        <b>${t.empSig}</b>${signaturePadHtml('jd__emp_sig_pad', 'jd__emp_sig_clear', 60)}
+        <b>${t.date}</b><input class="ff-text" id="jd__emp_date" type="date" value="${escapeHtml(fields.emp_date || '')}" style="${inputStyle}">
+      </div>
+      <div>
+        <b>${t.mgrName}</b><input class="ff-text" id="jd__mgr_name" type="text" value="${escapeHtml(fields.mgr_name || '')}" style="${inputStyle}">
+        <b>${t.mgrSig}</b>${signaturePadHtml('jd__mgr_sig_pad', 'jd__mgr_sig_clear', 60)}
+        <b>${t.date}</b><input class="ff-text" id="jd__mgr_date" type="date" value="${escapeHtml(fields.mgr_date || '')}" style="${inputStyle}">
+      </div>
+    </div>
+    <div class="no-print" style="margin-top:10px;display:flex;align-items:center;gap:10px">
+      <button type="button" class="gh solid" id="jd-ack-save-btn">${lang === 'es' ? 'Guardar este documento' : 'Save this document'}</button>
+      <span id="jd-ack-status" class="dim" style="font-size:11.5px"></span>
+    </div>
+  `;
+}
+
+// Wires the Job Description acknowledgment's signature pads + Save
+// button (see buildJobDescriptionSigBlock above). Persists to its own
+// training_documents record, `${empId}_jobdesc_ack` — distinct from the
+// unrelated, employee-agnostic "Save to Documents" button on the
+// standalone Job Description generator (content_type: 'jobdesc'), which
+// saves the role's reference text, not any one person's signature.
+function wireJobDescriptionAck(lang, empId, saved) {
+  const btn = document.getElementById('jd-ack-save-btn');
+  if (!btn) return;
+  setUpSignaturePad('jd__emp_sig_pad', 'jd__emp_sig_clear');
+  setUpSignaturePad('jd__mgr_sig_pad', 'jd__mgr_sig_clear');
+  const savedSigs = (saved && saved.signatures) || {};
+  if (savedSigs.emp) drawExistingSignatureDataUrl('jd__emp_sig_pad', savedSigs.emp);
+  if (savedSigs.mgr) drawExistingSignatureDataUrl('jd__mgr_sig_pad', savedSigs.mgr);
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      const fields = {
+        emp_name: document.getElementById('jd__emp_name').value,
+        emp_date: document.getElementById('jd__emp_date').value,
+        mgr_name: document.getElementById('jd__mgr_name').value,
+        mgr_date: document.getElementById('jd__mgr_date').value,
+      };
+      const empState = sigPads['jd__emp_sig_pad'];
+      const mgrState = sigPads['jd__mgr_sig_pad'];
+      const signatures = {};
+      if (empState && empState.hasStroke) signatures.emp = document.getElementById('jd__emp_sig_pad').toDataURL('image/png');
+      else if (savedSigs.emp) signatures.emp = savedSigs.emp;
+      if (mgrState && mgrState.hasStroke) signatures.mgr = document.getElementById('jd__mgr_sig_pad').toDataURL('image/png');
+      else if (savedSigs.mgr) signatures.mgr = savedSigs.mgr;
+      await setDoc(doc(db, 'training_documents', `${empId}_jobdesc_ack`), {
+        content_type: 'jobdesc_ack',
+        emp_id: empId,
+        title: 'Job Description — Acknowledgment',
+        date: new Date().toISOString().slice(0, 10),
+        fields, signatures,
+        status: (signatures.emp || signatures.mgr) ? 'signed' : 'in_progress',
+        entered_by: profile.uid,
+        updated_at: serverTimestamp(),
+      }, { merge: true });
+      document.getElementById('jd-ack-status').textContent = lang === 'es' ? 'Guardado.' : 'Saved.';
+      showToast('Saved.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
 
 // ---- Blank onboarding reference forms (Emergency Form, Confidentiality
