@@ -32,13 +32,15 @@
 //     there is no real text to transcribe. Flagged to David; left off
 //     rather than invented.
 //
-// The Employment-At-Will and Arbitration Agreement's Spanish text does
-// not exist in the source packet (every other document has a matching
-// Spanish page; this one doesn't). At David's direction the Spanish
-// version below is a translation done for this app, not a translation
-// that came from SWL's own paperwork — a short note to that effect is
-// printed on the Spanish copy so nobody mistakes it for company-issued
-// bilingual paperwork of equal legal standing to the English original.
+// The Employment-At-Will and Arbitration Agreement has no Spanish
+// version in the source packet (every other document has a matching
+// Spanish page; this one doesn't). At David's direction it stays
+// English-only rather than shipping a Claude-made translation of a
+// binding arbitration agreement — its numbered clauses and signing
+// acknowledgment simply have no `es` text, so the packet falls back to
+// English even when Spanish is selected. A callout at the top of that
+// document explains why and points a Spanish-speaking employee to a
+// live interpreter instead.
 
 // Small inline blank-line marker for fields inside a paragraph (e.g. "Rate
 // of Pay: $____ per ____"). Self-contained here — this file has no other
@@ -194,19 +196,27 @@ export const ONBOARDING_FORMS = [
 },
 
 // ---------------------------------------------------------------- 4 --
+// Pre-filled, not signed — employee name and job title come straight
+// from the employee record (computed at render time, never stored a
+// second time), same as the rest of this app's compute-don't-store
+// rule. Rate of Pay stays a manual blank line on purpose; this app
+// never stores compensation data, so there's nothing to pre-fill it
+// with even if the field were made fillable.
 {
   key: 'noticetoemployee',
   title: { en: 'Notice to Employee', es: 'Aviso al Empleado' },
   blocks: [
-    { t: 'p', en: `Company: SouthWest Landscape, Inc. &nbsp; Employee: ${fblank(260)}`,
-      es: `Compañía: SouthWest Landscape, Inc. &nbsp; Empleado: ${fblank(260)}` },
+    { t: 'p', dyn: true,
+      enFn: (e) => `Company: SouthWest Landscape, Inc. &nbsp; Employee: <b>${e.first_name} ${e.last_name}</b>`,
+      esFn: (e) => `Compañía: SouthWest Landscape, Inc. &nbsp; Empleado: <b>${e.first_name} ${e.last_name}</b>` },
     { t: 'p', en: 'For good consideration, the Company employs the Employee on the following terms and conditions.', es: 'Por una contraprestación válida, la Compañía emplea al Empleado bajo los siguientes términos y condiciones.' },
     { t: 'p', en: '<b>1. At-Will Employment:</b> I understand that my employment with the Company is for an unspecified duration and constitutes "At-Will Employment". I also understand that any representation to the contrary is unauthorized and not valid unless obtained in writing and signed by an authorized representative of the Company. I also acknowledge that this employment may be terminated at any time, with or without good cause, or for any or no cause, at the option either of the Company or Employee, with or without notice.',
       es: '<b>1. Empleo a Voluntad (At-Will):</b> Entiendo que mi empleo con la Compañía es por un período indefinido y constituye un empleo "a voluntad" (At-Will Employment). También entiendo que cualquier representación en contrario no está autorizada ni es válida a menos que conste por escrito y esté firmada por un representante autorizado de la Compañía. Reconozco además que este empleo puede ser terminado en cualquier momento, con o sin causa justificada, o por cualquier causa o sin causa, a opción de la Compañía o del Empleado, con o sin previo aviso.' },
     { t: 'p', en: `<b>2. Rate of Pay.</b> The Company shall pay the Employee a Salary of ${fblank(140)} Per ${fblank(110)}, for the services of the Employee, payable at regular payroll periods. The pay schedule is once weekly on Friday after twelve o'clock in the afternoon.`,
       es: `<b>2. Tasa de Pago:</b> La Compañía pagará al Empleado un salario de ${fblank(140)} por ${fblank(110)}, por los servicios del Empleado, pagadero en los períodos regulares de nómina. El calendario de pago es semanal, los viernes después de las doce del mediodía.` },
-    { t: 'p', en: `<b>3. Duties and Position.</b> The Company hires the Employee in the capacity of ${fblank(220)}. The Employee's duties may be reasonably modified at the Company's discretion.`,
-      es: `<b>3. Puesto y Funciones:</b> La Compañía contrata al Empleado en la capacidad de ${fblank(220)}. Las funciones del Empleado podrán ser razonablemente modificadas a discreción de la Compañía.` },
+    { t: 'p', dyn: true,
+      enFn: (e) => `<b>3. Duties and Position.</b> The Company hires the Employee in the capacity of <b>${e.position || fblank(220)}</b>. The Employee's duties may be reasonably modified at the Company's discretion.`,
+      esFn: (e) => `<b>3. Puesto y Funciones:</b> La Compañía contrata al Empleado en la capacidad de <b>${e.position || fblank(220)}</b>. Las funciones del Empleado podrán ser razonablemente modificadas a discreción de la Compañía.` },
     { t: 'p', en: '<b>4. Conflicting Employment.</b> During employment, the Employee agrees not to engage in any outside work, business, or activity that creates an actual conflict of interest with the Company, competes with the Company\'s business, or interferes with the Employee\'s ability to perform their job duties.',
       es: '<b>4. Empleo en Conflicto:</b> Durante su empleo, el Empleado acepta no participar en ningún trabajo, negocio o actividad externa que cree un conflicto de interés real con la Compañía, compita con el negocio de la Compañía, o interfiera con la capacidad del Empleado para desempeñar sus funciones laborales.' },
     { t: 'p', en: '<b>5. Assistance In Litigation.</b> The Employee shall upon reasonable notice furnish such information and proper assistance to the company as it may reasonably require in connection with any litigation in which it is, or may become, a party either during or after employment.',
@@ -229,6 +239,7 @@ export const ONBOARDING_FORMS = [
 {
   key: 'paidsickleave',
   title: { en: 'Paid Sick Leave Notice', es: 'Aviso de Licencia por Enfermedad Pagada' },
+  fillable: true,
   blocks: [
     { t: 'p', en: 'Unless exempt, the employee identified on this notice is entitled to minimum requirements for paid sick leave under California State law (effective July 1, 2015, as it relates to eligibility), which provides that an employee:',
       es: 'A menos que sea exento, el empleado identificado en este aviso tiene derecho a los requisitos mínimos de licencia por enfermedad pagada conforme a la ley del Estado de California (vigente desde el 1 de julio de 2015, en lo relacionado con la elegibilidad), lo cual establece que el empleado:' },
@@ -248,7 +259,9 @@ export const ONBOARDING_FORMS = [
         '□ Acumula licencia por enfermedad pagada conforme a la política del empleador, la cual cumple o excede los requisitos de acumulación, traslado y uso establecidos en el Código Laboral 246.',
         '☑ El empleador proporciona no menos de 24 horas (o 3 días) de licencia por enfermedad pagada al inicio de cada período de 12 meses.'] },
     { t: 'section', en: 'Acknowledgment of Receipt', es: 'Acuse de Recibo' },
-    { t: 'sig', fieldsEn: ["Signed this day of", "Employee's Signature", 'Company Signature / Title'], fieldsEs: ['Firmado este día de', 'Firma del Empleado', 'Firma de la Compañía / Título'] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'signed_date', label: 'Signed this day of', kind: 'date' }, { id: 'employee_signature_data_url', label: "Employee's Signature", kind: 'sig' }, { id: 'company_sig_title', label: 'Company Signature / Title', kind: 'text' } ],
+      fieldsEs: [ { id: 'signed_date', label: 'Firmado este día de', kind: 'date' }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'company_sig_title', label: 'Firma de la Compañía / Título', kind: 'text' } ] },
     { t: 'fine', en: 'Corporate Office: 2205 S. Standard Avenue, Santa Ana California 92707. Mailing Address: P.O. Box 15611, Santa Ana California 92735. Phone (714) 545-1084 · Fax (714) 545-2109',
       es: 'Oficina Corporativa: 2205 S. Standard Avenue, Santa Ana, California 92707. Dirección Postal: P.O. Box 15611, Santa Ana, California 92735. Teléfono (714) 545-1084 · Fax (714) 545-2109' },
   ],
@@ -267,11 +280,17 @@ export const ONBOARDING_FORMS = [
 },
 
 // ---------------------------------------------------------------- 7 --
+// Fillable: employee name is pre-filled (still editable) throughout;
+// both the employee and the company's authorized representative can
+// print their name and sign electronically.
 {
   key: 'confidentiality',
   title: { en: 'Confidentiality and Trade Secrets Agreement', es: 'Acuerdo de Confidencialidad y Secretos Comerciales' },
+  fillable: true,
   blocks: [
-    { t: 'p', en: `Company: SouthWest Landscape, Inc. &nbsp; Employee: ${fblank(260)}`, es: `Compañía: SouthWest Landscape, Inc. &nbsp; Empleado: ${fblank(260)}` },
+    { t: 'p', dyn: true,
+      enFn: (e) => `Company: SouthWest Landscape, Inc. &nbsp; Employee: <b>${e.first_name} ${e.last_name}</b>`,
+      esFn: (e) => `Compañía: SouthWest Landscape, Inc. &nbsp; Empleado: <b>${e.first_name} ${e.last_name}</b>` },
     { t: 'p', en: 'The Company will provide the Employee with access to confidential and proprietary information necessary for the performance of their duties. This agreement ensures that such information is protected both during and after employment.',
       es: 'La Compañía proporcionará al Empleado acceso a información confidencial y de propiedad exclusiva necesaria para el desempeño de sus funciones. Este acuerdo garantiza que dicha información esté protegida tanto durante como después del empleo.' },
     { t: 'p', en: '<b>Definition of Confidential Information:</b> "Confidential Information" means any non-public information belonging to the Company, including but not limited to customer lists and contact details, pricing, proposals, financial information, trade secrets, technical data, business strategies, formulas, designs, training materials, software, and any other data not generally known outside the Company. Confidential information does not include information that is or becomes public through no fault of the Employee; is lawfully obtained from a third party without restriction; or is independently developed without use of Company information.',
@@ -298,44 +317,47 @@ export const ONBOARDING_FORMS = [
       es: '<b>Acuerdo Completo:</b> Este acuerdo constituye el entendimiento completo entre las partes con respecto a la confidencialidad y los secretos comerciales. Cualquier modificación debe hacerse por escrito y ser firmada por ambas partes.' },
     { t: 'section', en: 'Employee Acknowledgment', es: 'Reconocimiento del Empleado' },
     { t: 'p', en: 'I have read and understood this Agreement and agree to comply with its terms.', es: 'He leído y entendido este Acuerdo y estoy de acuerdo en cumplir con sus términos.' },
-    { t: 'grid', cols: 2,
-      cellsEn: [ { label: 'Authorized Company Representative (Print Name)' }, { label: 'Employee (Print Name)' },
-        { label: "Authorized Company Representative's Signature" }, { label: "Employee's Signature" }, { label: 'Date (Month/Day/Year)', span: true } ],
-      cellsEs: [ { label: 'Representante Autorizado de la Compañía (Nombre en Letra de Molde)' }, { label: 'Empleado (Nombre en Letra de Molde)' },
-        { label: 'Firma del Representante Autorizado de la Compañía' }, { label: 'Firma del Empleado' }, { label: 'Fecha (Mes/Día/Año)', span: true } ] },
+    { t: 'grid', cols: 2, fill: true,
+      cellsEn: [ { id: 'rep_name', label: 'Authorized Company Representative (Print Name)' }, { id: 'employee_name', label: 'Employee (Print Name)', prefill: (e) => `${e.first_name} ${e.last_name}` } ],
+      cellsEs: [ { id: 'rep_name', label: 'Representante Autorizado de la Compañía (Nombre en Letra de Molde)' }, { id: 'employee_name', label: 'Empleado (Nombre en Letra de Molde)', prefill: (e) => `${e.first_name} ${e.last_name}` } ] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'rep_signature_data_url', label: "Authorized Company Representative's Signature", kind: 'sig' }, { id: 'employee_signature_data_url', label: "Employee's Signature", kind: 'sig' }, { id: 'date', label: 'Date (Month/Day/Year)', kind: 'date' } ],
+      fieldsEs: [ { id: 'rep_signature_data_url', label: 'Firma del Representante Autorizado de la Compañía', kind: 'sig' }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha (Mes/Día/Año)', kind: 'date' } ] },
     { t: 'fine', en: 'Distribution: Original to Personnel File, Copy to Employee on Request', es: 'Distribución: Original para el Expediente de Personal, Copia para el Empleado a Solicitud' },
   ],
 },
 
 // ---------------------------------------------------------------- 8 --
+// Fillable+signable, English only in body — see the callout below and
+// the top-of-file note. The numbered legal clauses (and the final
+// signing acknowledgment) have no `es` value on purpose: this document
+// has no official Spanish translation, and a Claude-made one isn't
+// something to pass off as SWL's own paperwork, so it falls back to
+// English rather than showing a fabricated translation. Field labels
+// stay in English on both sides too, for the same reason.
 {
   key: 'atwillarbitration',
   title: { en: 'SouthWest Landscape, Inc. Employment-At-Will and Arbitration Agreement', es: 'SouthWest Landscape, Inc. Acuerdo de Empleo a Voluntad y Arbitraje' },
+  fillable: true,
   blocks: [
     { t: 'callout',
       en: 'A Spanish translation of this agreement does not exist in SWL\'s original paperwork. The Spanish text below was translated for this app and has not been reviewed by an attorney — the English original is the governing document. If a Spanish-speaking employee needs this explained, use the English copy alongside a live interpreter rather than relying on this translation alone.',
       es: 'Este acuerdo no cuenta con una traducción al español en los documentos originales de SWL. El texto en español a continuación fue traducido para esta aplicación y no ha sido revisado por un abogado — el documento en inglés es el que rige. Si un empleado de habla hispana necesita que se le explique, use la copia en inglés junto con un intérprete en vivo en lugar de basarse únicamente en esta traducción.' },
-    { t: 'p', en: '<b>1. At-Will Employment.</b> I acknowledge that my employment, position, and compensation at SouthWest Landscape, Inc. (the "Company") are at-will, shall be for no specific duration, and may be changed or terminated at will. Both I and the Company have the right to terminate my employment at any time, with or without cause. By signing below, I certify that I understand that employment at-will is the sole and entire agreement between myself and the Company concerning the duration of my employment and the circumstances under which my employment may be terminated. It supersedes all prior agreements, understandings, and representations concerning the duration of my employment with the Company and/or the circumstances under which my employment may be terminated.',
-      es: '<b>1. Empleo a Voluntad.</b> Reconozco que mi empleo, puesto y compensación en SouthWest Landscape, Inc. (la "Compañía") son a voluntad, no tienen una duración específica, y pueden ser modificados o terminados a voluntad. Tanto yo como la Compañía tenemos el derecho de terminar mi empleo en cualquier momento, con o sin causa. Al firmar a continuación, certifico que entiendo que el empleo a voluntad es el único y completo acuerdo entre la Compañía y yo respecto a la duración de mi empleo y las circunstancias bajo las cuales mi empleo puede ser terminado. Este acuerdo reemplaza todos los acuerdos, entendimientos y declaraciones anteriores sobre la duración de mi empleo con la Compañía y/o las circunstancias bajo las cuales mi empleo puede ser terminado.' },
-    { t: 'p', en: '<b>2. Agreement to Arbitrate.</b> The Company and I agree to utilize binding individual arbitration as the sole and exclusive means to resolve all disputes that may arise out of or be related in any way to my employment, including but not limited to the termination of my employment and my compensation. The Company and I each waive and relinquish our rights to bring a claim against the other in a court of law. Both the Company and I agree that any claim or controversy that I may have against the Company (or its owners, directors, officers, managers, employees, or agents), shall be resolved exclusively by binding arbitration under the Federal Arbitration Act ("FAA"), in conformity with the procedures of the California Arbitration Act. The FAA applies to this Agreement because the Company\'s business involves interstate commerce. This Agreement covers all employment-related disputes, including claims of discrimination, harassment, retaliation, unpaid wages, breach of contract, and wrongful termination, whether based on tort, contract, statute, equity, or any other theory under state or federal law. Excluded are claims under the National Labor Relations Act before the NLRB, workers\' compensation and EDD claims, and any claims not subject to arbitration. Filing with the DFEH or EEOC is permitted; any claim pursued after exhausting those remedies remains subject to this Agreement.',
-      es: '<b>2. Acuerdo de Arbitraje.</b> La Compañía y yo acordamos utilizar el arbitraje individual vinculante como el único y exclusivo medio para resolver todas las disputas que puedan surgir de, o estar relacionadas de cualquier manera con, mi empleo, incluyendo pero no limitado a la terminación de mi empleo y mi compensación. Tanto la Compañía como yo renunciamos a nuestro derecho de presentar un reclamo contra la otra parte en un tribunal de justicia. Ambas partes acordamos que cualquier reclamo o controversia que yo pueda tener contra la Compañía (o sus propietarios, directores, funcionarios, gerentes, empleados o agentes) se resolverá exclusivamente mediante arbitraje vinculante bajo la Ley Federal de Arbitraje ("FAA"), en conformidad con los procedimientos de la Ley de Arbitraje de California. La FAA aplica a este Acuerdo porque el negocio de la Compañía involucra comercio interestatal. Este Acuerdo cubre todas las disputas relacionadas con el empleo, incluyendo reclamos de discriminación, acoso, represalias, salarios no pagados, incumplimiento de contrato y terminación injustificada, ya sea basados en agravio, contrato, estatuto, equidad, o cualquier otra teoría bajo la ley estatal o federal. Se excluyen los reclamos bajo la Ley Nacional de Relaciones Laborales ante el NLRB, los reclamos de compensación de trabajadores y del EDD, y cualquier reclamo no sujeto a arbitraje. Se permite presentar una queja ante el DFEH o la EEOC; cualquier reclamo que se persiga después de agotar esos recursos permanece sujeto a este Acuerdo.' },
-    { t: 'p', en: '<b>3. Waiver of Jury Trial.</b> By entering into this Agreement, both I and the Company expressly waive our respective rights to a trial by jury for any claim either party may have against the other. I understand this waiver is a material term of my employment and of this Agreement.',
-      es: '<b>3. Renuncia al Juicio con Jurado.</b> Al celebrar este Acuerdo, tanto la Compañía como yo renunciamos expresamente a nuestros respectivos derechos a un juicio con jurado por cualquier reclamo que cualquiera de las partes pueda tener contra la otra. Entiendo que esta renuncia es un término material de mi empleo y de este Acuerdo.' },
-    { t: 'p', en: '<b>4. Individual Claims Only; Class and Collective Action Waiver.</b> All claims shall be brought solely in an individual capacity. This Agreement does not permit consolidation, joinder, or any class, collective, or representative action, and no arbitrator shall have authority to order any such proceeding. I waive any right to bring an action on a class, collective, representative, or other similar basis.',
-      es: '<b>4. Solo Reclamos Individuales; Renuncia a Acciones Colectivas y de Clase.</b> Todos los reclamos deberán presentarse únicamente a título individual. Este Acuerdo no permite la consolidación, unión de partes, ni ninguna acción de clase, colectiva o representativa, y ningún árbitro tendrá autoridad para ordenar dicho procedimiento. Renuncio a cualquier derecho de presentar una acción de clase, colectiva, representativa o de base similar.' },
-    { t: 'p', en: '<b>5. Private Attorneys General Act (PAGA).</b> To the maximum extent permitted by law, any individual PAGA claim shall be arbitrated under this Agreement, and I expressly waive the right to bring a representative PAGA claim on behalf of other employees. The arbitrator has no authority to consolidate PAGA claims or conduct a representative proceeding. If the representative PAGA waiver is found unenforceable, that claim shall be stayed in court pending arbitration of my individual PAGA claim; only that unenforceable portion is severed, and the remainder of this Section stays in full force.',
-      es: '<b>5. Ley de Procuradores Generales Privados (PAGA).</b> En la máxima medida permitida por la ley, cualquier reclamo individual bajo PAGA se someterá a arbitraje conforme a este Acuerdo, y renuncio expresamente al derecho de presentar un reclamo representativo bajo PAGA en nombre de otros empleados. El árbitro no tiene autoridad para consolidar reclamos PAGA ni llevar a cabo un procedimiento representativo. Si se determina que la renuncia representativa de PAGA no es exigible, dicho reclamo quedará suspendido en el tribunal en espera del arbitraje de mi reclamo individual bajo PAGA; solo esa porción no exigible será separada, y el resto de esta Sección permanecerá en pleno vigor.' },
-    { t: 'p', en: '<b>6. Arbitration Procedures & Costs.</b> The arbitrator shall be a retired California Superior Court Judge or another qualified individual mutually agreed upon, subject to disqualification on the same grounds as a sitting judge, and shall have judicial immunity from civil liability when acting in that capacity. All rules of pleading, evidence, summary judgment, and CCP § 631.8 apply; all proceedings are privileged under Cal. Civil Code § 47(b); and awards shall include a written reasoned opinion. Both parties may be represented by counsel. The arbitrator may award any remedy available in a court of law, including damages, injunctive relief, and attorneys\' fees where authorized by statute, but shall apply controlling law only and may not invoke notions of "just cause" or any other non-legal basis. The Company bears all arbitration fees and costs beyond what the employee would pay in California Superior Court; each party pays its own attorneys\' fees unless a prevailing-party fee statute applies, in which case the arbitrator may award reasonable fees and costs as provided by law.',
-      es: '<b>6. Procedimientos y Costos del Arbitraje.</b> El árbitro será un juez jubilado de la Corte Superior de California u otra persona calificada mutuamente acordada, sujeto a descalificación por los mismos motivos que aplicarían a un juez en funciones, y tendrá inmunidad judicial de responsabilidad civil al actuar en esa capacidad. Se aplicarán todas las reglas de alegatos, evidencia, juicio sumario, y la sección 631.8 del CCP; todos los procedimientos son privilegiados bajo la sección 47(b) del Código Civil de California; y los laudos incluirán una opinión razonada por escrito. Ambas partes pueden estar representadas por un abogado. El árbitro puede otorgar cualquier remedio disponible en un tribunal de justicia, incluyendo daños, medidas cautelares, y honorarios de abogados cuando lo autorice la ley, pero deberá aplicar únicamente la ley vigente y no podrá invocar nociones de "causa justa" ni ninguna otra base no legal. La Compañía asume todos los honorarios y costos de arbitraje más allá de lo que el empleado pagaría en la Corte Superior de California; cada parte paga sus propios honorarios de abogado a menos que un estatuto de honorarios para la parte prevaleciente aplique, en cuyo caso el árbitro podrá otorgar honorarios y costos razonables según lo dispuesto por la ley.' },
-    { t: 'p', en: '<b>7. Pre-Arbitration Process.</b> Before arbitrating, the parties shall: (a) Informal Meeting: meet in good faith with the employee\'s manager and a Company representative (all discussions confidential and treated as settlement negotiations); then if unresolved, (b) Mediation: mediate through CPR; then if still unresolved, (c) Arbitration: submit to final binding arbitration under this Agreement.',
-      es: '<b>7. Proceso Previo al Arbitraje.</b> Antes de proceder al arbitraje, las partes deberán: (a) Reunión Informal: reunirse de buena fe con el gerente del empleado y un representante de la Compañía (todas las conversaciones son confidenciales y se tratarán como negociaciones de acuerdo); luego, si no se resuelve, (b) Mediación: mediar a través de CPR; luego, si aún no se resuelve, (c) Arbitraje: someterse a arbitraje final y vinculante conforme a este Acuerdo.' },
-    { t: 'p', en: '<b>8. Entire Agreement & Severability.</b> This Agreement is the entire agreement between myself and the Company regarding dispute resolution, the length of my employment, and the reasons for termination, and supersedes all prior agreements on these issues, including any prior arbitration agreements. If any term, provision, or portion of this Agreement is determined to be void or unenforceable, it shall be severed and the remainder of this Agreement shall be fully enforceable.',
-      es: '<b>8. Acuerdo Completo y Divisibilidad.</b> Este Acuerdo es el acuerdo completo entre la Compañía y yo respecto a la resolución de disputas, la duración de mi empleo, y los motivos de terminación, y reemplaza todos los acuerdos anteriores sobre estos temas, incluyendo cualquier acuerdo de arbitraje previo. Si algún término, disposición o parte de este Acuerdo se determina que es nulo o no exigible, será separado y el resto de este Acuerdo permanecerá completamente exigible.' },
-    { t: 'callout', en: 'BY SIGNING BELOW, I CONFIRM THAT I HAVE READ, UNDERSTAND, AND AGREE TO BE LEGALLY BOUND BY THIS AGREEMENT, INCLUDING THE REQUIREMENT TO ARBITRATE ALL EMPLOYMENT DISPUTES AND THE WAIVER OF MY RIGHT TO A TRIAL BY JURY. I FURTHER ACKNOWLEDGE THAT I HAVE RECEIVED AND READ THE TEAM MEMBER HANDBOOK.',
-      es: 'AL FIRMAR A CONTINUACIÓN, CONFIRMO QUE HE LEÍDO, ENTIENDO, Y ACEPTO QUEDAR LEGALMENTE OBLIGADO POR ESTE ACUERDO, INCLUYENDO EL REQUISITO DE SOMETER A ARBITRAJE TODAS LAS DISPUTAS LABORALES Y LA RENUNCIA A MI DERECHO A UN JUICIO CON JURADO. ADEMÁS, RECONOZCO QUE HE RECIBIDO Y LEÍDO EL MANUAL DEL MIEMBRO DEL EQUIPO.' },
-    { t: 'grid', cols: 2,
-      cellsEn: [ { label: 'Print Full Name' }, { label: 'Company Representative (Print Name)' }, { label: 'Employee Signature' }, { label: 'Company Representative Signature' }, { label: 'Date (Month/Day/Year)', span: true } ],
-      cellsEs: [ { label: 'Nombre Completo en Letra de Molde' }, { label: 'Representante de la Compañía (Nombre en Letra de Molde)' }, { label: 'Firma del Empleado' }, { label: 'Firma del Representante de la Compañía' }, { label: 'Fecha (Mes/Día/Año)', span: true } ] },
+    { t: 'p', en: '<b>1. At-Will Employment.</b> I acknowledge that my employment, position, and compensation at SouthWest Landscape, Inc. (the "Company") are at-will, shall be for no specific duration, and may be changed or terminated at will. Both I and the Company have the right to terminate my employment at any time, with or without cause. By signing below, I certify that I understand that employment at-will is the sole and entire agreement between myself and the Company concerning the duration of my employment and the circumstances under which my employment may be terminated. It supersedes all prior agreements, understandings, and representations concerning the duration of my employment with the Company and/or the circumstances under which my employment may be terminated.' },
+    { t: 'p', en: '<b>2. Agreement to Arbitrate.</b> The Company and I agree to utilize binding individual arbitration as the sole and exclusive means to resolve all disputes that may arise out of or be related in any way to my employment, including but not limited to the termination of my employment and my compensation. The Company and I each waive and relinquish our rights to bring a claim against the other in a court of law. Both the Company and I agree that any claim or controversy that I may have against the Company (or its owners, directors, officers, managers, employees, or agents), shall be resolved exclusively by binding arbitration under the Federal Arbitration Act ("FAA"), in conformity with the procedures of the California Arbitration Act. The FAA applies to this Agreement because the Company\'s business involves interstate commerce. This Agreement covers all employment-related disputes, including claims of discrimination, harassment, retaliation, unpaid wages, breach of contract, and wrongful termination, whether based on tort, contract, statute, equity, or any other theory under state or federal law. Excluded are claims under the National Labor Relations Act before the NLRB, workers\' compensation and EDD claims, and any claims not subject to arbitration. Filing with the DFEH or EEOC is permitted; any claim pursued after exhausting those remedies remains subject to this Agreement.' },
+    { t: 'p', en: '<b>3. Waiver of Jury Trial.</b> By entering into this Agreement, both I and the Company expressly waive our respective rights to a trial by jury for any claim either party may have against the other. I understand this waiver is a material term of my employment and of this Agreement.' },
+    { t: 'p', en: '<b>4. Individual Claims Only; Class and Collective Action Waiver.</b> All claims shall be brought solely in an individual capacity. This Agreement does not permit consolidation, joinder, or any class, collective, or representative action, and no arbitrator shall have authority to order any such proceeding. I waive any right to bring an action on a class, collective, representative, or other similar basis.' },
+    { t: 'p', en: '<b>5. Private Attorneys General Act (PAGA).</b> To the maximum extent permitted by law, any individual PAGA claim shall be arbitrated under this Agreement, and I expressly waive the right to bring a representative PAGA claim on behalf of other employees. The arbitrator has no authority to consolidate PAGA claims or conduct a representative proceeding. If the representative PAGA waiver is found unenforceable, that claim shall be stayed in court pending arbitration of my individual PAGA claim; only that unenforceable portion is severed, and the remainder of this Section stays in full force.' },
+    { t: 'p', en: '<b>6. Arbitration Procedures & Costs.</b> The arbitrator shall be a retired California Superior Court Judge or another qualified individual mutually agreed upon, subject to disqualification on the same grounds as a sitting judge, and shall have judicial immunity from civil liability when acting in that capacity. All rules of pleading, evidence, summary judgment, and CCP § 631.8 apply; all proceedings are privileged under Cal. Civil Code § 47(b); and awards shall include a written reasoned opinion. Both parties may be represented by counsel. The arbitrator may award any remedy available in a court of law, including damages, injunctive relief, and attorneys\' fees where authorized by statute, but shall apply controlling law only and may not invoke notions of "just cause" or any other non-legal basis. The Company bears all arbitration fees and costs beyond what the employee would pay in California Superior Court; each party pays its own attorneys\' fees unless a prevailing-party fee statute applies, in which case the arbitrator may award reasonable fees and costs as provided by law.' },
+    { t: 'p', en: '<b>7. Pre-Arbitration Process.</b> Before arbitrating, the parties shall: (a) Informal Meeting: meet in good faith with the employee\'s manager and a Company representative (all discussions confidential and treated as settlement negotiations); then if unresolved, (b) Mediation: mediate through CPR; then if still unresolved, (c) Arbitration: submit to final binding arbitration under this Agreement.' },
+    { t: 'p', en: '<b>8. Entire Agreement & Severability.</b> This Agreement is the entire agreement between myself and the Company regarding dispute resolution, the length of my employment, and the reasons for termination, and supersedes all prior agreements on these issues, including any prior arbitration agreements. If any term, provision, or portion of this Agreement is determined to be void or unenforceable, it shall be severed and the remainder of this Agreement shall be fully enforceable.' },
+    { t: 'callout', en: 'BY SIGNING BELOW, I CONFIRM THAT I HAVE READ, UNDERSTAND, AND AGREE TO BE LEGALLY BOUND BY THIS AGREEMENT, INCLUDING THE REQUIREMENT TO ARBITRATE ALL EMPLOYMENT DISPUTES AND THE WAIVER OF MY RIGHT TO A TRIAL BY JURY. I FURTHER ACKNOWLEDGE THAT I HAVE RECEIVED AND READ THE TEAM MEMBER HANDBOOK.' },
+    { t: 'grid', cols: 2, fill: true,
+      cellsEn: [ { id: 'employee_name', label: 'Print Full Name', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'rep_name', label: 'Company Representative (Print Name)' } ],
+      cellsEs: [ { id: 'employee_name', label: 'Print Full Name', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'rep_name', label: 'Company Representative (Print Name)' } ] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'rep_signature_data_url', label: 'Company Representative Signature', kind: 'sig' }, { id: 'date', label: 'Date (Month/Day/Year)', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'rep_signature_data_url', label: 'Company Representative Signature', kind: 'sig' }, { id: 'date', label: 'Date (Month/Day/Year)', kind: 'date' } ] },
   ],
 },
 
@@ -343,6 +365,7 @@ export const ONBOARDING_FORMS = [
 {
   key: 'handbookack',
   title: { en: 'Acknowledgment of Receipt of Employee Handbook', es: 'Acuse de Recibo del Manual del Empleado' },
+  fillable: true,
   blocks: [
     { t: 'p', en: 'If I am a nonexempt employee, I understand that I will be authorized and permitted to take an unpaid, duty-free meal period of no less than 30 minutes whenever I exceed five hours in a work day. The meal period must begin prior to completing my fifth hour of work unless I am scheduled to work six (6) hours or less, and we agree in writing that the meal period may be waived. I understand I am authorized and permitted a second unpaid, duty-free meal period of thirty minutes whenever I work for a period of more than 10 hours in any workday.',
       es: 'Si soy un empleado no exento, entiendo que estaré autorizado y se me permitirá tomar un período de comida sin pago y libre de tareas de no menos de 30 minutos cada vez que exceda las cinco horas en un día laboral. El período de comida debe comenzar antes de completar mi quinta hora de trabajo, a menos que esté programado para trabajar seis (6) horas o menos y acordemos por escrito que se puede renunciar al período de comida. Entiendo que estoy autorizado y se me permite un segundo período de comida sin pago y libre de tareas de treinta minutos cada vez que trabaje por un período de más de 10 horas en cualquier día laboral.' },
@@ -355,7 +378,9 @@ export const ONBOARDING_FORMS = [
     { t: 'p', en: 'By my signature below, I acknowledge that I have received a copy of this Employee Handbook. I also acknowledge that I have read and understand the contents of the Employee Handbook, and I (check one) □ do &nbsp; □ do not want to discuss the handbook or any particular policies, benefits, or procedures described in it with my Supervisor or another Company official.',
       es: 'Con mi firma a continuación, reconozco que he recibido una copia de este Manual del Empleado. También reconozco que he leído y entiendo el contenido del Manual del Empleado, y (marque una opción) □ sí deseo &nbsp; □ no deseo discutir el manual o cualquier política, beneficio o procedimiento particular descrito en él con mi Supervisor u otro funcionario de la Compañía.' },
     { t: 'section', en: 'Employee Certification', es: 'Certificación del Empleado' },
-    { t: 'sig', fieldsEn: ['Print Name', 'Employee Signature', 'Date'], fieldsEs: ['Nombre en Letra de Molde', 'Firma del Empleado', 'Fecha'] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_name', label: 'Print Name', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_name', label: 'Nombre en Letra de Molde', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
@@ -364,7 +389,10 @@ export const ONBOARDING_FORMS = [
   key: 'handbookackcopy',
   title: { en: 'Acknowledgment of Receipt of Employee Handbook (Copy for Personnel File)', es: 'Acuse de Recibo del Manual del Empleado (Copia para el Expediente)' },
   // Identical content to #9 — the real packet includes this signed twice,
-  // one copy for the employee and one for the personnel file.
+  // one copy for the employee and one for the personnel file. A separate
+  // fillable: true + its own key means it saves its own
+  // training_documents record, independent of #9's.
+  fillable: true,
   blocks: [
     { t: 'p', en: 'If I am a nonexempt employee, I understand that I will be authorized and permitted to take an unpaid, duty-free meal period of no less than 30 minutes whenever I exceed five hours in a work day. The meal period must begin prior to completing my fifth hour of work unless I am scheduled to work six (6) hours or less, and we agree in writing that the meal period may be waived. I understand I am authorized and permitted a second unpaid, duty-free meal period of thirty minutes whenever I work for a period of more than 10 hours in any workday.',
       es: 'Si soy un empleado no exento, entiendo que estaré autorizado y se me permitirá tomar un período de comida sin pago y libre de tareas de no menos de 30 minutos cada vez que exceda las cinco horas en un día laboral. El período de comida debe comenzar antes de completar mi quinta hora de trabajo, a menos que esté programado para trabajar seis (6) horas o menos y acordemos por escrito que se puede renunciar al período de comida. Entiendo que estoy autorizado y se me permite un segundo período de comida sin pago y libre de tareas de treinta minutos cada vez que trabaje por un período de más de 10 horas en cualquier día laboral.' },
@@ -377,7 +405,9 @@ export const ONBOARDING_FORMS = [
     { t: 'p', en: 'By my signature below, I acknowledge that I have received a copy of this Employee Handbook. I also acknowledge that I have read and understand the contents of the Employee Handbook, and I (check one) □ do &nbsp; □ do not want to discuss the handbook or any particular policies, benefits, or procedures described in it with my Supervisor or another Company official.',
       es: 'Con mi firma a continuación, reconozco que he recibido una copia de este Manual del Empleado. También reconozco que he leído y entiendo el contenido del Manual del Empleado, y (marque una opción) □ sí deseo &nbsp; □ no deseo discutir el manual o cualquier política, beneficio o procedimiento particular descrito en él con mi Supervisor u otro funcionario de la Compañía.' },
     { t: 'section', en: 'Employee Certification', es: 'Certificación del Empleado' },
-    { t: 'sig', fieldsEn: ['Print Name', 'Employee Signature', 'Date'], fieldsEs: ['Nombre en Letra de Molde', 'Firma del Empleado', 'Fecha'] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_name', label: 'Print Name', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_name', label: 'Nombre en Letra de Molde', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
@@ -385,6 +415,7 @@ export const ONBOARDING_FORMS = [
 {
   key: 'discriminationack',
   title: { en: 'Acknowledgment of Receipt of Discrimination, Harassment and Retaliation Prevention Policy', es: 'Acuse de Recibo de la Política de Prevención de Discriminación, Acoso y Represalias' },
+  fillable: true,
   blocks: [
     { t: 'p', en: 'We are an Equal Employment Opportunity employer. In order to provide equal opportunities to all individuals, employment decisions are based on merit, qualifications, skills and performance.',
       es: 'Somos un empleador que ofrece Igualdad de Oportunidades de Empleo. Para brindar igualdad de oportunidades a todas las personas, las decisiones de empleo se basan en el mérito, las calificaciones, las habilidades y el desempeño.' },
@@ -411,9 +442,14 @@ export const ONBOARDING_FORMS = [
     { t: 'p', en: 'You may also bring your complaint to the federal or state agency that investigates or prosecutes complaints. A complaint of discrimination, harassment or retaliation may be filed with the California Civil Rights Department ("CRD") at (800) 884-1684, or for the hard of hearing (TTY) (800) 700-2320, or visit calcivilrights.ca.gov. A complaint may also be filed with the Equal Employment Opportunity Commission (EEOC) at (800) 669-4000, or for the hard of hearing (800) 669-6820, or visit www.eeoc.gov.',
       es: 'También puede presentar su queja ante la agencia federal o estatal que investiga o procesa quejas. Una queja de discriminación, acoso o represalias puede presentarse ante el Departamento de Derechos Civiles de California ("CRD") al (800) 884-1684, o para personas con dificultades auditivas (TTY) (800) 700-2320, o visite calcivilrights.ca.gov. También puede presentarse ante la Comisión para la Igualdad de Oportunidades en el Empleo (EEOC) al (800) 669-4000, o para personas con dificultades auditivas (800) 669-6820, o visite www.eeoc.gov.' },
     { t: 'section', en: 'Acknowledgment', es: 'Acuse de Recibo' },
-    { t: 'p', en: 'By my signature below, I acknowledge that I have received a copy of this Discrimination, Harassment and Retaliation Prevention Policy, and (check one) □ do &nbsp; □ do not want to discuss this policy with my Supervisor or another Company official.',
-      es: 'Con mi firma a continuación, reconozco que he recibido una copia de esta Política de Prevención de Discriminación, Acoso y Represalias, y (marque una opción) □ sí deseo &nbsp; □ no deseo discutir esta política con mi Supervisor u otro funcionario de la Compañía.' },
-    { t: 'sig', fieldsEn: ['Print Name', 'Employee Signature', 'Date'], fieldsEs: ['Nombre en Letra de Molde', 'Firma del Empleado', 'Fecha'] },
+    { t: 'p', en: 'By my signature below, I acknowledge that I have received a copy of this Discrimination, Harassment and Retaliation Prevention Policy, and (check one):',
+      es: 'Con mi firma a continuación, reconozco que he recibido una copia de esta Política de Prevención de Discriminación, Acoso y Represalias, y (marque una opción):' },
+    { t: 'list', check: true, fill: true,
+      itemsEn: [ { id: 'wants_discuss', text: 'I do want to discuss this policy with my Supervisor or another Company official.' }, { id: 'no_discuss', text: 'I do not want to discuss this policy with my Supervisor or another Company official.' } ],
+      itemsEs: [ { id: 'wants_discuss', text: 'Sí deseo discutir esta política con mi Supervisor u otro funcionario de la Compañía.' }, { id: 'no_discuss', text: 'No deseo discutir esta política con mi Supervisor u otro funcionario de la Compañía.' } ] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_name', label: 'Print Name', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_name', label: 'Nombre en Letra de Molde', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
@@ -422,7 +458,10 @@ export const ONBOARDING_FORMS = [
   key: 'discriminationackcopy',
   title: { en: 'Acknowledgment of Receipt of Discrimination, Harassment and Retaliation Prevention Policy (Copy for Personnel File)', es: 'Acuse de Recibo de la Política de Prevención de Discriminación, Acoso y Represalias (Copia para el Expediente)' },
   // Identical content to #11 — signed twice in the real packet, one copy
-  // for the employee and one for the personnel file.
+  // for the employee and one for the personnel file. A separate
+  // fillable: true + its own key means it saves its own
+  // training_documents record, independent of #11's.
+  fillable: true,
   blocks: [
     { t: 'p', en: 'We are an Equal Employment Opportunity employer. In order to provide equal opportunities to all individuals, employment decisions are based on merit, qualifications, skills and performance.',
       es: 'Somos un empleador que ofrece Igualdad de Oportunidades de Empleo. Para brindar igualdad de oportunidades a todas las personas, las decisiones de empleo se basan en el mérito, las calificaciones, las habilidades y el desempeño.' },
@@ -441,9 +480,14 @@ export const ONBOARDING_FORMS = [
     { t: 'p', en: 'You may also bring your complaint to the California Civil Rights Department ("CRD") at (800) 884-1684, or visit calcivilrights.ca.gov, or to the Equal Employment Opportunity Commission (EEOC) at (800) 669-4000, or visit www.eeoc.gov.',
       es: 'También puede presentar su queja ante el Departamento de Derechos Civiles de California ("CRD") al (800) 884-1684, o visite calcivilrights.ca.gov, o ante la Comisión para la Igualdad de Oportunidades en el Empleo (EEOC) al (800) 669-4000, o visite www.eeoc.gov.' },
     { t: 'section', en: 'Acknowledgment', es: 'Acuse de Recibo' },
-    { t: 'p', en: 'By my signature below, I acknowledge that I have received a copy of this Discrimination, Harassment and Retaliation Prevention Policy, and (check one) □ do &nbsp; □ do not want to discuss this policy with my Supervisor or another Company official.',
-      es: 'Con mi firma a continuación, reconozco que he recibido una copia de esta Política de Prevención de Discriminación, Acoso y Represalias, y (marque una opción) □ sí deseo &nbsp; □ no deseo discutir esta política con mi Supervisor u otro funcionario de la Compañía.' },
-    { t: 'sig', fieldsEn: ['Print Name', 'Employee Signature', 'Date'], fieldsEs: ['Nombre en Letra de Molde', 'Firma del Empleado', 'Fecha'] },
+    { t: 'p', en: 'By my signature below, I acknowledge that I have received a copy of this Discrimination, Harassment and Retaliation Prevention Policy, and (check one):',
+      es: 'Con mi firma a continuación, reconozco que he recibido una copia de esta Política de Prevención de Discriminación, Acoso y Represalias, y (marque una opción):' },
+    { t: 'list', check: true, fill: true,
+      itemsEn: [ { id: 'wants_discuss', text: 'I do want to discuss this policy with my Supervisor or another Company official.' }, { id: 'no_discuss', text: 'I do not want to discuss this policy with my Supervisor or another Company official.' } ],
+      itemsEs: [ { id: 'wants_discuss', text: 'Sí deseo discutir esta política con mi Supervisor u otro funcionario de la Compañía.' }, { id: 'no_discuss', text: 'No deseo discutir esta política con mi Supervisor u otro funcionario de la Compañía.' } ] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_name', label: 'Print Name', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_name', label: 'Nombre en Letra de Molde', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
@@ -451,6 +495,7 @@ export const ONBOARDING_FORMS = [
 {
   key: 'adrprocedures',
   title: { en: 'SouthWest Landscape, Inc. Alternative Dispute Resolution Procedures', es: 'Procedimientos de Resolución Alternativa de Disputas de SouthWest Landscape, Inc.' },
+  fillable: true,
   blocks: [
     { t: 'p', en: 'SouthWest Landscape, Inc. (hereinafter "the Company") utilizes a system of alternative dispute resolution in order to resolve claims or controversies between the Company and the Employee (collectively, "the Parties"). This Agreement ("Agreement") governs the procedures that shall be followed by the parties when resolving disputes.',
       es: 'SouthWest Landscape, Inc. (en adelante "la Compañía") utiliza un sistema de resolución alternativa de disputas para resolver reclamos o controversias entre la Compañía y el Empleado (colectivamente, "las Partes"). Este Acuerdo ("Acuerdo") rige los procedimientos que las partes deberán seguir al resolver disputas.' },
@@ -471,11 +516,12 @@ export const ONBOARDING_FORMS = [
     { t: 'callout', en: "EMPLOYEE SPECIFICALLY ACKNOWLEDGES THAT BY EXECUTING THIS AGREEMENT, EMPLOYEE WAIVES THE RIGHT TO A JURY TRIAL AS TO ALL ISSUES REGARDING EMPLOYEE'S EMPLOYMENT OR TERMINATION OF EMPLOYMENT. IN ADDITION, EMPLOYEE ACKNOWLEDGES THAT BY EXECUTING THIS AGREEMENT, EMPLOYEE WAIVES THEIR RIGHT TO FILE CLAIMS OF DISCRIMINATION WITH ANY AGENCY OR COURT BUT WILL SUBMIT ANY SUCH CLAIMS TO ARBITRATION.",
       es: 'EL EMPLEADO RECONOCE ESPECÍFICAMENTE QUE AL FIRMAR ESTE ACUERDO, EL EMPLEADO RENUNCIA AL DERECHO A UN JUICIO CON JURADO EN TODOS LOS ASUNTOS RELACIONADOS CON EL EMPLEO O LA TERMINACIÓN DEL EMPLEO DEL EMPLEADO. ADEMÁS, EL EMPLEADO RECONOCE QUE AL FIRMAR ESTE ACUERDO, EL EMPLEADO RENUNCIA A SU DERECHO A PRESENTAR RECLAMOS DE DISCRIMINACIÓN ANTE CUALQUIER AGENCIA O TRIBUNAL, PERO SOMETERÁ DICHOS RECLAMOS A ARBITRAJE.' },
     { t: 'section', en: 'Signatures', es: 'Firmas' },
-    { t: 'grid', cols: 2,
-      cellsEn: [ { label: 'Authorized Company Representative (Print Name)' }, { label: 'Employee (Print Name)' },
-        { label: "Authorized Company Representative's Signature" }, { label: "Employee's Signature" }, { label: 'Date (Month/Day/Year)', span: true } ],
-      cellsEs: [ { label: 'Representante Autorizado de la Compañía (Nombre en Letra de Molde)' }, { label: 'Empleado (Nombre en Letra de Molde)' },
-        { label: 'Firma del Representante Autorizado de la Compañía' }, { label: 'Firma del Empleado' }, { label: 'Fecha (Mes/Día/Año)', span: true } ] },
+    { t: 'grid', cols: 2, fill: true,
+      cellsEn: [ { id: 'rep_name', label: 'Authorized Company Representative (Print Name)' }, { id: 'employee_name', label: 'Employee (Print Name)', prefill: (e) => `${e.first_name} ${e.last_name}` } ],
+      cellsEs: [ { id: 'rep_name', label: 'Representante Autorizado de la Compañía (Nombre en Letra de Molde)' }, { id: 'employee_name', label: 'Empleado (Nombre en Letra de Molde)', prefill: (e) => `${e.first_name} ${e.last_name}` } ] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'rep_signature_data_url', label: "Authorized Company Representative's Signature", kind: 'sig' }, { id: 'employee_signature_data_url', label: "Employee's Signature", kind: 'sig' }, { id: 'date', label: 'Date (Month/Day/Year)', kind: 'date' } ],
+      fieldsEs: [ { id: 'rep_signature_data_url', label: 'Firma del Representante Autorizado de la Compañía', kind: 'sig' }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha (Mes/Día/Año)', kind: 'date' } ] },
     { t: 'fine', en: 'Distribution: Original to Personnel File, Copy to Employee', es: 'Distribución: Original para el Expediente de Personal, Copia para el Empleado' },
   ],
 },
@@ -484,8 +530,11 @@ export const ONBOARDING_FORMS = [
 {
   key: 'pesticidetrainingrecord',
   title: { en: 'Pesticide Safety Training Record', es: 'Registro de Capacitación de Seguridad de Pesticidas' },
+  fillable: true,
   blocks: [
-    { t: 'grid', cols: 2, cellsEn: [{ label: 'Employee' }, { label: 'Date' }], cellsEs: [{ label: 'Empleado' }, { label: 'Fecha' }] },
+    { t: 'grid', cols: 2, fill: true,
+      cellsEn: [ { id: 'employee_name', label: 'Employee', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'top_date', label: 'Date', kind: 'date' } ],
+      cellsEs: [ { id: 'employee_name', label: 'Empleado', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'top_date', label: 'Fecha', kind: 'date' } ] },
     { t: 'section', en: 'Personal Protective Equipment (PPE)', es: 'Equipo de Protección Personal (EPP)' },
     { t: 'p', en: 'Applicators and handlers must wear long sleeved shirt and long pants, work boots with socks, eye protection, and chemical resistant gloves at all times when handling, mixing, and applying pesticides.',
       es: 'Los aplicadores y manipuladores deben usar camisa de manga larga y pantalón largo, botas de trabajo con calcetines, protección ocular y guantes resistentes a productos químicos en todo momento al manipular, mezclar y aplicar pesticidas.' },
@@ -504,21 +553,32 @@ export const ONBOARDING_FORMS = [
     { t: 'fine', en: 'This disciplinary schedule reflects the Company\'s typical response to PPE violations of increasing severity. It does not create a contract of employment or alter the at-will nature of employment. The Company reserves the right to skip any step, including proceeding directly to suspension or termination, based on the severity of the violation or risk posed to the employee or others.',
       es: 'Este calendario disciplinario refleja la respuesta típica de la Compañía ante violaciones de EPP de gravedad creciente. No crea un contrato de empleo ni altera la naturaleza de empleo a voluntad. La Compañía se reserva el derecho de omitir cualquier paso, incluyendo proceder directamente a la suspensión o despido, según la gravedad de la violación o el riesgo que represente para el empleado o para otros.' },
     { t: 'section', en: 'Certification', es: 'Certificación' },
-    { t: 'grid', cols: 2,
-      cellsEn: [ { label: "Trainer's Name / Signature" }, { label: 'Date' }, { label: 'Employee Name / Signature' }, { label: 'Date' } ],
-      cellsEs: [ { label: 'Nombre del Capacitador / Firma' }, { label: 'Fecha' }, { label: 'Nombre del Empleado / Firma' }, { label: 'Fecha' } ] },
+    { t: 'grid', cols: 2, fill: true,
+      cellsEn: [ { id: 'trainer_name', label: "Trainer's Name" }, { id: 'employee_name2', label: 'Employee Name', prefill: (e) => `${e.first_name} ${e.last_name}` } ],
+      cellsEs: [ { id: 'trainer_name', label: 'Nombre del Capacitador' }, { id: 'employee_name2', label: 'Nombre del Empleado', prefill: (e) => `${e.first_name} ${e.last_name}` } ] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'trainer_signature_data_url', label: "Trainer's Signature", kind: 'sig' }, { id: 'trainer_date', label: 'Date', kind: 'date' }, { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'employee_date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'trainer_signature_data_url', label: 'Firma del Capacitador', kind: 'sig' }, { id: 'trainer_date', label: 'Fecha', kind: 'date' }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'employee_date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
 // --------------------------------------------------------------- 15 --
+// Fillable for the top identification/signature block only — the
+// Training Requirements table below is a 17-row per-topic matrix meant
+// to be initialed by hand as each topic is actually covered during
+// training, not something to pre-digitize into 51 interactive fields.
 {
   key: 'pesticidetrainingsheet',
   title: { en: 'Pesticide Safety Training Record Sheet', es: 'Hoja de Registro de Capacitación de Seguridad de Pesticidas' },
+  fillable: true,
   blocks: [
     { t: 'section', en: 'Employee & Trainer Information', es: 'Información del Empleado y Capacitador' },
-    { t: 'grid', cols: 2,
-      cellsEn: [ { label: 'Employee Name' }, { label: 'Employee Signature' }, { label: "Employer's Name" }, { label: "Employer's Signature" }, { label: "Trainer's Signature", span: true } ],
-      cellsEs: [ { label: 'Nombre del Empleado' }, { label: 'Firma del Empleado' }, { label: 'Nombre del Empleador' }, { label: 'Firma del Empleador' }, { label: 'Firma del Capacitador', span: true } ] },
+    { t: 'grid', cols: 2, fill: true,
+      cellsEn: [ { id: 'employee_name', label: 'Employee Name', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employer_name', label: "Employer's Name", prefill: () => 'SouthWest Landscape, Inc.', locked: true } ],
+      cellsEs: [ { id: 'employee_name', label: 'Nombre del Empleado', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employer_name', label: 'Nombre del Empleador', prefill: () => 'SouthWest Landscape, Inc.', locked: true } ] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'employer_signature_data_url', label: "Employer's Signature", kind: 'sig' }, { id: 'trainer_signature_data_url', label: "Trainer's Signature", kind: 'sig' } ],
+      fieldsEs: [ { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'employer_signature_data_url', label: 'Firma del Empleador', kind: 'sig' }, { id: 'trainer_signature_data_url', label: 'Firma del Capacitador', kind: 'sig' } ] },
     { t: 'p', en: 'Assigned Job Duties: □ Mixer/Loader &nbsp; □ Service/Repair &nbsp; □ Flagger &nbsp; □ Applicator &nbsp; □ Other:', es: 'Funciones Asignadas: □ Mezclador/Cargador &nbsp; □ Servicio/Reparación &nbsp; □ Banderero &nbsp; □ Aplicador &nbsp; □ Otro:' },
     { t: 'section', en: 'Training Requirements', es: 'Requisitos de Capacitación' },
     { t: 'table', small: true,
@@ -551,6 +611,7 @@ export const ONBOARDING_FORMS = [
 {
   key: 'gpstracking',
   title: { en: 'GPS Tracking Policy Acknowledgment Form', es: 'Formulario de Reconocimiento de la Política de Rastreo GPS' },
+  fillable: true,
   blocks: [
     { t: 'p', en: 'At SouthWest Landscape, Inc., GPS tracking technology is installed in company-owned vehicles and select equipment to improve safety, efficiency, and accountability. This policy ensures that all employees who operate GPS-enabled company vehicles or equipment understand how and why tracking is used.',
       es: 'En SouthWest Landscape, Inc., la tecnología de rastreo GPS está instalada en vehículos propiedad de la compañía y en equipo seleccionado para mejorar la seguridad, eficiencia y responsabilidad. Esta política asegura que todos los empleados que operen vehículos o equipo de la compañía con GPS entiendan cómo y por qué se utiliza el rastreo.' },
@@ -569,7 +630,9 @@ export const ONBOARDING_FORMS = [
     { t: 'p', en: 'Acknowledgment: I have received, read, and understood the GPS Tracking Policy. I agree to comply and understand that violations may result in disciplinary action, up to and including termination.',
       es: 'Reconocimiento: He recibido, leído y entendido la Política de Rastreo GPS. Acepto cumplir y entiendo que las violaciones pueden resultar en acción disciplinaria, hasta e incluyendo la terminación del empleo.' },
     { t: 'section', en: 'Certification', es: 'Certificación' },
-    { t: 'sig', fieldsEn: ['Employee Signature', 'Date'], fieldsEs: ['Firma del Empleado', 'Fecha'] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
@@ -577,6 +640,7 @@ export const ONBOARDING_FORMS = [
 {
   key: 'photorelease',
   title: { en: 'Photo Release Waiver', es: 'Exención de Divulgación de Fotografías' },
+  fillable: true,
   blocks: [
     { t: 'p', en: '<b>Consent to Use of Likeness:</b> I hereby grant SouthWest Landscape, its affiliates, subsidiaries, licensees, successors, and assigns (collectively, the "Company") the irrevocable, worldwide, royalty-free, and perpetual right to use, reproduce, display, distribute, publish, and create derivative works of my photograph, image, likeness, and job title (collectively, the "Likeness") in any media now known or hereafter devised, including but not limited to print, digital, social media, and video formats.',
       es: '<b>Consentimiento para el Uso de Imagen:</b> Por la presente otorgo a SouthWest Landscape, sus afiliados, subsidiarias, licenciatarios, sucesores y cesionarios (colectivamente, la "Compañía") el derecho irrevocable, mundial, libre de regalías y perpetuo de usar, reproducir, exhibir, distribuir, publicar y crear obras derivadas de mi fotografía, imagen, semejanza y puesto de trabajo (colectivamente, la "Imagen") en cualquier medio ahora conocido o creado en el futuro, incluyendo pero no limitado a formatos impresos, digitales, de redes sociales y de video.' },
@@ -593,16 +657,26 @@ export const ONBOARDING_FORMS = [
     { t: 'p', en: '<b>Acknowledgment:</b> I acknowledge that I have read and fully understand this Consent and Release Form. I understand the nature and purpose of the consent I am giving and that by signing this form I am voluntarily allowing the Company to use my Likeness as described above.',
       es: '<b>Reconocimiento:</b> Reconozco que he leído y entiendo completamente este Formulario de Consentimiento y Renuncia. Entiendo la naturaleza y el propósito del consentimiento que estoy otorgando y que al firmar este formulario estoy permitiendo voluntariamente que la Compañía use mi Imagen según lo descrito anteriormente.' },
     { t: 'section', en: 'Employee Certification', es: 'Certificación del Empleado' },
-    { t: 'grid', cols: 2,
-      cellsEn: [ { label: 'Employee Name (Print)' }, { label: 'Manager/Supervisor Name (Print)' }, { label: 'Employee Signature' }, { label: 'Manager/Supervisor Signature' }, { label: 'Date' }, { label: 'Date' } ],
-      cellsEs: [ { label: 'Nombre del Empleado (Letra de Molde)' }, { label: 'Nombre del Gerente/Supervisor (Letra de Molde)' }, { label: 'Firma del Empleado' }, { label: 'Firma del Gerente/Supervisor' }, { label: 'Fecha' }, { label: 'Fecha' } ] },
+    { t: 'grid', cols: 2, fill: true,
+      cellsEn: [ { id: 'employee_name', label: 'Employee Name (Print)', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'manager_name', label: 'Manager/Supervisor Name (Print)' } ],
+      cellsEs: [ { id: 'employee_name', label: 'Nombre del Empleado (Letra de Molde)', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'manager_name', label: 'Nombre del Gerente/Supervisor (Letra de Molde)' } ] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'employee_date', label: 'Date', kind: 'date' }, { id: 'manager_signature_data_url', label: 'Manager/Supervisor Signature', kind: 'sig' }, { id: 'manager_date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'employee_date', label: 'Fecha', kind: 'date' }, { id: 'manager_signature_data_url', label: 'Firma del Gerente/Supervisor', kind: 'sig' }, { id: 'manager_date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
 // --------------------------------------------------------------- 18 --
+// Fillable+signable, but ALSO only included in the printed packet for
+// employees whose position is on the driver-roles list (see
+// DRIVER_ROLE_TITLES in settings.html / letterhead-assets.js) — David
+// said only driver roles need this policy and would send the role
+// list separately.
 {
   key: 'vehiclepolicy',
   title: { en: 'Company Vehicle Use & Care Policy', es: 'Política de Uso y Cuidado del Vehículo de la Compañía' },
+  fillable: true,
+  driverOnly: true,
   blocks: [
     { t: 'p', en: '<b>Company Vehicles.</b> SouthWest Landscape may assign Company vehicles to certain employees for business purposes. Vehicle use is a privilege, not a right, and may be revoked at any time.',
       es: '<b>Vehículos de la Compañía.</b> SouthWest Landscape puede asignar vehículos de la Compañía a ciertos empleados para fines comerciales. El uso del vehículo es un privilegio, no un derecho, y puede ser revocado en cualquier momento.' },
@@ -641,7 +715,9 @@ export const ONBOARDING_FORMS = [
     { t: 'section', en: 'Employee Acknowledgment', es: 'Reconocimiento del Empleado' },
     { t: 'p', en: 'Employees assigned a Company vehicle must sign this acknowledgment confirming that they understand and agree to comply with all terms of this policy.',
       es: 'Los empleados a quienes se les asigne un vehículo de la Compañía deben firmar este acuse de recibo confirmando que entienden y aceptan cumplir con todos los términos de esta política.' },
-    { t: 'sig', fieldsEn: ['Print Name', 'Employee Signature', 'Date'], fieldsEs: ['Nombre en Letra de Molde', 'Firma del Empleado', 'Fecha'] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_name', label: 'Print Name', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_name', label: 'Nombre en Letra de Molde', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
@@ -649,6 +725,7 @@ export const ONBOARDING_FORMS = [
 {
   key: 'attendancepolicy',
   title: { en: 'Attendance & Punctuality Policy Acknowledgment', es: 'Acuse de Recibo de la Política de Asistencia y Puntualidad' },
+  fillable: true,
   blocks: [
     { t: 'p', en: 'Reliable and punctual attendance is an essential requirement for every position at SouthWest Landscape. This policy outlines expectations for reporting absences, tardiness, and following the Company\'s call-in procedures.',
       es: 'La asistencia confiable y puntual es un requisito esencial para todos los puestos en SouthWest Landscape. Esta política describe las expectativas para reportar ausencias, tardanzas, y seguir los procedimientos de notificación de la Compañía.' },
@@ -679,44 +756,57 @@ export const ONBOARDING_FORMS = [
     { t: 'p', en: 'I acknowledge that I have received, read, and understand SouthWest Landscape\'s Attendance & Punctuality Policy. I understand that reliable attendance is a condition of employment and that failure to comply with this policy may result in corrective action, up to and including termination.',
       es: 'Reconozco que he recibido, leído y entiendo la Política de Asistencia y Puntualidad de SouthWest Landscape. Entiendo que la asistencia confiable es una condición de empleo y que el incumplimiento de esta política puede resultar en acción correctiva, hasta e incluyendo la terminación.' },
     { t: 'section', en: 'Employee Acknowledgment', es: 'Acuse de Recibo del Empleado' },
-    { t: 'sig', fieldsEn: ['Employee Name (Print)', 'Employee Signature', 'Date'], fieldsEs: ['Nombre del Empleado (Letra de Molde)', 'Firma del Empleado', 'Fecha'] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_name', label: 'Employee Name (Print)', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_name', label: 'Nombre del Empleado (Letra de Molde)', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
 // --------------------------------------------------------------- 20 --
+// Self-identification is voluntary by law (EEOC) — fillable, but every
+// answer including gender/race/ethnicity is a real checkbox someone
+// can simply leave unchecked, never a required field.
 {
   key: 'eeo1',
   title: { en: 'Equal Employment Opportunity (EEO-1) — Employee Self-Identification Form', es: 'Igualdad de Oportunidades de Empleo (EEO-1) — Formulario de Autoidentificación del Empleado' },
+  fillable: true,
   blocks: [
     { t: 'section', en: 'Employee Information', es: 'Información del Empleado' },
-    { t: 'grid', cols: 2, cellsEn: [{ label: 'Full Name' }, { label: 'Job Title' }], cellsEs: [{ label: 'Nombre Completo' }, { label: 'Puesto' }] },
-    { t: 'p', en: 'What is your gender? □ Male &nbsp; □ Female &nbsp; □ I choose not to self-identify', es: '¿Cuál es su género? □ Masculino &nbsp; □ Femenino &nbsp; □ Prefiero no autoidentificarme' },
+    { t: 'grid', cols: 2, fill: true,
+      cellsEn: [ { id: 'employee_name', label: 'Full Name', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'job_title', label: 'Job Title', prefill: (e) => e.position || '' } ],
+      cellsEs: [ { id: 'employee_name', label: 'Nombre Completo', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'job_title', label: 'Puesto', prefill: (e) => e.position || '' } ] },
+    { t: 'p', en: 'What is your gender?', es: '¿Cuál es su género?' },
+    { t: 'list', check: true, fill: true,
+      itemsEn: [ { id: 'gender_male', text: 'Male' }, { id: 'gender_female', text: 'Female' }, { id: 'gender_decline', text: 'I choose not to self-identify' } ],
+      itemsEs: [ { id: 'gender_male', text: 'Masculino' }, { id: 'gender_female', text: 'Femenino' }, { id: 'gender_decline', text: 'Prefiero no autoidentificarme' } ] },
     { t: 'section', en: 'Race / Ethnicity — Please mark the category with which you primarily identify', es: 'Raza / Etnicidad — Marque la categoría con la que se identifica principalmente' },
-    { t: 'list',
+    { t: 'list', check: true, fill: true,
       itemsEn: [
-        '□ Hispanic or Latino: a person of Cuban, Mexican, Chicano, Puerto Rican, South or Central American, or other Spanish culture or origin, regardless of race.',
-        '□ White (Not Hispanic or Latino): a person having origins in any of the original peoples of Europe, the Middle East, or North Africa.',
-        '□ Black or African American (Not Hispanic or Latino): a person having origins in any of the black racial groups of Africa.',
-        '□ Asian (Not Hispanic or Latino): a person having origins in any of the original peoples of the Far East, Southeast Asia, or the Indian subcontinent.',
-        '□ Native Hawaiian or Other Pacific Islander (Not Hispanic or Latino): a person having origins in any of the original peoples of Hawaii, Guam, Samoa, or other Pacific Islands.',
-        '□ American Indian or Alaska Native (Not Hispanic or Latino): a person having origins in any of the original peoples of North and South America, and who maintains tribal affiliation or community attachment.',
-        '□ Two or More Races (Not Hispanic or Latino): a person who primarily identifies with two or more of the above race/ethnicity categories.',
-        '□ I do not wish to disclose.',
+        { id: 'race_hispanic', text: 'Hispanic or Latino: a person of Cuban, Mexican, Chicano, Puerto Rican, South or Central American, or other Spanish culture or origin, regardless of race.' },
+        { id: 'race_white', text: 'White (Not Hispanic or Latino): a person having origins in any of the original peoples of Europe, the Middle East, or North Africa.' },
+        { id: 'race_black', text: 'Black or African American (Not Hispanic or Latino): a person having origins in any of the black racial groups of Africa.' },
+        { id: 'race_asian', text: 'Asian (Not Hispanic or Latino): a person having origins in any of the original peoples of the Far East, Southeast Asia, or the Indian subcontinent.' },
+        { id: 'race_pacific', text: 'Native Hawaiian or Other Pacific Islander (Not Hispanic or Latino): a person having origins in any of the original peoples of Hawaii, Guam, Samoa, or other Pacific Islands.' },
+        { id: 'race_native', text: 'American Indian or Alaska Native (Not Hispanic or Latino): a person having origins in any of the original peoples of North and South America, and who maintains tribal affiliation or community attachment.' },
+        { id: 'race_two_or_more', text: 'Two or More Races (Not Hispanic or Latino): a person who primarily identifies with two or more of the above race/ethnicity categories.' },
+        { id: 'race_decline', text: 'I do not wish to disclose.' },
       ],
       itemsEs: [
-        '□ Hispano o Latino: una persona de origen o cultura cubana, mexicana, chicana, puertorriqueña, sudamericana o centroamericana, u otra cultura u origen español, sin importar la raza.',
-        '□ Blanco (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los pueblos originarios de Europa, Medio Oriente o Norte de África.',
-        '□ Negro o Afroamericano (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los grupos raciales negros de África.',
-        '□ Asiático (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los pueblos originarios del Lejano Oriente, Sudeste Asiático o el subcontinente indio.',
-        '□ Nativo de Hawái u Otro Isleño del Pacífico (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los pueblos originarios de Hawái, Guam, Samoa u otras Islas del Pacífico.',
-        '□ Indio Americano o Nativo de Alaska (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los pueblos originarios de Norte y Sudamérica, y que mantiene afiliación tribal o vínculo comunitario.',
-        '□ Dos o Más Razas (No Hispano o Latino): una persona que se identifica principalmente con dos o más de las categorías de raza/etnicidad anteriores.',
-        '□ No deseo revelar esta información.',
+        { id: 'race_hispanic', text: 'Hispano o Latino: una persona de origen o cultura cubana, mexicana, chicana, puertorriqueña, sudamericana o centroamericana, u otra cultura u origen español, sin importar la raza.' },
+        { id: 'race_white', text: 'Blanco (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los pueblos originarios de Europa, Medio Oriente o Norte de África.' },
+        { id: 'race_black', text: 'Negro o Afroamericano (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los grupos raciales negros de África.' },
+        { id: 'race_asian', text: 'Asiático (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los pueblos originarios del Lejano Oriente, Sudeste Asiático o el subcontinente indio.' },
+        { id: 'race_pacific', text: 'Nativo de Hawái u Otro Isleño del Pacífico (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los pueblos originarios de Hawái, Guam, Samoa u otras Islas del Pacífico.' },
+        { id: 'race_native', text: 'Indio Americano o Nativo de Alaska (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los pueblos originarios de Norte y Sudamérica, y que mantiene afiliación tribal o vínculo comunitario.' },
+        { id: 'race_two_or_more', text: 'Dos o Más Razas (No Hispano o Latino): una persona que se identifica principalmente con dos o más de las categorías de raza/etnicidad anteriores.' },
+        { id: 'race_decline', text: 'No deseo revelar esta información.' },
       ] },
     { t: 'fine', en: 'The Equal Employment Opportunity Commission (EEOC) requires organizations with 100 or more employees to complete an EEO-1 report each year. Your employer invites you to self-identify gender and race/ethnicity. Completion of this data is VOLUNTARY and will not affect your opportunity for employment, or terms or conditions of employment. This form will be used for EEO-1 reporting purposes only and will be kept separate from all other personnel records, accessed only by Human Resources.',
       es: 'La Comisión para la Igualdad de Oportunidades en el Empleo (EEOC) requiere que las organizaciones con 100 o más empleados completen un informe EEO-1 cada año. Su empleador le invita a autoidentificar su género y raza/etnicidad. Completar esta información es VOLUNTARIO y no afectará su oportunidad de empleo, ni los términos o condiciones de su empleo. Este formulario se usará únicamente para fines de informes EEO-1 y se mantendrá separado de todos los demás registros de personal, con acceso único por parte de Recursos Humanos.' },
     { t: 'section', en: 'Certification', es: 'Certificación' },
-    { t: 'sig', fieldsEn: ['Signature', 'Date'], fieldsEs: ['Firma', 'Fecha'] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_signature_data_url', label: 'Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_signature_data_url', label: 'Firma', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
     { t: 'fine', en: 'Refusal to complete this form will not subject you to any adverse treatment. This form will be used for governmental reporting purposes only. If we have not received your completed form, the Company will interpret that to mean you have declined self-identification and will be required to obtain the necessary information from visual identification and/or other available information. Thank you for your participation.',
       es: 'Negarse a completar este formulario no lo sujetará a ningún trato adverso. Este formulario se usará únicamente para fines de informes gubernamentales. Si no hemos recibido su formulario completado, la Compañía interpretará que usted ha decidido no autoidentificarse y será necesario obtener la información requerida mediante identificación visual y/u otra información disponible. Gracias por su participación.' },
   ],

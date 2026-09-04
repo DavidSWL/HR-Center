@@ -2096,6 +2096,14 @@ async function renderOnboarding(lang) {
     const jdAckSnap = await getDoc(doc(db, 'training_documents', `${empId}_jobdesc_ack`));
     const savedJdAck = jdAckSnap.exists() ? jdAckSnap.data() : null;
 
+    // The Vehicle Use Policy only prints for driver roles — David's
+    // list, managed at Settings > Driver roles (starts empty until he
+    // populates it; until then no one gets the policy in their packet).
+    const driverRolesSnap = await getDoc(doc(db, 'settings', 'driver_roles'));
+    const driverRoles = driverRolesSnap.exists() ? (driverRolesSnap.data().values || []) : [];
+    const isDriverRole = driverRoles.some((v) => v.active !== false && v.label.trim().toLowerCase() === (emp.position || '').trim().toLowerCase());
+    const packetForms = ONBOARDING_FORMS.filter((f) => !f.driverOnly || isDriverRole);
+
     // The rest of the packet -- the employee's actual Job Description,
     // appended right after the checklist so Load + Print produces the
     // whole orientation packet in one go, not just the checklist.
@@ -2141,7 +2149,7 @@ async function renderOnboarding(lang) {
       ${matchedRole ? `<div class="jd-doc form-page-break" id="onb-form-jobdesc_ack" style="margin-top:24px">${buildJobDescriptionHtml(matchedRole, isEs ? 'es' : 'en', { interactive: true, emp, saved: savedJdAck })}</div>` : `<p class="no-print" style="background:#FDEDEC;border:1px solid #E0A8A0;color:#7A1F2B;font-size:11px;padding:8px 10px;margin:16px 0 0">${isEs
         ? `No se encontró una Descripción del Puesto que coincida con "${escapeHtml(emp.position || '')}" — agréguela desde el generador de Descripción del Puesto si hace falta.`
         : `No Job Description on file matching "${escapeHtml(emp.position || '')}" — add one from the Job Description generator if this role is missing.`}</p>`}
-      ${ONBOARDING_FORMS.map((form) => `
+      ${packetForms.map((form) => `
         <div class="form-doc-inner form-page-break" id="onb-form-${form.key}" style="margin-top:24px">${buildOnboardingFormHtml(form, isEs ? 'es' : 'en', { interactive: true, formKey: form.key, saved: savedByFormKey[form.key], emp })}</div>
       `).join('')}
     `;
@@ -3630,6 +3638,7 @@ function fblank(width) {
 function renderFormBlocks(blocks, lang, ctx) {
   const interactive = !!(ctx && ctx.interactive);
   const formKey = ctx && ctx.formKey;
+  const emp = ctx && ctx.emp;
   const saved = (ctx && ctx.saved) || {};
   const fields = saved.fields || {};
   const sigs = saved.signatures || {};
@@ -3637,7 +3646,18 @@ function renderFormBlocks(blocks, lang, ctx) {
   return blocks.map((b) => {
     const en = b.en, es = b.es;
     if (b.t === 'section') return `<div class="form-section">${lang === 'es' ? es : en}</div>`;
-    if (b.t === 'p') return `<p style="margin:0 0 9px;line-height:1.5">${b.bold ? `<b>${(lang === 'es' ? b.boldEs : b.boldEn)}</b> ` : ''}${lang === 'es' ? es : en}</p>`;
+    if (b.t === 'p') {
+      // A `dyn` paragraph computes its text from the employee record at
+      // render time (Notice to Employee's pre-filled name/job title) —
+      // never stored, just interpolated, same as "compute don't store"
+      // elsewhere in this app. Everything else is the plain static text.
+      // A block with no `es` (the Arbitration Agreement's numbered legal
+      // clauses — see onboardingformsdata.js) falls back to English
+      // rather than showing nothing, since there's no official Spanish
+      // text to show instead.
+      const text = b.dyn ? (lang === 'es' ? b.esFn(emp) : b.enFn(emp)) : (lang === 'es' && es != null ? es : en);
+      return `<p style="margin:0 0 9px;line-height:1.5">${b.bold ? `<b>${(lang === 'es' ? b.boldEs : b.boldEn)}</b> ` : ''}${text}</p>`;
+    }
     if (b.t === 'callout') return `<div class="form-callout">${lang === 'es' ? es : en}</div>`;
     if (b.t === 'pdflink') {
       const printText = lang === 'es' ? b.printEs : b.printEn;
@@ -3660,7 +3680,7 @@ function renderFormBlocks(blocks, lang, ctx) {
           const spanAttr = c.span ? ' style="grid-column:1/-1"' : '';
           if (!c.id) return `<div class="form-cell"${spanAttr}><b>${c.label}</b>${c.value || '&nbsp;'}</div>`;
           const val = fields[c.id] != null ? fields[c.id] : (c.prefill ? c.prefill(ctx.emp) : '');
-          return `<div class="form-cell"${spanAttr}><b>${c.label}</b><input class="ff-text" id="${fid(c.id)}" data-field="${c.id}" type="text" value="${escapeHtml(val)}"${c.locked ? ' readonly' : ''} style="width:100%;border:none;border-bottom:1px solid #999;background:transparent;font:inherit;padding:2px 0"></div>`;
+          return `<div class="form-cell"${spanAttr}><b>${c.label}</b><input class="ff-text" id="${fid(c.id)}" data-field="${c.id}" type="${c.kind === 'date' ? 'date' : 'text'}" value="${escapeHtml(val)}"${c.locked ? ' readonly' : ''} style="width:100%;border:none;border-bottom:1px solid #999;background:transparent;font:inherit;padding:2px 0"></div>`;
         }).join('')}</div>`;
       }
       return `<div class="form-grid ${gridClass}"${gridStyle}>${cells.map((c) => `<div class="form-cell"${c.span ? ' style="grid-column:1/-1"' : ''}><b>${c.label}</b>${c.value || '&nbsp;'}</div>`).join('')}</div>`;
