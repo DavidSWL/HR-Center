@@ -172,10 +172,13 @@ function escapeHtml(str) {
 
 // Signed_at is captured on every signature but isn't automatically shown
 // anywhere — sheets that can be reopened with real saved data (not just
-// a blank form) print it explicitly.
+// a blank form) print it explicitly. Prints the full date AND time (not
+// just the date) so a signed document stands on its own as evidence of
+// exactly when it was signed, not just that it was signed sometime that
+// day — David asked for this specifically to help with court disputes.
 function signedOnHtml(ts) {
   if (!ts?.toDate) return '';
-  return `<div class="dim" style="margin-top:6px;font-size:11.5px">Signed ${formatDate(ts.toDate().toISOString().slice(0, 10))}</div>`;
+  return `<div class="dim" style="margin-top:6px;font-size:11.5px">Signed ${ts.toDate().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</div>`;
 }
 
 // Legal-letter-style long date ("August 18, 2026"), separate from app.js's
@@ -3539,18 +3542,19 @@ function buildJobDescriptionSigBlock(t, lang, ctx) {
     `;
   }
   const fields = (ctx.saved && ctx.saved.fields) || {};
+  const signatureTimes = (ctx.saved && ctx.saved.signatureTimes) || {};
   const inputStyle = 'width:100%;border:none;border-bottom:1px solid #999;background:transparent;font:inherit;padding:2px 0';
   const empName = fields.emp_name != null ? fields.emp_name : `${ctx.emp.first_name} ${ctx.emp.last_name}`;
   return `
     <div class="jd-sig">
       <div>
         <b>${t.empName}</b><input class="ff-text" id="jd__emp_name" type="text" value="${escapeHtml(empName)}" style="${inputStyle}">
-        <b>${t.empSig}</b>${signaturePadHtml('jd__emp_sig_pad', 'jd__emp_sig_clear', 60)}
+        <b>${t.empSig}</b>${signaturePadHtml('jd__emp_sig_pad', 'jd__emp_sig_clear', 60)}<div id="jd__emp_signedon">${signedOnHtml(signatureTimes.emp)}</div>
         <b>${t.date}</b><input class="ff-text" id="jd__emp_date" type="date" value="${escapeHtml(fields.emp_date || '')}" style="${inputStyle}">
       </div>
       <div>
         <b>${t.mgrName}</b><input class="ff-text" id="jd__mgr_name" type="text" value="${escapeHtml(fields.mgr_name || '')}" style="${inputStyle}">
-        <b>${t.mgrSig}</b>${signaturePadHtml('jd__mgr_sig_pad', 'jd__mgr_sig_clear', 60)}
+        <b>${t.mgrSig}</b>${signaturePadHtml('jd__mgr_sig_pad', 'jd__mgr_sig_clear', 60)}<div id="jd__mgr_signedon">${signedOnHtml(signatureTimes.mgr)}</div>
         <b>${t.date}</b><input class="ff-text" id="jd__mgr_date" type="date" value="${escapeHtml(fields.mgr_date || '')}" style="${inputStyle}">
       </div>
     </div>
@@ -3623,21 +3627,33 @@ function wireJobDescriptionAck(lang, empId, saved, items) {
       const empState = sigPads['jd__emp_sig_pad'];
       const mgrState = sigPads['jd__mgr_sig_pad'];
       const signatures = {};
-      if (empState && empState.hasStroke) signatures.emp = document.getElementById('jd__emp_sig_pad').toDataURL('image/png');
-      else if (savedSigs.emp) signatures.emp = savedSigs.emp;
-      if (mgrState && mgrState.hasStroke) signatures.mgr = document.getElementById('jd__mgr_sig_pad').toDataURL('image/png');
-      else if (savedSigs.mgr) signatures.mgr = savedSigs.mgr;
+      const signatureTimes = { ...((saved && saved.signatureTimes) || {}) };
+      const freshlySigned = [];
+      if (empState && empState.hasStroke) {
+        signatures.emp = document.getElementById('jd__emp_sig_pad').toDataURL('image/png');
+        signatureTimes.emp = serverTimestamp();
+        freshlySigned.push('emp');
+      } else if (savedSigs.emp) signatures.emp = savedSigs.emp;
+      if (mgrState && mgrState.hasStroke) {
+        signatures.mgr = document.getElementById('jd__mgr_sig_pad').toDataURL('image/png');
+        signatureTimes.mgr = serverTimestamp();
+        freshlySigned.push('mgr');
+      } else if (savedSigs.mgr) signatures.mgr = savedSigs.mgr;
       await setDoc(doc(db, 'training_documents', `${empId}_jobdesc_ack`), {
         content_type: 'jobdesc_ack',
         emp_id: empId,
         title: 'Job Description — Acknowledgment',
         date: new Date().toISOString().slice(0, 10),
-        fields, signatures,
+        fields, signatures, signatureTimes,
         status: (signatures.emp || signatures.mgr) ? 'signed' : 'in_progress',
         entered_by: profile.uid,
         updated_at: serverTimestamp(),
       }, { merge: true });
       if (signatures.emp || signatures.mgr) await maybeAutoCheckChecklistItem(1, items, empId);
+      freshlySigned.forEach((who) => {
+        const el = document.getElementById(`jd__${who}_signedon`);
+        if (el) el.innerHTML = `<div class="dim" style="margin-top:6px;font-size:11.5px">Signed ${new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</div>`;
+      });
       document.getElementById('jd-ack-status').textContent = lang === 'es' ? 'Guardado.' : 'Saved.';
       showToast('Saved.');
     } catch (err) {
@@ -3727,7 +3743,8 @@ function renderFormBlocks(blocks, lang, ctx) {
         return `<div class="form-grid ${sfields.length === 3 ? 'c3' : 'c2'}">${sfields.map((f) => {
           if (f.kind === 'sig') {
             const canvasId = fid(f.id) + '_pad', clearId = fid(f.id) + '_clear';
-            return `<div class="form-cell"><b>${f.label}</b>${signaturePadHtml(canvasId, clearId, 70)}</div>`;
+            const signedAt = saved.signatureTimes && saved.signatureTimes[f.id];
+            return `<div class="form-cell"><b>${f.label}</b>${signaturePadHtml(canvasId, clearId, 70)}<div id="${fid(f.id)}_signedon">${signedOnHtml(signedAt)}</div></div>`;
           }
           const val = fields[f.id] != null ? fields[f.id] : (f.prefill ? f.prefill(ctx.emp) : '');
           return `<div class="form-cell"><b>${f.label}</b><input class="ff-text" id="${fid(f.id)}" data-field="${f.id}" type="${f.kind === 'date' ? 'date' : 'text'}" value="${escapeHtml(val)}" style="width:100%;border:none;border-bottom:1px solid #999;background:transparent;font:inherit;padding:2px 0"></div>`;
@@ -3790,12 +3807,16 @@ function wireFillableOnboardingForm(form, lang, empId, saved, items) {
       document.querySelectorAll(`.ff-text[id^="ff__${form.key}__"]`).forEach((inp) => { fields[inp.dataset.field] = inp.value; });
       document.querySelectorAll(`.ff-check[id^="ff__${form.key}__"]`).forEach((cb) => { fields[cb.dataset.field] = cb.checked; });
       const signatures = {};
+      const signatureTimes = { ...((saved && saved.signatureTimes) || {}) };
       let hasAnySignature = false;
+      const freshlySignedIds = [];
       sigFieldIds.forEach((id) => {
         const canvasId = `ff__${form.key}__${id}_pad`;
         const state = sigPads[canvasId];
         if (state && state.hasStroke) {
           signatures[id] = document.getElementById(canvasId).toDataURL('image/png');
+          signatureTimes[id] = serverTimestamp();
+          freshlySignedIds.push(id);
           hasAnySignature = true;
         } else if (saved && saved.signatures && saved.signatures[id]) {
           signatures[id] = saved.signatures[id];
@@ -3809,11 +3830,19 @@ function wireFillableOnboardingForm(form, lang, empId, saved, items) {
         date: new Date().toISOString().slice(0, 10),
         fields,
         signatures,
+        signatureTimes,
         status: hasAnySignature ? 'signed' : 'in_progress',
         entered_by: profile.uid,
         updated_at: serverTimestamp(),
       }, { merge: true });
       if (hasAnySignature) await maybeAutoCheckChecklistItem(form.checklistIndex, items, empId);
+      // serverTimestamp() only resolves once the write lands — show the
+      // moment the signature was actually captured (right now) rather
+      // than waiting on a re-fetch just to prove a timestamp exists.
+      freshlySignedIds.forEach((id) => {
+        const el = document.getElementById(`ff__${form.key}__${id}_signedon`);
+        if (el) el.innerHTML = `<div class="dim" style="margin-top:6px;font-size:11.5px">Signed ${new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</div>`;
+      });
       statusEl.textContent = lang === 'es' ? 'Guardado.' : 'Saved.';
       showToast('Saved.');
     } catch (err) {
