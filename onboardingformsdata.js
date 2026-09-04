@@ -530,8 +530,11 @@ export const ONBOARDING_FORMS = [
 {
   key: 'pesticidetrainingrecord',
   title: { en: 'Pesticide Safety Training Record', es: 'Registro de Capacitación de Seguridad de Pesticidas' },
+  fillable: true,
   blocks: [
-    { t: 'grid', cols: 2, cellsEn: [{ label: 'Employee' }, { label: 'Date' }], cellsEs: [{ label: 'Empleado' }, { label: 'Fecha' }] },
+    { t: 'grid', cols: 2, fill: true,
+      cellsEn: [ { id: 'employee_name', label: 'Employee', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'top_date', label: 'Date', kind: 'date' } ],
+      cellsEs: [ { id: 'employee_name', label: 'Empleado', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'top_date', label: 'Fecha', kind: 'date' } ] },
     { t: 'section', en: 'Personal Protective Equipment (PPE)', es: 'Equipo de Protección Personal (EPP)' },
     { t: 'p', en: 'Applicators and handlers must wear long sleeved shirt and long pants, work boots with socks, eye protection, and chemical resistant gloves at all times when handling, mixing, and applying pesticides.',
       es: 'Los aplicadores y manipuladores deben usar camisa de manga larga y pantalón largo, botas de trabajo con calcetines, protección ocular y guantes resistentes a productos químicos en todo momento al manipular, mezclar y aplicar pesticidas.' },
@@ -550,21 +553,32 @@ export const ONBOARDING_FORMS = [
     { t: 'fine', en: 'This disciplinary schedule reflects the Company\'s typical response to PPE violations of increasing severity. It does not create a contract of employment or alter the at-will nature of employment. The Company reserves the right to skip any step, including proceeding directly to suspension or termination, based on the severity of the violation or risk posed to the employee or others.',
       es: 'Este calendario disciplinario refleja la respuesta típica de la Compañía ante violaciones de EPP de gravedad creciente. No crea un contrato de empleo ni altera la naturaleza de empleo a voluntad. La Compañía se reserva el derecho de omitir cualquier paso, incluyendo proceder directamente a la suspensión o despido, según la gravedad de la violación o el riesgo que represente para el empleado o para otros.' },
     { t: 'section', en: 'Certification', es: 'Certificación' },
-    { t: 'grid', cols: 2,
-      cellsEn: [ { label: "Trainer's Name / Signature" }, { label: 'Date' }, { label: 'Employee Name / Signature' }, { label: 'Date' } ],
-      cellsEs: [ { label: 'Nombre del Capacitador / Firma' }, { label: 'Fecha' }, { label: 'Nombre del Empleado / Firma' }, { label: 'Fecha' } ] },
+    { t: 'grid', cols: 2, fill: true,
+      cellsEn: [ { id: 'trainer_name', label: "Trainer's Name" }, { id: 'employee_name2', label: 'Employee Name', prefill: (e) => `${e.first_name} ${e.last_name}` } ],
+      cellsEs: [ { id: 'trainer_name', label: 'Nombre del Capacitador' }, { id: 'employee_name2', label: 'Nombre del Empleado', prefill: (e) => `${e.first_name} ${e.last_name}` } ] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'trainer_signature_data_url', label: "Trainer's Signature", kind: 'sig' }, { id: 'trainer_date', label: 'Date', kind: 'date' }, { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'employee_date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'trainer_signature_data_url', label: 'Firma del Capacitador', kind: 'sig' }, { id: 'trainer_date', label: 'Fecha', kind: 'date' }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'employee_date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
 // --------------------------------------------------------------- 15 --
+// Fillable for the top identification/signature block only — the
+// Training Requirements table below is a 17-row per-topic matrix meant
+// to be initialed by hand as each topic is actually covered during
+// training, not something to pre-digitize into 51 interactive fields.
 {
   key: 'pesticidetrainingsheet',
   title: { en: 'Pesticide Safety Training Record Sheet', es: 'Hoja de Registro de Capacitación de Seguridad de Pesticidas' },
+  fillable: true,
   blocks: [
     { t: 'section', en: 'Employee & Trainer Information', es: 'Información del Empleado y Capacitador' },
-    { t: 'grid', cols: 2,
-      cellsEn: [ { label: 'Employee Name' }, { label: 'Employee Signature' }, { label: "Employer's Name" }, { label: "Employer's Signature" }, { label: "Trainer's Signature", span: true } ],
-      cellsEs: [ { label: 'Nombre del Empleado' }, { label: 'Firma del Empleado' }, { label: 'Nombre del Empleador' }, { label: 'Firma del Empleador' }, { label: 'Firma del Capacitador', span: true } ] },
+    { t: 'grid', cols: 2, fill: true,
+      cellsEn: [ { id: 'employee_name', label: 'Employee Name', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employer_name', label: "Employer's Name", prefill: () => 'SouthWest Landscape, Inc.', locked: true } ],
+      cellsEs: [ { id: 'employee_name', label: 'Nombre del Empleado', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employer_name', label: 'Nombre del Empleador', prefill: () => 'SouthWest Landscape, Inc.', locked: true } ] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'employer_signature_data_url', label: "Employer's Signature", kind: 'sig' }, { id: 'trainer_signature_data_url', label: "Trainer's Signature", kind: 'sig' } ],
+      fieldsEs: [ { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'employer_signature_data_url', label: 'Firma del Empleador', kind: 'sig' }, { id: 'trainer_signature_data_url', label: 'Firma del Capacitador', kind: 'sig' } ] },
     { t: 'p', en: 'Assigned Job Duties: □ Mixer/Loader &nbsp; □ Service/Repair &nbsp; □ Flagger &nbsp; □ Applicator &nbsp; □ Other:', es: 'Funciones Asignadas: □ Mezclador/Cargador &nbsp; □ Servicio/Reparación &nbsp; □ Banderero &nbsp; □ Aplicador &nbsp; □ Otro:' },
     { t: 'section', en: 'Training Requirements', es: 'Requisitos de Capacitación' },
     { t: 'table', small: true,
@@ -597,6 +611,7 @@ export const ONBOARDING_FORMS = [
 {
   key: 'gpstracking',
   title: { en: 'GPS Tracking Policy Acknowledgment Form', es: 'Formulario de Reconocimiento de la Política de Rastreo GPS' },
+  fillable: true,
   blocks: [
     { t: 'p', en: 'At SouthWest Landscape, Inc., GPS tracking technology is installed in company-owned vehicles and select equipment to improve safety, efficiency, and accountability. This policy ensures that all employees who operate GPS-enabled company vehicles or equipment understand how and why tracking is used.',
       es: 'En SouthWest Landscape, Inc., la tecnología de rastreo GPS está instalada en vehículos propiedad de la compañía y en equipo seleccionado para mejorar la seguridad, eficiencia y responsabilidad. Esta política asegura que todos los empleados que operen vehículos o equipo de la compañía con GPS entiendan cómo y por qué se utiliza el rastreo.' },
@@ -615,7 +630,9 @@ export const ONBOARDING_FORMS = [
     { t: 'p', en: 'Acknowledgment: I have received, read, and understood the GPS Tracking Policy. I agree to comply and understand that violations may result in disciplinary action, up to and including termination.',
       es: 'Reconocimiento: He recibido, leído y entendido la Política de Rastreo GPS. Acepto cumplir y entiendo que las violaciones pueden resultar en acción disciplinaria, hasta e incluyendo la terminación del empleo.' },
     { t: 'section', en: 'Certification', es: 'Certificación' },
-    { t: 'sig', fieldsEn: ['Employee Signature', 'Date'], fieldsEs: ['Firma del Empleado', 'Fecha'] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
@@ -623,6 +640,7 @@ export const ONBOARDING_FORMS = [
 {
   key: 'photorelease',
   title: { en: 'Photo Release Waiver', es: 'Exención de Divulgación de Fotografías' },
+  fillable: true,
   blocks: [
     { t: 'p', en: '<b>Consent to Use of Likeness:</b> I hereby grant SouthWest Landscape, its affiliates, subsidiaries, licensees, successors, and assigns (collectively, the "Company") the irrevocable, worldwide, royalty-free, and perpetual right to use, reproduce, display, distribute, publish, and create derivative works of my photograph, image, likeness, and job title (collectively, the "Likeness") in any media now known or hereafter devised, including but not limited to print, digital, social media, and video formats.',
       es: '<b>Consentimiento para el Uso de Imagen:</b> Por la presente otorgo a SouthWest Landscape, sus afiliados, subsidiarias, licenciatarios, sucesores y cesionarios (colectivamente, la "Compañía") el derecho irrevocable, mundial, libre de regalías y perpetuo de usar, reproducir, exhibir, distribuir, publicar y crear obras derivadas de mi fotografía, imagen, semejanza y puesto de trabajo (colectivamente, la "Imagen") en cualquier medio ahora conocido o creado en el futuro, incluyendo pero no limitado a formatos impresos, digitales, de redes sociales y de video.' },
@@ -639,16 +657,26 @@ export const ONBOARDING_FORMS = [
     { t: 'p', en: '<b>Acknowledgment:</b> I acknowledge that I have read and fully understand this Consent and Release Form. I understand the nature and purpose of the consent I am giving and that by signing this form I am voluntarily allowing the Company to use my Likeness as described above.',
       es: '<b>Reconocimiento:</b> Reconozco que he leído y entiendo completamente este Formulario de Consentimiento y Renuncia. Entiendo la naturaleza y el propósito del consentimiento que estoy otorgando y que al firmar este formulario estoy permitiendo voluntariamente que la Compañía use mi Imagen según lo descrito anteriormente.' },
     { t: 'section', en: 'Employee Certification', es: 'Certificación del Empleado' },
-    { t: 'grid', cols: 2,
-      cellsEn: [ { label: 'Employee Name (Print)' }, { label: 'Manager/Supervisor Name (Print)' }, { label: 'Employee Signature' }, { label: 'Manager/Supervisor Signature' }, { label: 'Date' }, { label: 'Date' } ],
-      cellsEs: [ { label: 'Nombre del Empleado (Letra de Molde)' }, { label: 'Nombre del Gerente/Supervisor (Letra de Molde)' }, { label: 'Firma del Empleado' }, { label: 'Firma del Gerente/Supervisor' }, { label: 'Fecha' }, { label: 'Fecha' } ] },
+    { t: 'grid', cols: 2, fill: true,
+      cellsEn: [ { id: 'employee_name', label: 'Employee Name (Print)', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'manager_name', label: 'Manager/Supervisor Name (Print)' } ],
+      cellsEs: [ { id: 'employee_name', label: 'Nombre del Empleado (Letra de Molde)', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'manager_name', label: 'Nombre del Gerente/Supervisor (Letra de Molde)' } ] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'employee_date', label: 'Date', kind: 'date' }, { id: 'manager_signature_data_url', label: 'Manager/Supervisor Signature', kind: 'sig' }, { id: 'manager_date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'employee_date', label: 'Fecha', kind: 'date' }, { id: 'manager_signature_data_url', label: 'Firma del Gerente/Supervisor', kind: 'sig' }, { id: 'manager_date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
 // --------------------------------------------------------------- 18 --
+// Fillable+signable, but ALSO only included in the printed packet for
+// employees whose position is on the driver-roles list (see
+// DRIVER_ROLE_TITLES in settings.html / letterhead-assets.js) — David
+// said only driver roles need this policy and would send the role
+// list separately.
 {
   key: 'vehiclepolicy',
   title: { en: 'Company Vehicle Use & Care Policy', es: 'Política de Uso y Cuidado del Vehículo de la Compañía' },
+  fillable: true,
+  driverOnly: true,
   blocks: [
     { t: 'p', en: '<b>Company Vehicles.</b> SouthWest Landscape may assign Company vehicles to certain employees for business purposes. Vehicle use is a privilege, not a right, and may be revoked at any time.',
       es: '<b>Vehículos de la Compañía.</b> SouthWest Landscape puede asignar vehículos de la Compañía a ciertos empleados para fines comerciales. El uso del vehículo es un privilegio, no un derecho, y puede ser revocado en cualquier momento.' },
@@ -687,7 +715,9 @@ export const ONBOARDING_FORMS = [
     { t: 'section', en: 'Employee Acknowledgment', es: 'Reconocimiento del Empleado' },
     { t: 'p', en: 'Employees assigned a Company vehicle must sign this acknowledgment confirming that they understand and agree to comply with all terms of this policy.',
       es: 'Los empleados a quienes se les asigne un vehículo de la Compañía deben firmar este acuse de recibo confirmando que entienden y aceptan cumplir con todos los términos de esta política.' },
-    { t: 'sig', fieldsEn: ['Print Name', 'Employee Signature', 'Date'], fieldsEs: ['Nombre en Letra de Molde', 'Firma del Empleado', 'Fecha'] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_name', label: 'Print Name', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_name', label: 'Nombre en Letra de Molde', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
@@ -695,6 +725,7 @@ export const ONBOARDING_FORMS = [
 {
   key: 'attendancepolicy',
   title: { en: 'Attendance & Punctuality Policy Acknowledgment', es: 'Acuse de Recibo de la Política de Asistencia y Puntualidad' },
+  fillable: true,
   blocks: [
     { t: 'p', en: 'Reliable and punctual attendance is an essential requirement for every position at SouthWest Landscape. This policy outlines expectations for reporting absences, tardiness, and following the Company\'s call-in procedures.',
       es: 'La asistencia confiable y puntual es un requisito esencial para todos los puestos en SouthWest Landscape. Esta política describe las expectativas para reportar ausencias, tardanzas, y seguir los procedimientos de notificación de la Compañía.' },
@@ -725,44 +756,57 @@ export const ONBOARDING_FORMS = [
     { t: 'p', en: 'I acknowledge that I have received, read, and understand SouthWest Landscape\'s Attendance & Punctuality Policy. I understand that reliable attendance is a condition of employment and that failure to comply with this policy may result in corrective action, up to and including termination.',
       es: 'Reconozco que he recibido, leído y entiendo la Política de Asistencia y Puntualidad de SouthWest Landscape. Entiendo que la asistencia confiable es una condición de empleo y que el incumplimiento de esta política puede resultar en acción correctiva, hasta e incluyendo la terminación.' },
     { t: 'section', en: 'Employee Acknowledgment', es: 'Acuse de Recibo del Empleado' },
-    { t: 'sig', fieldsEn: ['Employee Name (Print)', 'Employee Signature', 'Date'], fieldsEs: ['Nombre del Empleado (Letra de Molde)', 'Firma del Empleado', 'Fecha'] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_name', label: 'Employee Name (Print)', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_name', label: 'Nombre del Empleado (Letra de Molde)', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
 // --------------------------------------------------------------- 20 --
+// Self-identification is voluntary by law (EEOC) — fillable, but every
+// answer including gender/race/ethnicity is a real checkbox someone
+// can simply leave unchecked, never a required field.
 {
   key: 'eeo1',
   title: { en: 'Equal Employment Opportunity (EEO-1) — Employee Self-Identification Form', es: 'Igualdad de Oportunidades de Empleo (EEO-1) — Formulario de Autoidentificación del Empleado' },
+  fillable: true,
   blocks: [
     { t: 'section', en: 'Employee Information', es: 'Información del Empleado' },
-    { t: 'grid', cols: 2, cellsEn: [{ label: 'Full Name' }, { label: 'Job Title' }], cellsEs: [{ label: 'Nombre Completo' }, { label: 'Puesto' }] },
-    { t: 'p', en: 'What is your gender? □ Male &nbsp; □ Female &nbsp; □ I choose not to self-identify', es: '¿Cuál es su género? □ Masculino &nbsp; □ Femenino &nbsp; □ Prefiero no autoidentificarme' },
+    { t: 'grid', cols: 2, fill: true,
+      cellsEn: [ { id: 'employee_name', label: 'Full Name', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'job_title', label: 'Job Title', prefill: (e) => e.position || '' } ],
+      cellsEs: [ { id: 'employee_name', label: 'Nombre Completo', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'job_title', label: 'Puesto', prefill: (e) => e.position || '' } ] },
+    { t: 'p', en: 'What is your gender?', es: '¿Cuál es su género?' },
+    { t: 'list', check: true, fill: true,
+      itemsEn: [ { id: 'gender_male', text: 'Male' }, { id: 'gender_female', text: 'Female' }, { id: 'gender_decline', text: 'I choose not to self-identify' } ],
+      itemsEs: [ { id: 'gender_male', text: 'Masculino' }, { id: 'gender_female', text: 'Femenino' }, { id: 'gender_decline', text: 'Prefiero no autoidentificarme' } ] },
     { t: 'section', en: 'Race / Ethnicity — Please mark the category with which you primarily identify', es: 'Raza / Etnicidad — Marque la categoría con la que se identifica principalmente' },
-    { t: 'list',
+    { t: 'list', check: true, fill: true,
       itemsEn: [
-        '□ Hispanic or Latino: a person of Cuban, Mexican, Chicano, Puerto Rican, South or Central American, or other Spanish culture or origin, regardless of race.',
-        '□ White (Not Hispanic or Latino): a person having origins in any of the original peoples of Europe, the Middle East, or North Africa.',
-        '□ Black or African American (Not Hispanic or Latino): a person having origins in any of the black racial groups of Africa.',
-        '□ Asian (Not Hispanic or Latino): a person having origins in any of the original peoples of the Far East, Southeast Asia, or the Indian subcontinent.',
-        '□ Native Hawaiian or Other Pacific Islander (Not Hispanic or Latino): a person having origins in any of the original peoples of Hawaii, Guam, Samoa, or other Pacific Islands.',
-        '□ American Indian or Alaska Native (Not Hispanic or Latino): a person having origins in any of the original peoples of North and South America, and who maintains tribal affiliation or community attachment.',
-        '□ Two or More Races (Not Hispanic or Latino): a person who primarily identifies with two or more of the above race/ethnicity categories.',
-        '□ I do not wish to disclose.',
+        { id: 'race_hispanic', text: 'Hispanic or Latino: a person of Cuban, Mexican, Chicano, Puerto Rican, South or Central American, or other Spanish culture or origin, regardless of race.' },
+        { id: 'race_white', text: 'White (Not Hispanic or Latino): a person having origins in any of the original peoples of Europe, the Middle East, or North Africa.' },
+        { id: 'race_black', text: 'Black or African American (Not Hispanic or Latino): a person having origins in any of the black racial groups of Africa.' },
+        { id: 'race_asian', text: 'Asian (Not Hispanic or Latino): a person having origins in any of the original peoples of the Far East, Southeast Asia, or the Indian subcontinent.' },
+        { id: 'race_pacific', text: 'Native Hawaiian or Other Pacific Islander (Not Hispanic or Latino): a person having origins in any of the original peoples of Hawaii, Guam, Samoa, or other Pacific Islands.' },
+        { id: 'race_native', text: 'American Indian or Alaska Native (Not Hispanic or Latino): a person having origins in any of the original peoples of North and South America, and who maintains tribal affiliation or community attachment.' },
+        { id: 'race_two_or_more', text: 'Two or More Races (Not Hispanic or Latino): a person who primarily identifies with two or more of the above race/ethnicity categories.' },
+        { id: 'race_decline', text: 'I do not wish to disclose.' },
       ],
       itemsEs: [
-        '□ Hispano o Latino: una persona de origen o cultura cubana, mexicana, chicana, puertorriqueña, sudamericana o centroamericana, u otra cultura u origen español, sin importar la raza.',
-        '□ Blanco (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los pueblos originarios de Europa, Medio Oriente o Norte de África.',
-        '□ Negro o Afroamericano (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los grupos raciales negros de África.',
-        '□ Asiático (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los pueblos originarios del Lejano Oriente, Sudeste Asiático o el subcontinente indio.',
-        '□ Nativo de Hawái u Otro Isleño del Pacífico (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los pueblos originarios de Hawái, Guam, Samoa u otras Islas del Pacífico.',
-        '□ Indio Americano o Nativo de Alaska (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los pueblos originarios de Norte y Sudamérica, y que mantiene afiliación tribal o vínculo comunitario.',
-        '□ Dos o Más Razas (No Hispano o Latino): una persona que se identifica principalmente con dos o más de las categorías de raza/etnicidad anteriores.',
-        '□ No deseo revelar esta información.',
+        { id: 'race_hispanic', text: 'Hispano o Latino: una persona de origen o cultura cubana, mexicana, chicana, puertorriqueña, sudamericana o centroamericana, u otra cultura u origen español, sin importar la raza.' },
+        { id: 'race_white', text: 'Blanco (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los pueblos originarios de Europa, Medio Oriente o Norte de África.' },
+        { id: 'race_black', text: 'Negro o Afroamericano (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los grupos raciales negros de África.' },
+        { id: 'race_asian', text: 'Asiático (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los pueblos originarios del Lejano Oriente, Sudeste Asiático o el subcontinente indio.' },
+        { id: 'race_pacific', text: 'Nativo de Hawái u Otro Isleño del Pacífico (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los pueblos originarios de Hawái, Guam, Samoa u otras Islas del Pacífico.' },
+        { id: 'race_native', text: 'Indio Americano o Nativo de Alaska (No Hispano o Latino): una persona que tiene orígenes en cualquiera de los pueblos originarios de Norte y Sudamérica, y que mantiene afiliación tribal o vínculo comunitario.' },
+        { id: 'race_two_or_more', text: 'Dos o Más Razas (No Hispano o Latino): una persona que se identifica principalmente con dos o más de las categorías de raza/etnicidad anteriores.' },
+        { id: 'race_decline', text: 'No deseo revelar esta información.' },
       ] },
     { t: 'fine', en: 'The Equal Employment Opportunity Commission (EEOC) requires organizations with 100 or more employees to complete an EEO-1 report each year. Your employer invites you to self-identify gender and race/ethnicity. Completion of this data is VOLUNTARY and will not affect your opportunity for employment, or terms or conditions of employment. This form will be used for EEO-1 reporting purposes only and will be kept separate from all other personnel records, accessed only by Human Resources.',
       es: 'La Comisión para la Igualdad de Oportunidades en el Empleo (EEOC) requiere que las organizaciones con 100 o más empleados completen un informe EEO-1 cada año. Su empleador le invita a autoidentificar su género y raza/etnicidad. Completar esta información es VOLUNTARIO y no afectará su oportunidad de empleo, ni los términos o condiciones de su empleo. Este formulario se usará únicamente para fines de informes EEO-1 y se mantendrá separado de todos los demás registros de personal, con acceso único por parte de Recursos Humanos.' },
     { t: 'section', en: 'Certification', es: 'Certificación' },
-    { t: 'sig', fieldsEn: ['Signature', 'Date'], fieldsEs: ['Firma', 'Fecha'] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_signature_data_url', label: 'Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_signature_data_url', label: 'Firma', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
     { t: 'fine', en: 'Refusal to complete this form will not subject you to any adverse treatment. This form will be used for governmental reporting purposes only. If we have not received your completed form, the Company will interpret that to mean you have declined self-identification and will be required to obtain the necessary information from visual identification and/or other available information. Thank you for your participation.',
       es: 'Negarse a completar este formulario no lo sujetará a ningún trato adverso. Este formulario se usará únicamente para fines de informes gubernamentales. Si no hemos recibido su formulario completado, la Compañía interpretará que usted ha decidido no autoidentificarse y será necesario obtener la información requerida mediante identificación visual y/u otra información disponible. Gracias por su participación.' },
   ],

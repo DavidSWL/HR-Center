@@ -51,4 +51,5 @@ export const ONBOARDING_CHECKLIST = [
   { en: 'Acknowledgment of Receipt of Handbook', es: 'Acuse de Recibo del Manual del Empleado' },
   { en: 'Acknowledgment of Receipt of Handbook – Copy for file', es: 'Acuse de Recibo del Manual del Empleado – Copia para el archivo' },
   { en: 'Acknowledgment of Receipt of Discrimination, Harassment and Retaliation Prevention Policy', es: 'Acuse de Recibo de la Política de Prevención de Discriminación, Acoso y Represalias' },
+  { en: 'Equal Employment Opportunity (EEO-1) Self-Identification', es: 'Autoidentificación de Igualdad de Oportunidades de Empleo (EEO-1)' },
 ];
