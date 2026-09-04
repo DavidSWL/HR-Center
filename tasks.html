@@ -9,6 +9,13 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
+<style>
+.tabs{display:flex;gap:0;border:1px solid var(--line);width:fit-content;margin-bottom:16px}
+.tabs .tab{padding:9px 20px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;color:var(--faint);border-right:1px solid var(--line)}
+.tabs .tab:last-child{border-right:none}
+.tabs .tab.active{background:var(--accent);color:#fff}
+.tabs.inner{margin:12px 16px 0}
+</style>
 </head>
 <body>
 
@@ -28,7 +35,14 @@
     </header>
 
     <section class="view">
-      <div class="card" style="margin-bottom:16px">
+
+      <div class="tabs" id="top-tabs">
+        <div class="tab active" data-tab="open">Open tasks</div>
+        <div class="tab" data-tab="assign">Assign task</div>
+      </div>
+
+      <div id="top-tab-assign" hidden>
+      <div class="card">
         <div class="card-h"><h3>Assign a task</h3><span>One person, with enough context to start without asking</span></div>
         <div class="card-body">
           <form id="task-form">
@@ -59,7 +73,9 @@
           </form>
         </div>
       </div>
+      </div>
 
+      <div id="top-tab-open">
       <div class="card">
         <div class="card-h"><h3>Open tasks</h3><span id="tasks-summary">—</span></div>
         <div class="tools">
@@ -68,6 +84,10 @@
             <option value="open">Open</option>
             <option value="all">All, including completed</option>
           </select>
+        </div>
+        <div class="tabs inner" id="view-tabs">
+          <div class="tab active" data-tab="calendar">Calendar</div>
+          <div class="tab" data-tab="list">List</div>
         </div>
         <div id="cal-view">
           <div class="tools" style="border-top:0">
@@ -81,10 +101,11 @@
           <p class="dim" style="margin:-6px 16px 10px;font-size:11px">Purple-bordered entries are 30/60/90 reviews still due — click one to open Reviews. Terminated employees' reviews don't show here.</p>
           <div id="cal-grid"></div>
         </div>
-        <table id="list-view" style="margin-top:16px">
+        <table id="list-view" style="margin-top:16px" hidden>
           <thead><tr><th>Due</th><th>Assigned to</th><th>What's needed</th><th>Recurring</th><th></th></tr></thead>
           <tbody id="rows"></tbody>
         </table>
+      </div>
       </div>
     </section>
   </div>
@@ -312,11 +333,31 @@ async function reassignTask(id, newUid) {
 document.getElementById('person-filter').addEventListener('change', () => { render(); renderCalendar(); });
 document.getElementById('status-filter').addEventListener('change', render);
 
+// ---- Top-level tabs (Open tasks / Assign task) and, inside Open
+// tasks, the Calendar/List view tabs -- same pattern as ATS and the
+// Employee profile page. ----
+document.querySelectorAll('#top-tabs .tab').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#top-tabs .tab').forEach((b) => b.classList.toggle('active', b === btn));
+    document.getElementById('top-tab-open').hidden = btn.dataset.tab !== 'open';
+    document.getElementById('top-tab-assign').hidden = btn.dataset.tab !== 'assign';
+  });
+});
+document.querySelectorAll('#view-tabs .tab').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#view-tabs .tab').forEach((b) => b.classList.toggle('active', b === btn));
+    document.getElementById('cal-view').hidden = btn.dataset.tab !== 'calendar';
+    document.getElementById('list-view').hidden = btn.dataset.tab !== 'list';
+  });
+});
+
 // ---- Calendar view — month grid of due dates, so a deadline is a
 // place on a calendar you can see coming, not just a row in a list.
-// Shown above the list, always both on screen. Shows every task
-// regardless of the Open/All filter above (open and complete together)
-// since "how close are we this month" is exactly the open-vs-done
+// Kept up to date even while the List tab is showing (both render off
+// the same load), so switching tabs never shows stale data. Shows
+// every task regardless of the Open/All filter above (open and
+// complete together) since "how close are we this month" is exactly
+// the open-vs-done
 // comparison that filter would hide. ----
 
 let calMonth = new Date();
