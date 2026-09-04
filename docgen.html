@@ -2154,8 +2154,8 @@ async function renderOnboarding(lang) {
       `).join('')}
     `;
 
-    fillableForms.forEach((form) => wireFillableOnboardingForm(form, isEs ? 'es' : 'en', empId, savedByFormKey[form.key]));
-    if (matchedRole) wireJobDescriptionAck(isEs ? 'es' : 'en', empId, savedJdAck);
+    fillableForms.forEach((form) => wireFillableOnboardingForm(form, isEs ? 'es' : 'en', empId, savedByFormKey[form.key], items));
+    if (matchedRole) wireJobDescriptionAck(isEs ? 'es' : 'en', empId, savedJdAck, items);
 
     if (window.location.hash) {
       const target = document.getElementById(window.location.hash.slice(1));
@@ -3567,7 +3567,42 @@ function buildJobDescriptionSigBlock(t, lang, ctx) {
 // unrelated, employee-agnostic "Save to Documents" button on the
 // standalone Job Description generator (content_type: 'jobdesc'), which
 // saves the role's reference text, not any one person's signature.
-function wireJobDescriptionAck(lang, empId, saved) {
+// Auto-checks the onboarding checklist item that corresponds to a
+// document once it's actually signed (see checklistIndex on each
+// fillable ONBOARDING_FORMS entry, and the hardcoded index 1 for the
+// Job Description ack, which isn't part of that array). Reuses the
+// same write shape as the manual checkbox (saveCheck, in
+// renderOnboarding below) so it's indistinguishable from someone
+// checking it off by hand, and flows straight into compliance.html's
+// onboarding-checklist grid, which reads this same
+// employees/{id}/onboarding_docs collection. Never un-checks — if a
+// signature is later cleared, that's a manual review, not an
+// auto-uncheck.
+async function maybeAutoCheckChecklistItem(index, items, empId) {
+  if (index == null || !items) return;
+  const it = items[index];
+  if (!it || it.on_file) return;
+  try {
+    await setDoc(doc(db, 'employees', empId, 'onboarding_docs', it.id), {
+      title: ONBOARDING_CHECKLIST[index].en,
+      on_file: true,
+      entered_by: profile.uid,
+      updated_at: serverTimestamp(),
+    }, { merge: true });
+    it.on_file = true;
+    const row = document.querySelector(`.onb-row[data-index="${index}"]`);
+    if (row) {
+      const cb = row.querySelector('.onb-check');
+      if (cb) cb.checked = true;
+      const printEl = row.querySelector('.print-only');
+      if (printEl) printEl.textContent = '☑';
+    }
+  } catch (err) {
+    console.error('Could not auto-check onboarding checklist item', err);
+  }
+}
+
+function wireJobDescriptionAck(lang, empId, saved, items) {
   const btn = document.getElementById('jd-ack-save-btn');
   if (!btn) return;
   setUpSignaturePad('jd__emp_sig_pad', 'jd__emp_sig_clear');
@@ -3602,6 +3637,7 @@ function wireJobDescriptionAck(lang, empId, saved) {
         entered_by: profile.uid,
         updated_at: serverTimestamp(),
       }, { merge: true });
+      if (signatures.emp || signatures.mgr) await maybeAutoCheckChecklistItem(1, items, empId);
       document.getElementById('jd-ack-status').textContent = lang === 'es' ? 'Guardado.' : 'Saved.';
       showToast('Saved.');
     } catch (err) {
@@ -3729,7 +3765,7 @@ function buildOnboardingFormHtml(form, lang, ctx) {
 // so re-saving always updates the same record instead of piling up
 // duplicates, and so the Profile > Documents tab / re-opening the
 // packet later can find it again with a plain getDoc.
-function wireFillableOnboardingForm(form, lang, empId, saved) {
+function wireFillableOnboardingForm(form, lang, empId, saved, items) {
   const sigBlocks = form.blocks.filter((b) => b.t === 'sig' && b.fill);
   const sigFieldIds = [];
   sigBlocks.forEach((b) => {
@@ -3777,6 +3813,7 @@ function wireFillableOnboardingForm(form, lang, empId, saved) {
         entered_by: profile.uid,
         updated_at: serverTimestamp(),
       }, { merge: true });
+      if (hasAnySignature) await maybeAutoCheckChecklistItem(form.checklistIndex, items, empId);
       statusEl.textContent = lang === 'es' ? 'Guardado.' : 'Saved.';
       showToast('Saved.');
     } catch (err) {

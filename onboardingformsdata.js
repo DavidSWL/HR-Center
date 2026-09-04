@@ -60,6 +60,7 @@ export const ONBOARDING_FORMS = [
   key: 'emergency',
   title: { en: 'Emergency Form', es: 'Formulario de Emergencia' },
   fillable: true,
+  checklistIndex: 4,
   blocks: [
     { t: 'section', en: 'Employee Information', es: 'Información del Empleado' },
     { t: 'grid', cols: 2, fill: true,
@@ -133,6 +134,7 @@ export const ONBOARDING_FORMS = [
   key: 'directdeposit',
   title: { en: 'Authorization for Direct Deposit', es: 'Autorización de Depósito Directo' },
   fillable: true,
+  checklistIndex: 9,
   blocks: [
     { t: 'section', en: 'Bank Information', es: 'Información Bancaria' },
     { t: 'grid', cols: 2, fill: true,
@@ -165,6 +167,7 @@ export const ONBOARDING_FORMS = [
   key: 'employeepackage',
   title: { en: 'Employee Package — Acknowledgment of Company Property', es: 'Paquete de Empleo — Reconocimiento de Propiedad de la Compañía' },
   fillable: true,
+  checklistIndex: 10,
   blocks: [
     { t: 'grid', cols: 1, fill: true, cellsEn: [{ id: 'department', label: 'Department' }], cellsEs: [{ id: 'department', label: 'Departamento' }] },
     { t: 'section', en: 'Items Provided by the Company', es: 'Artículos Proporcionados por la Compañía' },
@@ -287,6 +290,7 @@ export const ONBOARDING_FORMS = [
   key: 'confidentiality',
   title: { en: 'Confidentiality and Trade Secrets Agreement', es: 'Acuerdo de Confidencialidad y Secretos Comerciales' },
   fillable: true,
+  checklistIndex: 13,
   blocks: [
     { t: 'p', dyn: true,
       enFn: (e) => `Company: SouthWest Landscape, Inc. &nbsp; Employee: <b>${e.first_name} ${e.last_name}</b>`,
@@ -366,6 +370,7 @@ export const ONBOARDING_FORMS = [
   key: 'handbookack',
   title: { en: 'Acknowledgment of Receipt of Employee Handbook', es: 'Acuse de Recibo del Manual del Empleado' },
   fillable: true,
+  checklistIndex: 22,
   blocks: [
     { t: 'p', en: 'If I am a nonexempt employee, I understand that I will be authorized and permitted to take an unpaid, duty-free meal period of no less than 30 minutes whenever I exceed five hours in a work day. The meal period must begin prior to completing my fifth hour of work unless I am scheduled to work six (6) hours or less, and we agree in writing that the meal period may be waived. I understand I am authorized and permitted a second unpaid, duty-free meal period of thirty minutes whenever I work for a period of more than 10 hours in any workday.',
       es: 'Si soy un empleado no exento, entiendo que estaré autorizado y se me permitirá tomar un período de comida sin pago y libre de tareas de no menos de 30 minutos cada vez que exceda las cinco horas en un día laboral. El período de comida debe comenzar antes de completar mi quinta hora de trabajo, a menos que esté programado para trabajar seis (6) horas o menos y acordemos por escrito que se puede renunciar al período de comida. Entiendo que estoy autorizado y se me permite un segundo período de comida sin pago y libre de tareas de treinta minutos cada vez que trabaje por un período de más de 10 horas en cualquier día laboral.' },
@@ -393,6 +398,7 @@ export const ONBOARDING_FORMS = [
   // fillable: true + its own key means it saves its own
   // training_documents record, independent of #9's.
   fillable: true,
+  checklistIndex: 23,
   blocks: [
     { t: 'p', en: 'If I am a nonexempt employee, I understand that I will be authorized and permitted to take an unpaid, duty-free meal period of no less than 30 minutes whenever I exceed five hours in a work day. The meal period must begin prior to completing my fifth hour of work unless I am scheduled to work six (6) hours or less, and we agree in writing that the meal period may be waived. I understand I am authorized and permitted a second unpaid, duty-free meal period of thirty minutes whenever I work for a period of more than 10 hours in any workday.',
       es: 'Si soy un empleado no exento, entiendo que estaré autorizado y se me permitirá tomar un período de comida sin pago y libre de tareas de no menos de 30 minutos cada vez que exceda las cinco horas en un día laboral. El período de comida debe comenzar antes de completar mi quinta hora de trabajo, a menos que esté programado para trabajar seis (6) horas o menos y acordemos por escrito que se puede renunciar al período de comida. Entiendo que estoy autorizado y se me permite un segundo período de comida sin pago y libre de tareas de treinta minutos cada vez que trabaje por un período de más de 10 horas en cualquier día laboral.' },
@@ -416,6 +422,7 @@ export const ONBOARDING_FORMS = [
   key: 'discriminationack',
   title: { en: 'Acknowledgment of Receipt of Discrimination, Harassment and Retaliation Prevention Policy', es: 'Acuse de Recibo de la Política de Prevención de Discriminación, Acoso y Represalias' },
   fillable: true,
+  checklistIndex: 24,
   blocks: [
     { t: 'p', en: 'We are an Equal Employment Opportunity employer. In order to provide equal opportunities to all individuals, employment decisions are based on merit, qualifications, skills and performance.',
       es: 'Somos un empleador que ofrece Igualdad de Oportunidades de Empleo. Para brindar igualdad de oportunidades a todas las personas, las decisiones de empleo se basan en el mérito, las calificaciones, las habilidades y el desempeño.' },
@@ -460,8 +467,11 @@ export const ONBOARDING_FORMS = [
   // Identical content to #11 — signed twice in the real packet, one copy
   // for the employee and one for the personnel file. A separate
   // fillable: true + its own key means it saves its own
-  // training_documents record, independent of #11's.
+  // training_documents record, independent of #11's. Both this and #11
+  // share checklistIndex 24 — the checklist only has one line for this
+  // document, and either copy being signed satisfies it.
   fillable: true,
+  checklistIndex: 24,
   blocks: [
     { t: 'p', en: 'We are an Equal Employment Opportunity employer. In order to provide equal opportunities to all individuals, employment decisions are based on merit, qualifications, skills and performance.',
       es: 'Somos un empleador que ofrece Igualdad de Oportunidades de Empleo. Para brindar igualdad de oportunidades a todas las personas, las decisiones de empleo se basan en el mérito, las calificaciones, las habilidades y el desempeño.' },
@@ -496,6 +506,7 @@ export const ONBOARDING_FORMS = [
   key: 'adrprocedures',
   title: { en: 'SouthWest Landscape, Inc. Alternative Dispute Resolution Procedures', es: 'Procedimientos de Resolución Alternativa de Disputas de SouthWest Landscape, Inc.' },
   fillable: true,
+  checklistIndex: 14,
   blocks: [
     { t: 'p', en: 'SouthWest Landscape, Inc. (hereinafter "the Company") utilizes a system of alternative dispute resolution in order to resolve claims or controversies between the Company and the Employee (collectively, "the Parties"). This Agreement ("Agreement") governs the procedures that shall be followed by the parties when resolving disputes.',
       es: 'SouthWest Landscape, Inc. (en adelante "la Compañía") utiliza un sistema de resolución alternativa de disputas para resolver reclamos o controversias entre la Compañía y el Empleado (colectivamente, "las Partes"). Este Acuerdo ("Acuerdo") rige los procedimientos que las partes deberán seguir al resolver disputas.' },
@@ -531,6 +542,7 @@ export const ONBOARDING_FORMS = [
   key: 'pesticidetrainingrecord',
   title: { en: 'Pesticide Safety Training Record', es: 'Registro de Capacitación de Seguridad de Pesticidas' },
   fillable: true,
+  checklistIndex: 15,
   blocks: [
     { t: 'grid', cols: 2, fill: true,
       cellsEn: [ { id: 'employee_name', label: 'Employee', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'top_date', label: 'Date', kind: 'date' } ],
@@ -571,6 +583,7 @@ export const ONBOARDING_FORMS = [
   key: 'pesticidetrainingsheet',
   title: { en: 'Pesticide Safety Training Record Sheet', es: 'Hoja de Registro de Capacitación de Seguridad de Pesticidas' },
   fillable: true,
+  checklistIndex: 16,
   blocks: [
     { t: 'section', en: 'Employee & Trainer Information', es: 'Información del Empleado y Capacitador' },
     { t: 'grid', cols: 2, fill: true,
@@ -612,6 +625,7 @@ export const ONBOARDING_FORMS = [
   key: 'gpstracking',
   title: { en: 'GPS Tracking Policy Acknowledgment Form', es: 'Formulario de Reconocimiento de la Política de Rastreo GPS' },
   fillable: true,
+  checklistIndex: 17,
   blocks: [
     { t: 'p', en: 'At SouthWest Landscape, Inc., GPS tracking technology is installed in company-owned vehicles and select equipment to improve safety, efficiency, and accountability. This policy ensures that all employees who operate GPS-enabled company vehicles or equipment understand how and why tracking is used.',
       es: 'En SouthWest Landscape, Inc., la tecnología de rastreo GPS está instalada en vehículos propiedad de la compañía y en equipo seleccionado para mejorar la seguridad, eficiencia y responsabilidad. Esta política asegura que todos los empleados que operen vehículos o equipo de la compañía con GPS entiendan cómo y por qué se utiliza el rastreo.' },
@@ -641,6 +655,7 @@ export const ONBOARDING_FORMS = [
   key: 'photorelease',
   title: { en: 'Photo Release Waiver', es: 'Exención de Divulgación de Fotografías' },
   fillable: true,
+  checklistIndex: 18,
   blocks: [
     { t: 'p', en: '<b>Consent to Use of Likeness:</b> I hereby grant SouthWest Landscape, its affiliates, subsidiaries, licensees, successors, and assigns (collectively, the "Company") the irrevocable, worldwide, royalty-free, and perpetual right to use, reproduce, display, distribute, publish, and create derivative works of my photograph, image, likeness, and job title (collectively, the "Likeness") in any media now known or hereafter devised, including but not limited to print, digital, social media, and video formats.',
       es: '<b>Consentimiento para el Uso de Imagen:</b> Por la presente otorgo a SouthWest Landscape, sus afiliados, subsidiarias, licenciatarios, sucesores y cesionarios (colectivamente, la "Compañía") el derecho irrevocable, mundial, libre de regalías y perpetuo de usar, reproducir, exhibir, distribuir, publicar y crear obras derivadas de mi fotografía, imagen, semejanza y puesto de trabajo (colectivamente, la "Imagen") en cualquier medio ahora conocido o creado en el futuro, incluyendo pero no limitado a formatos impresos, digitales, de redes sociales y de video.' },
@@ -676,6 +691,7 @@ export const ONBOARDING_FORMS = [
   key: 'vehiclepolicy',
   title: { en: 'Company Vehicle Use & Care Policy', es: 'Política de Uso y Cuidado del Vehículo de la Compañía' },
   fillable: true,
+  checklistIndex: 20,
   driverOnly: true,
   blocks: [
     { t: 'p', en: '<b>Company Vehicles.</b> SouthWest Landscape may assign Company vehicles to certain employees for business purposes. Vehicle use is a privilege, not a right, and may be revoked at any time.',
@@ -726,6 +742,7 @@ export const ONBOARDING_FORMS = [
   key: 'attendancepolicy',
   title: { en: 'Attendance & Punctuality Policy Acknowledgment', es: 'Acuse de Recibo de la Política de Asistencia y Puntualidad' },
   fillable: true,
+  checklistIndex: 21,
   blocks: [
     { t: 'p', en: 'Reliable and punctual attendance is an essential requirement for every position at SouthWest Landscape. This policy outlines expectations for reporting absences, tardiness, and following the Company\'s call-in procedures.',
       es: 'La asistencia confiable y puntual es un requisito esencial para todos los puestos en SouthWest Landscape. Esta política describe las expectativas para reportar ausencias, tardanzas, y seguir los procedimientos de notificación de la Compañía.' },
@@ -770,6 +787,7 @@ export const ONBOARDING_FORMS = [
   key: 'eeo1',
   title: { en: 'Equal Employment Opportunity (EEO-1) — Employee Self-Identification Form', es: 'Igualdad de Oportunidades de Empleo (EEO-1) — Formulario de Autoidentificación del Empleado' },
   fillable: true,
+  checklistIndex: 25,
   blocks: [
     { t: 'section', en: 'Employee Information', es: 'Información del Empleado' },
     { t: 'grid', cols: 2, fill: true,
