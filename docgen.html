@@ -2083,6 +2083,24 @@ async function renderOnboarding(lang) {
       return found || { id: String(i), title: docItem.en, on_file: false, _unsaved: true };
     });
 
+    // Fillable onboarding documents each keep one training_documents
+    // record per employee (id `${empId}_${formKey}`) — fetch whatever
+    // is already on file so the packet reopens pre-filled/pre-signed
+    // instead of blank every time.
+    const fillableForms = ONBOARDING_FORMS.filter((f) => f.fillable);
+    const savedByFormKey = {};
+    await Promise.all(fillableForms.map(async (f) => {
+      const d = await getDoc(doc(db, 'training_documents', `${empId}_${f.key}`));
+      if (d.exists()) savedByFormKey[f.key] = d.data();
+    }));
+    const jdAckSnap = await getDoc(doc(db, 'training_documents', `${empId}_jobdesc_ack`));
+    const savedJdAck = jdAckSnap.exists() ? jdAckSnap.data() : null;
+
+    // The rest of the packet -- the employee's actual Job Description,
+    // appended right after the checklist so Load + Print produces the
+    // whole orientation packet in one go, not just the checklist.
+    const matchedRole = JOB_DESCRIPTIONS.find((r) => r.title.en.toLowerCase() === (emp.position || '').trim().toLowerCase());
+
     const sheet = document.getElementById('onb-sheet');
     sheet.hidden = false;
     sheet.innerHTML = `
@@ -2120,22 +2138,21 @@ async function renderOnboarding(lang) {
           <div>${isEs ? 'Fecha' : 'Date'}: ${formatDate(new Date().toISOString().slice(0, 10))}</div>
         </div>
       </div>
-      ${(() => {
-        // The rest of the packet -- the employee's actual Job Description,
-        // appended right after the checklist so Load + Print produces the
-        // whole orientation packet in one go, not just the checklist.
-        const role = JOB_DESCRIPTIONS.find((r) => r.title.en.toLowerCase() === (emp.position || '').trim().toLowerCase());
-        if (!role) {
-          return `<p class="no-print" style="background:#FDEDEC;border:1px solid #E0A8A0;color:#7A1F2B;font-size:11px;padding:8px 10px;margin:16px 0 0">${isEs
-            ? `No se encontró una Descripción del Puesto que coincida con "${escapeHtml(emp.position || '')}" — agréguela desde el generador de Descripción del Puesto si hace falta.`
-            : `No Job Description on file matching "${escapeHtml(emp.position || '')}" — add one from the Job Description generator if this role is missing.`}</p>`;
-        }
-        return `<div class="jd-doc form-page-break" style="margin-top:24px">${buildJobDescriptionHtml(role, isEs ? 'es' : 'en')}</div>`;
-      })()}
+      ${matchedRole ? `<div class="jd-doc form-page-break" id="onb-form-jobdesc_ack" style="margin-top:24px">${buildJobDescriptionHtml(matchedRole, isEs ? 'es' : 'en', { interactive: true, emp, saved: savedJdAck })}</div>` : `<p class="no-print" style="background:#FDEDEC;border:1px solid #E0A8A0;color:#7A1F2B;font-size:11px;padding:8px 10px;margin:16px 0 0">${isEs
+        ? `No se encontró una Descripción del Puesto que coincida con "${escapeHtml(emp.position || '')}" — agréguela desde el generador de Descripción del Puesto si hace falta.`
+        : `No Job Description on file matching "${escapeHtml(emp.position || '')}" — add one from the Job Description generator if this role is missing.`}</p>`}
       ${ONBOARDING_FORMS.map((form) => `
-        <div class="form-doc-inner form-page-break" style="margin-top:24px">${buildOnboardingFormHtml(form, isEs ? 'es' : 'en')}</div>
+        <div class="form-doc-inner form-page-break" id="onb-form-${form.key}" style="margin-top:24px">${buildOnboardingFormHtml(form, isEs ? 'es' : 'en', { interactive: true, formKey: form.key, saved: savedByFormKey[form.key], emp })}</div>
       `).join('')}
     `;
+
+    fillableForms.forEach((form) => wireFillableOnboardingForm(form, isEs ? 'es' : 'en', empId, savedByFormKey[form.key]));
+    if (matchedRole) wireJobDescriptionAck(isEs ? 'es' : 'en', empId, savedJdAck);
+
+    if (window.location.hash) {
+      const target = document.getElementById(window.location.hash.slice(1));
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
 
     async function saveCheck(cb) {
       try {
@@ -3419,7 +3436,7 @@ function jdField(role, base, lang) {
 // wrapper's contents) so it can be dropped into the standalone Job
 // Description generator AND embedded inside the onboarding packet,
 // without duplicating this whole template in two places.
-function buildJobDescriptionHtml(role, lang) {
+function buildJobDescriptionHtml(role, lang, ctx) {
   const t = {
     en: { doctype: 'Job Description', sub: 'Employee Review & Signature Document', ack: 'Acknowledgment', equipTitle: 'Equipment — Must Operate Safely', category: 'Category',
           physReq: 'Physical Requirement', physNotes: 'Notes', ada: 'Reasonable accommodations will be evaluated through the ADA interactive process in partnership with HR.',
@@ -3489,28 +3506,134 @@ function buildJobDescriptionHtml(role, lang) {
       <div class="jd-ada">${escapeHtml(adaNote)}</div>
       <div class="jd-ack">
         <b>${t.ack}:</b> ${escapeHtml(ack)}
-        <div class="jd-sig">
-          <div><b>${t.empName}</b><div class="line"></div><b>${t.empSig}</b><div class="line"></div><b>${t.date}</b><div class="line"></div></div>
-          <div><b>${t.mgrName}</b><div class="line"></div><b>${t.mgrSig}</b><div class="line"></div><b>${t.date}</b><div class="line"></div></div>
-        </div>
+        ${buildJobDescriptionSigBlock(t, lang, ctx)}
       </div>
       <div class="jd-footer">${escapeHtml(footer)}</div>
     </div>
   `;
 }
 
+// The acknowledgment signature block is static (blank print lines) on
+// the standalone Job Description generator, but interactive when
+// embedded in a specific new hire's onboarding packet (ctx.interactive)
+// — employee types their name, signs, and dates; the manager's name/
+// signature/date can be left blank and filled in later, since they
+// often aren't in the room for onboarding, and reopening the packet
+// (docgen.html?open=onboarding&emp=<id>) preloads whatever's already
+// on file instead of losing it.
+function buildJobDescriptionSigBlock(t, lang, ctx) {
+  if (!ctx || !ctx.interactive) {
+    return `
+      <div class="jd-sig">
+        <div><b>${t.empName}</b><div class="line"></div><b>${t.empSig}</b><div class="line"></div><b>${t.date}</b><div class="line"></div></div>
+        <div><b>${t.mgrName}</b><div class="line"></div><b>${t.mgrSig}</b><div class="line"></div><b>${t.date}</b><div class="line"></div></div>
+      </div>
+    `;
+  }
+  const fields = (ctx.saved && ctx.saved.fields) || {};
+  const inputStyle = 'width:100%;border:none;border-bottom:1px solid #999;background:transparent;font:inherit;padding:2px 0';
+  const empName = fields.emp_name != null ? fields.emp_name : `${ctx.emp.first_name} ${ctx.emp.last_name}`;
+  return `
+    <div class="jd-sig">
+      <div>
+        <b>${t.empName}</b><input class="ff-text" id="jd__emp_name" type="text" value="${escapeHtml(empName)}" style="${inputStyle}">
+        <b>${t.empSig}</b>${signaturePadHtml('jd__emp_sig_pad', 'jd__emp_sig_clear', 60)}
+        <b>${t.date}</b><input class="ff-text" id="jd__emp_date" type="date" value="${escapeHtml(fields.emp_date || '')}" style="${inputStyle}">
+      </div>
+      <div>
+        <b>${t.mgrName}</b><input class="ff-text" id="jd__mgr_name" type="text" value="${escapeHtml(fields.mgr_name || '')}" style="${inputStyle}">
+        <b>${t.mgrSig}</b>${signaturePadHtml('jd__mgr_sig_pad', 'jd__mgr_sig_clear', 60)}
+        <b>${t.date}</b><input class="ff-text" id="jd__mgr_date" type="date" value="${escapeHtml(fields.mgr_date || '')}" style="${inputStyle}">
+      </div>
+    </div>
+    <div class="no-print" style="margin-top:10px;display:flex;align-items:center;gap:10px">
+      <button type="button" class="gh solid" id="jd-ack-save-btn">${lang === 'es' ? 'Guardar este documento' : 'Save this document'}</button>
+      <span id="jd-ack-status" class="dim" style="font-size:11.5px"></span>
+    </div>
+  `;
+}
+
+// Wires the Job Description acknowledgment's signature pads + Save
+// button (see buildJobDescriptionSigBlock above). Persists to its own
+// training_documents record, `${empId}_jobdesc_ack` — distinct from the
+// unrelated, employee-agnostic "Save to Documents" button on the
+// standalone Job Description generator (content_type: 'jobdesc'), which
+// saves the role's reference text, not any one person's signature.
+function wireJobDescriptionAck(lang, empId, saved) {
+  const btn = document.getElementById('jd-ack-save-btn');
+  if (!btn) return;
+  setUpSignaturePad('jd__emp_sig_pad', 'jd__emp_sig_clear');
+  setUpSignaturePad('jd__mgr_sig_pad', 'jd__mgr_sig_clear');
+  const savedSigs = (saved && saved.signatures) || {};
+  if (savedSigs.emp) drawExistingSignatureDataUrl('jd__emp_sig_pad', savedSigs.emp);
+  if (savedSigs.mgr) drawExistingSignatureDataUrl('jd__mgr_sig_pad', savedSigs.mgr);
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      const fields = {
+        emp_name: document.getElementById('jd__emp_name').value,
+        emp_date: document.getElementById('jd__emp_date').value,
+        mgr_name: document.getElementById('jd__mgr_name').value,
+        mgr_date: document.getElementById('jd__mgr_date').value,
+      };
+      const empState = sigPads['jd__emp_sig_pad'];
+      const mgrState = sigPads['jd__mgr_sig_pad'];
+      const signatures = {};
+      if (empState && empState.hasStroke) signatures.emp = document.getElementById('jd__emp_sig_pad').toDataURL('image/png');
+      else if (savedSigs.emp) signatures.emp = savedSigs.emp;
+      if (mgrState && mgrState.hasStroke) signatures.mgr = document.getElementById('jd__mgr_sig_pad').toDataURL('image/png');
+      else if (savedSigs.mgr) signatures.mgr = savedSigs.mgr;
+      await setDoc(doc(db, 'training_documents', `${empId}_jobdesc_ack`), {
+        content_type: 'jobdesc_ack',
+        emp_id: empId,
+        title: 'Job Description — Acknowledgment',
+        date: new Date().toISOString().slice(0, 10),
+        fields, signatures,
+        status: (signatures.emp || signatures.mgr) ? 'signed' : 'in_progress',
+        entered_by: profile.uid,
+        updated_at: serverTimestamp(),
+      }, { merge: true });
+      document.getElementById('jd-ack-status').textContent = lang === 'es' ? 'Guardado.' : 'Saved.';
+      showToast('Saved.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
 // ---- Blank onboarding reference forms (Emergency Form, Confidentiality
 // Agreement, GPS policy, etc.) — these are static, print-only documents
-// transcribed from the real SWL packet. Nothing on them is ever saved;
-// they exist purely so HR can print a full paper packet for a new hire.
-// ONBOARDING_FORMS supplies each document as a list of simple content
-// blocks (paragraph, grid, list, table, signature row...); this turns
-// those blocks into the same .form-doc visual language as the rest of
-// the app instead of every document hand-rolling its own markup.
+// transcribed from the real SWL packet. ONBOARDING_FORMS supplies each
+// document as a list of simple content blocks (paragraph, grid, list,
+// table, signature row...); this turns those blocks into the same
+// .form-doc visual language as the rest of the app instead of every
+// document hand-rolling its own markup.
+//
+// Most forms stay pure print-only — nothing on them is ever saved. A
+// form that sets `fillable: true` (see ONBOARDING_FORMS) gets real
+// inputs/checkboxes/signature pads instead, wired up by
+// wireFillableOnboardingForm() below and persisted to a single
+// training_documents record per (employee, form) — same collection
+// every other signed document in this app already uses, so it shows up
+// on the employee's Profile > Documents tab for free. A block only
+// becomes interactive if it sets `fill: true` itself AND its cell/item/
+// field carries an `id` — the Direct Deposit SSN line, for example,
+// stays a blank grid cell with no id, so there's no way to type a
+// social security number into it even on a fillable form.
 function fblank(width) {
   return `<span class="fblank" style="min-width:${width || 130}px"></span>`;
 }
-function renderFormBlocks(blocks, lang) {
+function renderFormBlocks(blocks, lang, ctx) {
+  const interactive = !!(ctx && ctx.interactive);
+  const formKey = ctx && ctx.formKey;
+  const saved = (ctx && ctx.saved) || {};
+  const fields = saved.fields || {};
+  const sigs = saved.signatures || {};
+  const fid = (id) => `ff__${formKey}__${id}`;
   return blocks.map((b) => {
     const en = b.en, es = b.es;
     if (b.t === 'section') return `<div class="form-section">${lang === 'es' ? es : en}</div>`;
@@ -3523,15 +3646,38 @@ function renderFormBlocks(blocks, lang) {
     if (b.t === 'fine') return `<div class="form-fine">${lang === 'es' ? es : en}</div>`;
     if (b.t === 'list') {
       const items = lang === 'es' ? b.itemsEs : b.itemsEn;
+      if (b.fill && interactive) {
+        return `<ul class="form-list">${items.map((it) => `<li><label style="cursor:pointer;display:flex;gap:6px;align-items:flex-start"><input type="checkbox" class="ff-check" id="${fid(it.id)}" data-field="${it.id}" ${fields[it.id] ? 'checked' : ''}><span>${it.text}</span></label></li>`).join('')}</ul>`;
+      }
       return `<ul class="form-list${b.check ? '' : ' bullets'}">${items.map((it) => `<li>${b.check ? '□ ' : ''}${it}</li>`).join('')}</ul>`;
     }
     if (b.t === 'grid') {
       const cells = lang === 'es' ? b.cellsEs : b.cellsEn;
-      return `<div class="form-grid ${b.cols === 3 ? 'c3' : b.cols === 1 ? 'c1' : 'c2'}" style="${b.cols === 1 ? 'grid-template-columns:1fr' : ''}">${cells.map((c) => `<div class="form-cell"${c.span ? ' style="grid-column:1/-1"' : ''}><b>${c.label}</b>${c.value || '&nbsp;'}</div>`).join('')}</div>`;
+      const gridClass = b.cols === 3 ? 'c3' : b.cols === 1 ? 'c1' : 'c2';
+      const gridStyle = b.cols === 1 ? ' style="grid-template-columns:1fr"' : '';
+      if (b.fill && interactive) {
+        return `<div class="form-grid ${gridClass}"${gridStyle}>${cells.map((c) => {
+          const spanAttr = c.span ? ' style="grid-column:1/-1"' : '';
+          if (!c.id) return `<div class="form-cell"${spanAttr}><b>${c.label}</b>${c.value || '&nbsp;'}</div>`;
+          const val = fields[c.id] != null ? fields[c.id] : (c.prefill ? c.prefill(ctx.emp) : '');
+          return `<div class="form-cell"${spanAttr}><b>${c.label}</b><input class="ff-text" id="${fid(c.id)}" data-field="${c.id}" type="text" value="${escapeHtml(val)}"${c.locked ? ' readonly' : ''} style="width:100%;border:none;border-bottom:1px solid #999;background:transparent;font:inherit;padding:2px 0"></div>`;
+        }).join('')}</div>`;
+      }
+      return `<div class="form-grid ${gridClass}"${gridStyle}>${cells.map((c) => `<div class="form-cell"${c.span ? ' style="grid-column:1/-1"' : ''}><b>${c.label}</b>${c.value || '&nbsp;'}</div>`).join('')}</div>`;
     }
     if (b.t === 'sig') {
-      const fields = lang === 'es' ? b.fieldsEs : b.fieldsEn;
-      return `<div class="form-grid ${fields.length === 3 ? 'c3' : 'c2'}">${fields.map((f) => `<div class="form-cell"><b>${f}</b>&nbsp;</div>`).join('')}</div>`;
+      const sfields = lang === 'es' ? b.fieldsEs : b.fieldsEn;
+      if (b.fill && interactive) {
+        return `<div class="form-grid ${sfields.length === 3 ? 'c3' : 'c2'}">${sfields.map((f) => {
+          if (f.kind === 'sig') {
+            const canvasId = fid(f.id) + '_pad', clearId = fid(f.id) + '_clear';
+            return `<div class="form-cell"><b>${f.label}</b>${signaturePadHtml(canvasId, clearId, 70)}</div>`;
+          }
+          const val = fields[f.id] != null ? fields[f.id] : (f.prefill ? f.prefill(ctx.emp) : '');
+          return `<div class="form-cell"><b>${f.label}</b><input class="ff-text" id="${fid(f.id)}" data-field="${f.id}" type="${f.kind === 'date' ? 'date' : 'text'}" value="${escapeHtml(val)}" style="width:100%;border:none;border-bottom:1px solid #999;background:transparent;font:inherit;padding:2px 0"></div>`;
+        }).join('')}</div>`;
+      }
+      return `<div class="form-grid ${sfields.length === 3 ? 'c3' : 'c2'}">${sfields.map((f) => `<div class="form-cell"><b>${f}</b>&nbsp;</div>`).join('')}</div>`;
     }
     if (b.t === 'table') {
       const headers = lang === 'es' ? b.headersEs : b.headersEn;
@@ -3540,12 +3686,86 @@ function renderFormBlocks(blocks, lang) {
     return '';
   }).join('');
 }
-function buildOnboardingFormHtml(form, lang) {
+function buildOnboardingFormHtml(form, lang, ctx) {
+  const interactive = !!(ctx && ctx.interactive && form.fillable);
+  const saveBtnId = interactive ? `ff-save__${form.key}` : null;
+  const statusId = interactive ? `ff-status__${form.key}` : null;
   return `
     <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
     <h1 class="form-title">${lang === 'es' ? form.title.es : form.title.en}</h1>
-    ${renderFormBlocks(form.blocks, lang)}
+    ${renderFormBlocks(form.blocks, lang, { ...ctx, interactive })}
+    ${interactive ? `
+      <div class="no-print" style="margin-top:12px;display:flex;align-items:center;gap:10px">
+        <button type="button" class="gh solid" id="${saveBtnId}" data-form-key="${form.key}">${lang === 'es' ? 'Guardar este documento' : 'Save this document'}</button>
+        <span id="${statusId}" class="dim" style="font-size:11.5px"></span>
+      </div>
+    ` : ''}
   `;
+}
+
+// Wires up signature pads + the Save button for one interactive
+// ONBOARDING_FORMS entry, and preloads any signature already on file.
+// Persists to training_documents/{empId}_{formKey} — a deterministic id
+// so re-saving always updates the same record instead of piling up
+// duplicates, and so the Profile > Documents tab / re-opening the
+// packet later can find it again with a plain getDoc.
+function wireFillableOnboardingForm(form, lang, empId, saved) {
+  const sigBlocks = form.blocks.filter((b) => b.t === 'sig' && b.fill);
+  const sigFieldIds = [];
+  sigBlocks.forEach((b) => {
+    (lang === 'es' ? b.fieldsEs : b.fieldsEn).forEach((f) => {
+      if (f.kind === 'sig') sigFieldIds.push(f.id);
+    });
+  });
+  sigFieldIds.forEach((id) => {
+    const canvasId = `ff__${form.key}__${id}_pad`, clearId = `ff__${form.key}__${id}_clear`;
+    setUpSignaturePad(canvasId, clearId);
+    const existing = saved && saved.signatures && saved.signatures[id];
+    if (existing) drawExistingSignatureDataUrl(canvasId, existing);
+  });
+
+  const saveBtn = document.getElementById(`ff-save__${form.key}`);
+  const statusEl = document.getElementById(`ff-status__${form.key}`);
+  if (!saveBtn) return;
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true;
+    try {
+      const fields = {};
+      document.querySelectorAll(`.ff-text[id^="ff__${form.key}__"]`).forEach((inp) => { fields[inp.dataset.field] = inp.value; });
+      document.querySelectorAll(`.ff-check[id^="ff__${form.key}__"]`).forEach((cb) => { fields[cb.dataset.field] = cb.checked; });
+      const signatures = {};
+      let hasAnySignature = false;
+      sigFieldIds.forEach((id) => {
+        const canvasId = `ff__${form.key}__${id}_pad`;
+        const state = sigPads[canvasId];
+        if (state && state.hasStroke) {
+          signatures[id] = document.getElementById(canvasId).toDataURL('image/png');
+          hasAnySignature = true;
+        } else if (saved && saved.signatures && saved.signatures[id]) {
+          signatures[id] = saved.signatures[id];
+          hasAnySignature = true;
+        }
+      });
+      await setDoc(doc(db, 'training_documents', `${empId}_${form.key}`), {
+        content_type: form.key,
+        emp_id: empId,
+        title: form.title.en,
+        date: new Date().toISOString().slice(0, 10),
+        fields,
+        signatures,
+        status: hasAnySignature ? 'signed' : 'in_progress',
+        entered_by: profile.uid,
+        updated_at: serverTimestamp(),
+      }, { merge: true });
+      statusEl.textContent = lang === 'es' ? 'Guardado.' : 'Saved.';
+      showToast('Saved.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
 }
 
 function renderJobDescriptionSheet(role, lang) {

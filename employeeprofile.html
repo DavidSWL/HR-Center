@@ -92,6 +92,7 @@
 import { requireAuth } from './auth.js';
 import { initShell, formatDate, yearsSince } from './app.js';
 import { db } from './firebaseconfig.js';
+import { ONBOARDING_FORMS } from './onboardingformsdata.js';
 import { collection, doc, getDoc, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
@@ -264,6 +265,20 @@ const TRAINING_DOC_LABELS = {
   mealwaiver2: 'Second Meal Period Waiver',
 };
 
+// Fillable onboarding packet documents (Emergency Form, Direct Deposit,
+// etc.) are also training_documents records, content_type = the form's
+// key from ONBOARDING_FORMS — add their labels here so signed ones show
+// up below like everything else. They don't get their own generator
+// tile, so they're opened by jumping back into the whole onboarding
+// packet and scrolling to that one form instead of a doc-specific link.
+const ONBOARDING_FORM_KEYS = new Set(ONBOARDING_FORMS.filter((f) => f.fillable).map((f) => f.key));
+ONBOARDING_FORMS.filter((f) => f.fillable).forEach((f) => { TRAINING_DOC_LABELS[f.key] = f.title.en; });
+// The Job Description acknowledgment (employee + manager sign-off,
+// embedded in the onboarding packet) isn't in ONBOARDING_FORMS — it's
+// generated from JOB_DESCRIPTIONS instead — so it's added by hand here.
+TRAINING_DOC_LABELS.jobdesc_ack = 'Job Description — Acknowledgment';
+ONBOARDING_FORM_KEYS.add('jobdesc_ack');
+
 let documentsLoaded = false;
 async function loadDocumentsTab() {
   if (documentsLoaded) return;
@@ -307,7 +322,10 @@ async function loadDocumentsTab() {
   trainSnap.docs.forEach((d) => {
     const x = d.data();
     if (x.status !== 'signed' || !TRAINING_DOC_LABELS[x.content_type]) return;
-    rows.push({ label: x.title || TRAINING_DOC_LABELS[x.content_type], date: x.date || x.period_end, href: `docgen.html?open=${x.content_type}&doc=${d.id}` });
+    const href = ONBOARDING_FORM_KEYS.has(x.content_type)
+      ? `docgen.html?open=onboarding&emp=${emp.id}#onb-form-${x.content_type}`
+      : `docgen.html?open=${x.content_type}&doc=${d.id}`;
+    rows.push({ label: x.title || TRAINING_DOC_LABELS[x.content_type], date: x.date || x.period_end, href });
   });
 
   reviewsForDocsSnap.docs.forEach((d) => {
