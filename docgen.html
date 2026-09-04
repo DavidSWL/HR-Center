@@ -3516,6 +3516,10 @@ function renderFormBlocks(blocks, lang) {
     if (b.t === 'section') return `<div class="form-section">${lang === 'es' ? es : en}</div>`;
     if (b.t === 'p') return `<p style="margin:0 0 9px;line-height:1.5">${b.bold ? `<b>${(lang === 'es' ? b.boldEs : b.boldEn)}</b> ` : ''}${lang === 'es' ? es : en}</p>`;
     if (b.t === 'callout') return `<div class="form-callout">${lang === 'es' ? es : en}</div>`;
+    if (b.t === 'pdflink') {
+      const printText = lang === 'es' ? b.printEs : b.printEn;
+      return `<div class="no-print" style="margin:6px 0 16px"><a class="gh solid" href="${b.href}" target="_blank" rel="noopener">${lang === 'es' ? es : en}</a></div><p class="print-only" style="margin:0 0 9px;font-style:italic">${printText}</p>`;
+    }
     if (b.t === 'fine') return `<div class="form-fine">${lang === 'es' ? es : en}</div>`;
     if (b.t === 'list') {
       const items = lang === 'es' ? b.itemsEs : b.itemsEn;
