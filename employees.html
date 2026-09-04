@@ -856,6 +856,12 @@ form.addEventListener('submit', async (e) => {
 
       await batch.commit();
       showToast('Employee added — 30/60/90 reviews and onboarding checklist created.');
+      closeModal();
+      await loadEmployees();
+      if (confirm('Generate the onboarding packet for this new hire now?')) {
+        window.location.href = `docgen.html?open=onboarding&emp=${encodeURIComponent(newId)}`;
+      }
+      return;
     }
     closeModal();
     await loadEmployees();
