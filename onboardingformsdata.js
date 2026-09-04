@@ -365,6 +365,7 @@ export const ONBOARDING_FORMS = [
 {
   key: 'handbookack',
   title: { en: 'Acknowledgment of Receipt of Employee Handbook', es: 'Acuse de Recibo del Manual del Empleado' },
+  fillable: true,
   blocks: [
     { t: 'p', en: 'If I am a nonexempt employee, I understand that I will be authorized and permitted to take an unpaid, duty-free meal period of no less than 30 minutes whenever I exceed five hours in a work day. The meal period must begin prior to completing my fifth hour of work unless I am scheduled to work six (6) hours or less, and we agree in writing that the meal period may be waived. I understand I am authorized and permitted a second unpaid, duty-free meal period of thirty minutes whenever I work for a period of more than 10 hours in any workday.',
       es: 'Si soy un empleado no exento, entiendo que estaré autorizado y se me permitirá tomar un período de comida sin pago y libre de tareas de no menos de 30 minutos cada vez que exceda las cinco horas en un día laboral. El período de comida debe comenzar antes de completar mi quinta hora de trabajo, a menos que esté programado para trabajar seis (6) horas o menos y acordemos por escrito que se puede renunciar al período de comida. Entiendo que estoy autorizado y se me permite un segundo período de comida sin pago y libre de tareas de treinta minutos cada vez que trabaje por un período de más de 10 horas en cualquier día laboral.' },
@@ -377,7 +378,9 @@ export const ONBOARDING_FORMS = [
     { t: 'p', en: 'By my signature below, I acknowledge that I have received a copy of this Employee Handbook. I also acknowledge that I have read and understand the contents of the Employee Handbook, and I (check one) □ do &nbsp; □ do not want to discuss the handbook or any particular policies, benefits, or procedures described in it with my Supervisor or another Company official.',
       es: 'Con mi firma a continuación, reconozco que he recibido una copia de este Manual del Empleado. También reconozco que he leído y entiendo el contenido del Manual del Empleado, y (marque una opción) □ sí deseo &nbsp; □ no deseo discutir el manual o cualquier política, beneficio o procedimiento particular descrito en él con mi Supervisor u otro funcionario de la Compañía.' },
     { t: 'section', en: 'Employee Certification', es: 'Certificación del Empleado' },
-    { t: 'sig', fieldsEn: ['Print Name', 'Employee Signature', 'Date'], fieldsEs: ['Nombre en Letra de Molde', 'Firma del Empleado', 'Fecha'] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_name', label: 'Print Name', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_name', label: 'Nombre en Letra de Molde', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
@@ -386,7 +389,10 @@ export const ONBOARDING_FORMS = [
   key: 'handbookackcopy',
   title: { en: 'Acknowledgment of Receipt of Employee Handbook (Copy for Personnel File)', es: 'Acuse de Recibo del Manual del Empleado (Copia para el Expediente)' },
   // Identical content to #9 — the real packet includes this signed twice,
-  // one copy for the employee and one for the personnel file.
+  // one copy for the employee and one for the personnel file. A separate
+  // fillable: true + its own key means it saves its own
+  // training_documents record, independent of #9's.
+  fillable: true,
   blocks: [
     { t: 'p', en: 'If I am a nonexempt employee, I understand that I will be authorized and permitted to take an unpaid, duty-free meal period of no less than 30 minutes whenever I exceed five hours in a work day. The meal period must begin prior to completing my fifth hour of work unless I am scheduled to work six (6) hours or less, and we agree in writing that the meal period may be waived. I understand I am authorized and permitted a second unpaid, duty-free meal period of thirty minutes whenever I work for a period of more than 10 hours in any workday.',
       es: 'Si soy un empleado no exento, entiendo que estaré autorizado y se me permitirá tomar un período de comida sin pago y libre de tareas de no menos de 30 minutos cada vez que exceda las cinco horas en un día laboral. El período de comida debe comenzar antes de completar mi quinta hora de trabajo, a menos que esté programado para trabajar seis (6) horas o menos y acordemos por escrito que se puede renunciar al período de comida. Entiendo que estoy autorizado y se me permite un segundo período de comida sin pago y libre de tareas de treinta minutos cada vez que trabaje por un período de más de 10 horas en cualquier día laboral.' },
@@ -399,7 +405,9 @@ export const ONBOARDING_FORMS = [
     { t: 'p', en: 'By my signature below, I acknowledge that I have received a copy of this Employee Handbook. I also acknowledge that I have read and understand the contents of the Employee Handbook, and I (check one) □ do &nbsp; □ do not want to discuss the handbook or any particular policies, benefits, or procedures described in it with my Supervisor or another Company official.',
       es: 'Con mi firma a continuación, reconozco que he recibido una copia de este Manual del Empleado. También reconozco que he leído y entiendo el contenido del Manual del Empleado, y (marque una opción) □ sí deseo &nbsp; □ no deseo discutir el manual o cualquier política, beneficio o procedimiento particular descrito en él con mi Supervisor u otro funcionario de la Compañía.' },
     { t: 'section', en: 'Employee Certification', es: 'Certificación del Empleado' },
-    { t: 'sig', fieldsEn: ['Print Name', 'Employee Signature', 'Date'], fieldsEs: ['Nombre en Letra de Molde', 'Firma del Empleado', 'Fecha'] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_name', label: 'Print Name', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_name', label: 'Nombre en Letra de Molde', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
@@ -407,6 +415,7 @@ export const ONBOARDING_FORMS = [
 {
   key: 'discriminationack',
   title: { en: 'Acknowledgment of Receipt of Discrimination, Harassment and Retaliation Prevention Policy', es: 'Acuse de Recibo de la Política de Prevención de Discriminación, Acoso y Represalias' },
+  fillable: true,
   blocks: [
     { t: 'p', en: 'We are an Equal Employment Opportunity employer. In order to provide equal opportunities to all individuals, employment decisions are based on merit, qualifications, skills and performance.',
       es: 'Somos un empleador que ofrece Igualdad de Oportunidades de Empleo. Para brindar igualdad de oportunidades a todas las personas, las decisiones de empleo se basan en el mérito, las calificaciones, las habilidades y el desempeño.' },
@@ -433,9 +442,14 @@ export const ONBOARDING_FORMS = [
     { t: 'p', en: 'You may also bring your complaint to the federal or state agency that investigates or prosecutes complaints. A complaint of discrimination, harassment or retaliation may be filed with the California Civil Rights Department ("CRD") at (800) 884-1684, or for the hard of hearing (TTY) (800) 700-2320, or visit calcivilrights.ca.gov. A complaint may also be filed with the Equal Employment Opportunity Commission (EEOC) at (800) 669-4000, or for the hard of hearing (800) 669-6820, or visit www.eeoc.gov.',
       es: 'También puede presentar su queja ante la agencia federal o estatal que investiga o procesa quejas. Una queja de discriminación, acoso o represalias puede presentarse ante el Departamento de Derechos Civiles de California ("CRD") al (800) 884-1684, o para personas con dificultades auditivas (TTY) (800) 700-2320, o visite calcivilrights.ca.gov. También puede presentarse ante la Comisión para la Igualdad de Oportunidades en el Empleo (EEOC) al (800) 669-4000, o para personas con dificultades auditivas (800) 669-6820, o visite www.eeoc.gov.' },
     { t: 'section', en: 'Acknowledgment', es: 'Acuse de Recibo' },
-    { t: 'p', en: 'By my signature below, I acknowledge that I have received a copy of this Discrimination, Harassment and Retaliation Prevention Policy, and (check one) □ do &nbsp; □ do not want to discuss this policy with my Supervisor or another Company official.',
-      es: 'Con mi firma a continuación, reconozco que he recibido una copia de esta Política de Prevención de Discriminación, Acoso y Represalias, y (marque una opción) □ sí deseo &nbsp; □ no deseo discutir esta política con mi Supervisor u otro funcionario de la Compañía.' },
-    { t: 'sig', fieldsEn: ['Print Name', 'Employee Signature', 'Date'], fieldsEs: ['Nombre en Letra de Molde', 'Firma del Empleado', 'Fecha'] },
+    { t: 'p', en: 'By my signature below, I acknowledge that I have received a copy of this Discrimination, Harassment and Retaliation Prevention Policy, and (check one):',
+      es: 'Con mi firma a continuación, reconozco que he recibido una copia de esta Política de Prevención de Discriminación, Acoso y Represalias, y (marque una opción):' },
+    { t: 'list', check: true, fill: true,
+      itemsEn: [ { id: 'wants_discuss', text: 'I do want to discuss this policy with my Supervisor or another Company official.' }, { id: 'no_discuss', text: 'I do not want to discuss this policy with my Supervisor or another Company official.' } ],
+      itemsEs: [ { id: 'wants_discuss', text: 'Sí deseo discutir esta política con mi Supervisor u otro funcionario de la Compañía.' }, { id: 'no_discuss', text: 'No deseo discutir esta política con mi Supervisor u otro funcionario de la Compañía.' } ] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_name', label: 'Print Name', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_name', label: 'Nombre en Letra de Molde', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
@@ -444,7 +458,10 @@ export const ONBOARDING_FORMS = [
   key: 'discriminationackcopy',
   title: { en: 'Acknowledgment of Receipt of Discrimination, Harassment and Retaliation Prevention Policy (Copy for Personnel File)', es: 'Acuse de Recibo de la Política de Prevención de Discriminación, Acoso y Represalias (Copia para el Expediente)' },
   // Identical content to #11 — signed twice in the real packet, one copy
-  // for the employee and one for the personnel file.
+  // for the employee and one for the personnel file. A separate
+  // fillable: true + its own key means it saves its own
+  // training_documents record, independent of #11's.
+  fillable: true,
   blocks: [
     { t: 'p', en: 'We are an Equal Employment Opportunity employer. In order to provide equal opportunities to all individuals, employment decisions are based on merit, qualifications, skills and performance.',
       es: 'Somos un empleador que ofrece Igualdad de Oportunidades de Empleo. Para brindar igualdad de oportunidades a todas las personas, las decisiones de empleo se basan en el mérito, las calificaciones, las habilidades y el desempeño.' },
@@ -463,9 +480,14 @@ export const ONBOARDING_FORMS = [
     { t: 'p', en: 'You may also bring your complaint to the California Civil Rights Department ("CRD") at (800) 884-1684, or visit calcivilrights.ca.gov, or to the Equal Employment Opportunity Commission (EEOC) at (800) 669-4000, or visit www.eeoc.gov.',
       es: 'También puede presentar su queja ante el Departamento de Derechos Civiles de California ("CRD") al (800) 884-1684, o visite calcivilrights.ca.gov, o ante la Comisión para la Igualdad de Oportunidades en el Empleo (EEOC) al (800) 669-4000, o visite www.eeoc.gov.' },
     { t: 'section', en: 'Acknowledgment', es: 'Acuse de Recibo' },
-    { t: 'p', en: 'By my signature below, I acknowledge that I have received a copy of this Discrimination, Harassment and Retaliation Prevention Policy, and (check one) □ do &nbsp; □ do not want to discuss this policy with my Supervisor or another Company official.',
-      es: 'Con mi firma a continuación, reconozco que he recibido una copia de esta Política de Prevención de Discriminación, Acoso y Represalias, y (marque una opción) □ sí deseo &nbsp; □ no deseo discutir esta política con mi Supervisor u otro funcionario de la Compañía.' },
-    { t: 'sig', fieldsEn: ['Print Name', 'Employee Signature', 'Date'], fieldsEs: ['Nombre en Letra de Molde', 'Firma del Empleado', 'Fecha'] },
+    { t: 'p', en: 'By my signature below, I acknowledge that I have received a copy of this Discrimination, Harassment and Retaliation Prevention Policy, and (check one):',
+      es: 'Con mi firma a continuación, reconozco que he recibido una copia de esta Política de Prevención de Discriminación, Acoso y Represalias, y (marque una opción):' },
+    { t: 'list', check: true, fill: true,
+      itemsEn: [ { id: 'wants_discuss', text: 'I do want to discuss this policy with my Supervisor or another Company official.' }, { id: 'no_discuss', text: 'I do not want to discuss this policy with my Supervisor or another Company official.' } ],
+      itemsEs: [ { id: 'wants_discuss', text: 'Sí deseo discutir esta política con mi Supervisor u otro funcionario de la Compañía.' }, { id: 'no_discuss', text: 'No deseo discutir esta política con mi Supervisor u otro funcionario de la Compañía.' } ] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'employee_name', label: 'Print Name', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Employee Signature', kind: 'sig' }, { id: 'date', label: 'Date', kind: 'date' } ],
+      fieldsEs: [ { id: 'employee_name', label: 'Nombre en Letra de Molde', kind: 'text', prefill: (e) => `${e.first_name} ${e.last_name}` }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha', kind: 'date' } ] },
   ],
 },
 
@@ -473,6 +495,7 @@ export const ONBOARDING_FORMS = [
 {
   key: 'adrprocedures',
   title: { en: 'SouthWest Landscape, Inc. Alternative Dispute Resolution Procedures', es: 'Procedimientos de Resolución Alternativa de Disputas de SouthWest Landscape, Inc.' },
+  fillable: true,
   blocks: [
     { t: 'p', en: 'SouthWest Landscape, Inc. (hereinafter "the Company") utilizes a system of alternative dispute resolution in order to resolve claims or controversies between the Company and the Employee (collectively, "the Parties"). This Agreement ("Agreement") governs the procedures that shall be followed by the parties when resolving disputes.',
       es: 'SouthWest Landscape, Inc. (en adelante "la Compañía") utiliza un sistema de resolución alternativa de disputas para resolver reclamos o controversias entre la Compañía y el Empleado (colectivamente, "las Partes"). Este Acuerdo ("Acuerdo") rige los procedimientos que las partes deberán seguir al resolver disputas.' },
@@ -493,11 +516,12 @@ export const ONBOARDING_FORMS = [
     { t: 'callout', en: "EMPLOYEE SPECIFICALLY ACKNOWLEDGES THAT BY EXECUTING THIS AGREEMENT, EMPLOYEE WAIVES THE RIGHT TO A JURY TRIAL AS TO ALL ISSUES REGARDING EMPLOYEE'S EMPLOYMENT OR TERMINATION OF EMPLOYMENT. IN ADDITION, EMPLOYEE ACKNOWLEDGES THAT BY EXECUTING THIS AGREEMENT, EMPLOYEE WAIVES THEIR RIGHT TO FILE CLAIMS OF DISCRIMINATION WITH ANY AGENCY OR COURT BUT WILL SUBMIT ANY SUCH CLAIMS TO ARBITRATION.",
       es: 'EL EMPLEADO RECONOCE ESPECÍFICAMENTE QUE AL FIRMAR ESTE ACUERDO, EL EMPLEADO RENUNCIA AL DERECHO A UN JUICIO CON JURADO EN TODOS LOS ASUNTOS RELACIONADOS CON EL EMPLEO O LA TERMINACIÓN DEL EMPLEO DEL EMPLEADO. ADEMÁS, EL EMPLEADO RECONOCE QUE AL FIRMAR ESTE ACUERDO, EL EMPLEADO RENUNCIA A SU DERECHO A PRESENTAR RECLAMOS DE DISCRIMINACIÓN ANTE CUALQUIER AGENCIA O TRIBUNAL, PERO SOMETERÁ DICHOS RECLAMOS A ARBITRAJE.' },
     { t: 'section', en: 'Signatures', es: 'Firmas' },
-    { t: 'grid', cols: 2,
-      cellsEn: [ { label: 'Authorized Company Representative (Print Name)' }, { label: 'Employee (Print Name)' },
-        { label: "Authorized Company Representative's Signature" }, { label: "Employee's Signature" }, { label: 'Date (Month/Day/Year)', span: true } ],
-      cellsEs: [ { label: 'Representante Autorizado de la Compañía (Nombre en Letra de Molde)' }, { label: 'Empleado (Nombre en Letra de Molde)' },
-        { label: 'Firma del Representante Autorizado de la Compañía' }, { label: 'Firma del Empleado' }, { label: 'Fecha (Mes/Día/Año)', span: true } ] },
+    { t: 'grid', cols: 2, fill: true,
+      cellsEn: [ { id: 'rep_name', label: 'Authorized Company Representative (Print Name)' }, { id: 'employee_name', label: 'Employee (Print Name)', prefill: (e) => `${e.first_name} ${e.last_name}` } ],
+      cellsEs: [ { id: 'rep_name', label: 'Representante Autorizado de la Compañía (Nombre en Letra de Molde)' }, { id: 'employee_name', label: 'Empleado (Nombre en Letra de Molde)', prefill: (e) => `${e.first_name} ${e.last_name}` } ] },
+    { t: 'sig', fill: true,
+      fieldsEn: [ { id: 'rep_signature_data_url', label: "Authorized Company Representative's Signature", kind: 'sig' }, { id: 'employee_signature_data_url', label: "Employee's Signature", kind: 'sig' }, { id: 'date', label: 'Date (Month/Day/Year)', kind: 'date' } ],
+      fieldsEs: [ { id: 'rep_signature_data_url', label: 'Firma del Representante Autorizado de la Compañía', kind: 'sig' }, { id: 'employee_signature_data_url', label: 'Firma del Empleado', kind: 'sig' }, { id: 'date', label: 'Fecha (Mes/Día/Año)', kind: 'date' } ] },
     { t: 'fine', en: 'Distribution: Original to Personnel File, Copy to Employee', es: 'Distribución: Original para el Expediente de Personal, Copia para el Empleado' },
   ],
 },
