@@ -1249,6 +1249,10 @@ document.getElementById('roster-save-btn').addEventListener('click', async () =>
     closeAddToRoster();
     await loadEmployees();
     await loadApplicants();
+    if (confirm('Generate the onboarding packet for this new hire now?')) {
+      window.location.href = `docgen.html?open=onboarding&emp=${encodeURIComponent(newId)}`;
+      return;
+    }
   } catch (err) {
     console.error(err);
     showToast('Could not add to roster — ' + err.message, 'error');
