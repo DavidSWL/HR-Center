@@ -244,6 +244,27 @@ test('a case cannot move to review while an interview is still pending, even for
   );
 });
 
+test('David can close a case straight from intake, skipping review, when it does not need an investigation', async () => {
+  const db = as(DAVID);
+  await assertSucceeds(
+    db.collection('er_cases').doc('ER-2026-005').set({
+      status: 'intake',
+      opened_by: DAVID,
+      open_interview_count: 2,
+    })
+  );
+  // The review-gate only blocks a move to 'review' — closing directly
+  // from 'intake' with pending interviews is a separate, allowed path.
+  await assertSucceeds(
+    db.collection('er_cases').doc('ER-2026-005').update({
+      status: 'closed',
+      findings: 'Complaint withdrawn by both parties before any interview.',
+      closed_without_investigation: true,
+      closed_by: DAVID,
+    })
+  );
+});
+
 // ---- disciplinary actions are David-only ---------------------------------
 
 test('Tanya cannot read, file, or update a disciplinary action', async () => {
