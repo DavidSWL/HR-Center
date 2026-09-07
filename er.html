@@ -193,7 +193,7 @@ import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
 import { db } from './firebaseconfig.js';
 import {
-  collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, serverTimestamp,
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, serverTimestamp, increment,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
@@ -347,7 +347,6 @@ function renderList() {
     const days = opened ? Math.round((Date.now() - opened.getTime()) / 86400000) : '—';
     const statusPill = {
       intake: '<span class="pill">Intake</span>',
-      interviews: '<span class="pill mid">Interviews</span>',
       review: '<span class="pill bad">Waiting on review</span>',
       closed: '<span class="pill ok">Closed</span>',
     }[c.status] || c.status;
@@ -429,6 +428,10 @@ document.getElementById('new-case-form').addEventListener('submit', async (e) =>
       intake_responses: intakeResponses,
       opened_by: profile.uid,
       opened_at: serverTimestamp(),
+      // Denormalized so the "no move to review while an interview is
+      // pending" rule can be enforced in firestore.rules, not just the UI —
+      // rules can't scan the interviews subcollection directly.
+      open_interview_count: 2,
     });
 
     // Everyone named becomes an interview.
@@ -455,7 +458,7 @@ document.getElementById('new-case-form').addEventListener('submit', async (e) =>
 
 function renderCaseSummary() {
   const statusPill = {
-    intake: '<span class="pill">Intake</span>', interviews: '<span class="pill mid">Interviews</span>',
+    intake: '<span class="pill">Intake</span>',
     review: '<span class="pill bad">Waiting on review</span>', closed: '<span class="pill ok">Closed</span>',
   }[currentCase.status] || currentCase.status;
   document.getElementById('case-summary-body').innerHTML = `
@@ -524,6 +527,8 @@ document.getElementById('add-witness-btn').addEventListener('click', async () =>
     await addDoc(collection(db, 'er_cases', currentCase.id, 'interviews'), {
       person_name: name, emp_id: null, role: 'witness', status: 'pending', entered_by: profile.uid,
     });
+    await updateDoc(doc(db, 'er_cases', currentCase.id), { open_interview_count: increment(1) });
+    currentCase.open_interview_count = (currentCase.open_interview_count || 0) + 1;
     document.getElementById('new-witness-name').value = '';
     showToast('Witness added.');
     await loadInterviews();
@@ -638,6 +643,10 @@ document.getElementById('save-interview-btn').addEventListener('click', async ()
       interviewed_by: profile.uid,
       interviewed_at: serverTimestamp(),
     });
+    if (iv.status !== 'complete') {
+      await updateDoc(doc(db, 'er_cases', currentCase.id), { open_interview_count: increment(-1) });
+      currentCase.open_interview_count = Math.max(0, (currentCase.open_interview_count || 0) - 1);
+    }
     showToast('Interview recorded.');
     await loadInterviews();
     renderInterviews();
