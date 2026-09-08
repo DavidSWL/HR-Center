@@ -360,6 +360,7 @@ function openGenerator(key) {
   currentKey = key;
   pendingSigDocId = null;
   pendingSigTaskId = null;
+  refusalLinkedIncidentId = null;
   sheetRerender = null;
   document.getElementById('menu-view').hidden = true;
   document.getElementById('gen-view').hidden = false;
@@ -2298,6 +2299,29 @@ async function saveRefusalForSignatureLater(lang) {
   }
 }
 
+// Pre-fills the Refusal generator from an already-saved incident (Safety's
+// "Generate Refusal Form" button) and remembers it so the first save can
+// link the new record back — mirrors the mid-draft prefill in
+// ir-generate-refusal-btn's handler, just reading from Firestore instead
+// of the in-memory draft.
+async function loadIncidentForRefusal(incidentId) {
+  try {
+    const snap = await getDoc(doc(db, 'incidents', incidentId));
+    if (!snap.exists()) { showToast('That incident could not be found.', 'error'); return; }
+    const inc = snap.data();
+    refusalLinkedIncidentId = incidentId;
+    if (inc.emp_id) setEmpField('ref-emp', inc.emp_id);
+    document.getElementById('ref-date').value = inc.date || '';
+    document.getElementById('ref-incident-datetime').value = inc.date ? `${inc.date}${inc.time ? ', ' + inc.time : ''}` : '';
+    document.getElementById('ref-supervisor').value = inc.supervisor || '';
+    document.getElementById('ref-location').value = inc.location || '';
+    document.getElementById('ref-description').value = inc.what_happened || '';
+  } catch (err) {
+    console.error(err);
+    showToast('Could not load the incident — ' + err.message, 'error');
+  }
+}
+
 function renderRefusalSheet(lang) {
   const isEs = lang === 'es';
   const emp = employees.find((e) => e.id === document.getElementById('ref-emp').value);
@@ -2416,20 +2440,30 @@ function renderRefusalSheet(lang) {
     const supState = sigPads['ref-sup-sig-pad'];
     try {
       const docRef = pendingSigDocId ? doc(db, 'training_documents', pendingSigDocId) : doc(collection(db, 'training_documents'));
+      const signed = !!(state && state.hasStroke);
       await setDoc(docRef, {
         content_type: 'refusal', category: 'safety', status: 'signed',
         title: `Medical Treatment Refusal — ${emp.first_name} ${emp.last_name} (${formatDate(date)})`,
         emp_id: emp.id, emp_name: `${emp.first_name} ${emp.last_name}`,
         date, incident_datetime: incidentDateTime, supervisor, location, description,
         checks, initials, lang,
-        signature_data_url: state && state.hasStroke ? document.getElementById('ref-sig-pad').toDataURL('image/png') : null,
+        signature_data_url: signed ? document.getElementById('ref-sig-pad').toDataURL('image/png') : null,
         supervisor_signature_data_url: supState && supState.hasStroke ? document.getElementById('ref-sup-sig-pad').toDataURL('image/png') : null,
         signed_by: profile.uid, signed_at: serverTimestamp(),
         entered_by: profile.uid, entered_at: serverTimestamp(),
+        ...(refusalLinkedIncidentId ? { linked_incident_id: refusalLinkedIncidentId } : {}),
       }, { merge: true });
       if (pendingSigTaskId) {
         await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
         pendingSigDocId = null; pendingSigTaskId = null;
+      }
+      if (refusalLinkedIncidentId) {
+        // Links the generated form back onto the incident it was made
+        // for, so the Incident Log can show it's on file — same purpose
+        // as the manual "upload a signed copy" path already served.
+        await updateDoc(doc(db, 'incidents', refusalLinkedIncidentId), {
+          refusal_doc_id: docRef.id, refusal_doc_signed: signed,
+        });
       }
       await addDoc(collection(db, 'activity'), {
         module: 'documents', item: `Medical Treatment Refusal saved — ${emp.first_name} ${emp.last_name}`,
@@ -2473,6 +2507,12 @@ function renderRefusalSheet(lang) {
 // and restore it. Cleared once restored, or once either document is
 // actually saved, since there's nothing left to resume at that point.
 let incidentDraftForResume = null;
+
+// Set when the Refusal generator is opened from an already-saved incident
+// (Safety's "Generate Refusal Form" button) so the first save can link the
+// new training_documents record back onto that incident. Cleared whenever
+// a generator is (re)opened, so it never leaks into an unrelated save.
+let refusalLinkedIncidentId = null;
 
 function renderIncidentReport() {
   document.getElementById('gen-body').innerHTML = `
@@ -5220,11 +5260,14 @@ await loadOshaEstablishment();
 // Terminations tab) instead of always landing on the tile menu.
 const requestedOpen = new URLSearchParams(window.location.search).get('open');
 const requestedDocId = new URLSearchParams(window.location.search).get('doc');
+const requestedIncidentId = new URLSearchParams(window.location.search).get('incident');
 const SIGNABLE_DOC_TYPES = ['timecard', 'mealpenalty', 'mileage', 'refusal', 'mealwaiver2', 'offer', 'pip', 'review', 'termination', 'incidentreport'];
 if (requestedOpen && GENERATORS.some((g) => g.key === requestedOpen)) {
   openGenerator(requestedOpen);
   if (requestedDocId && SIGNABLE_DOC_TYPES.includes(requestedOpen)) {
     await loadPendingSignatureDoc(requestedOpen, requestedDocId);
+  } else if (requestedOpen === 'refusal' && requestedIncidentId) {
+    await loadIncidentForRefusal(requestedIncidentId);
   }
 }
 </script>
