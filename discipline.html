@@ -77,9 +77,12 @@
           <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)">
             <input type="checkbox" id="final-only"> At final step only
           </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)">
+            <input type="checkbox" id="unsigned-only"> Unsigned only
+          </label>
         </div>
         <table>
-          <thead><tr><th>Date</th><th>Employee</th><th>Division</th><th>Category</th><th>Step</th><th>Issued by</th><th></th></tr></thead>
+          <thead><tr><th>Date</th><th>Employee</th><th>Division</th><th>Category</th><th>Step</th><th>Signed</th><th>Issued by</th><th></th></tr></thead>
           <tbody id="rows"></tbody>
         </table>
       </div>
@@ -131,7 +134,7 @@
                 <textarea class="f-in" id="plan-improvement" rows="3" style="resize:vertical"></textarea>
               </div>
               <div class="field">
-                <label class="f-lab" for="follow-up-date">Follow-up review date (creates a task)</label>
+                <label class="f-lab" for="follow-up-date" id="follow-up-label">Follow-up review date (creates a task)</label>
                 <input class="f-in" id="follow-up-date" type="date">
               </div>
             </div>
@@ -290,6 +293,7 @@ function render() {
   const levelFilter = document.getElementById('level-filter').value;
   const divisionFilter = document.getElementById('division-filter').value;
   const finalOnly = document.getElementById('final-only').checked;
+  const unsignedOnly = document.getElementById('unsigned-only').checked;
 
   let visible = actions.filter((a) => {
     const emp = empById(a.emp_id);
@@ -297,6 +301,7 @@ function render() {
     if (levelFilter && String(a.level) !== levelFilter) return false;
     if (divisionFilter && a.division !== divisionFilter) return false;
     if (finalOnly && a.level < 4) return false;
+    if (unsignedOnly && isFullySigned(a)) return false;
     if (q) {
       const hay = `${emp.first_name} ${emp.last_name} ${a.category} ${a.issued_by} ${a.description}`.toLowerCase();
       if (!hay.includes(q)) return false;
@@ -322,6 +327,7 @@ function render() {
           ${isFinal ? '<span class="pill bad">Final step — consider termination</span>' : ''}
           ${nextIsFinal ? '<span class="pill mid">Next step is final</span>' : ''}
         </td>
+        <td>${isFullySigned(a) ? '<span class="pill ok">Signed</span>' : '<span class="pill bad">Unsigned</span>'}</td>
         <td class="dim">${a.issued_by || '—'}</td>
         <td style="text-align:right;display:flex;gap:6px;justify-content:flex-end">
           <button type="button" class="gh print-action-btn" data-id="${a.id}">Print</button>
@@ -329,7 +335,7 @@ function render() {
         </td>
       </tr>
     `;
-  }).join('') : '<tr><td colspan="7" class="dim">No actions match.</td></tr>';
+  }).join('') : '<tr><td colspan="8" class="dim">No actions match.</td></tr>';
 
   document.querySelectorAll('.print-action-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -350,6 +356,7 @@ function renderReport() {
   });
   const repeatIndividuals = Object.values(repeatCounts).filter((c) => c >= 2).length;
   const finalStepCount = actions.filter((a) => a.level >= 4).length;
+  const unsignedCount = actions.filter((a) => !isFullySigned(a)).length;
 
   const divisionCounts = employees.reduce((acc, e) => {
     if (e.status !== 'terminated' && e.division) acc[e.division] = (acc[e.division] || 0) + 1;
@@ -364,6 +371,7 @@ function renderReport() {
     <div><div class="v n">${actions.length}</div><div class="k">Total actions on file</div></div>
     <div><div class="v hot">${finalStepCount}</div><div class="k">At final step</div></div>
     <div><div class="v n">${repeatIndividuals}</div><div class="k">Repeat individuals (2+)</div></div>
+    <div><div class="v${unsignedCount ? ' hot' : ' n'}">${unsignedCount}</div><div class="k">Unsigned write-ups</div></div>
     <div><div class="v n">${topDivision ? topDivision[0] : '—'}${topRate !== '—' ? ` · ${topRate}/100` : ''}</div><div class="k">Highest rate, by division</div></div>
   `;
 }
@@ -387,6 +395,7 @@ function updateSequenceHint() {
   const priorCount = actions.filter((a) => a.emp_id === empId).length;
   const suggestedLevel = Math.min(priorCount + 1, 4);
   document.getElementById('level').value = String(suggestedLevel);
+  updateFollowUpRequirement();
   const hint = document.getElementById('sequence-hint');
   if (priorCount === 0) { hint.hidden = true; return; }
   hint.hidden = false;
@@ -395,6 +404,21 @@ function updateSequenceHint() {
     : `This employee has ${priorCount} prior action${priorCount === 1 ? '' : 's'} on file.`;
 }
 document.getElementById('emp-select').addEventListener('change', updateSequenceHint);
+
+// Verbal warnings can be filed with no follow-up; written warning and
+// up require one, per David's call — a write-up that reaches "written"
+// or beyond shouldn't be able to disappear with no next step scheduled.
+function updateFollowUpRequirement() {
+  const level = parseInt(document.getElementById('level').value, 10);
+  const input = document.getElementById('follow-up-date');
+  const label = document.getElementById('follow-up-label');
+  const required = level >= 2;
+  input.required = required;
+  label.textContent = required
+    ? 'Follow-up review date (creates a task) — required at this step'
+    : 'Follow-up review date (creates a task)';
+}
+document.getElementById('level').addEventListener('change', updateFollowUpRequirement);
 
 document.getElementById('action-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -421,16 +445,24 @@ document.getElementById('action-form').addEventListener('submit', async (e) => {
     if (otherOffense) offenses.push(otherOffense);
     if (!offenses.length) { showToast('Select at least one type of offense.', 'error'); saveBtn.disabled = false; return; }
 
+    const level = parseInt(document.getElementById('level').value, 10);
+    const followUpDate = document.getElementById('follow-up-date').value;
+    if (level >= 2 && !followUpDate) {
+      showToast('A follow-up review date is required at this step.', 'error');
+      saveBtn.disabled = false;
+      return;
+    }
+
     const record = {
       emp_id: empId,
       division: emp.division || '', // denormalized at write time, per the data model rule
       offenses,
       category: offenses.join(', '), // kept for the existing table/search/report code
-      level: parseInt(document.getElementById('level').value, 10),
+      level,
       infraction_date: document.getElementById('infraction-date').value,
       description: document.getElementById('description').value.trim(),
       plan_improvement: document.getElementById('plan-improvement').value.trim(),
-      follow_up_date: document.getElementById('follow-up-date').value,
+      follow_up_date: followUpDate,
       consequences: document.getElementById('consequences').value.trim(),
       employee_comments: document.getElementById('employee-comments').value.trim(),
       issued_by: document.getElementById('issued-by').value.trim(),
@@ -622,9 +654,16 @@ async function completeLinkedTask(taskId) {
   } catch (err) { console.error('Could not auto-complete task', err); }
 }
 
+// Shows the full date AND time (not just the date) so a signed write-up
+// stands on its own as evidence of exactly when it was signed — David
+// asked for this specifically to help with court disputes.
+function isFullySigned(a) {
+  return !!(a.signature_data_url && a.manager_signature_data_url);
+}
+
 function signedOnHtml(ts) {
   if (!ts?.toDate) return '';
-  return `<div class="dim" style="margin-top:6px;font-size:11.5px">Signed ${formatDate(ts.toDate().toISOString().slice(0, 10))}</div>`;
+  return `<div class="dim" style="margin-top:6px;font-size:11.5px">Signed ${ts.toDate().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</div>`;
 }
 
 function openPrintSheet(emp, a, lang) {
@@ -724,6 +763,7 @@ document.getElementById('search').addEventListener('input', render);
 document.getElementById('level-filter').addEventListener('change', render);
 document.getElementById('division-filter').addEventListener('change', render);
 document.getElementById('final-only').addEventListener('change', render);
+document.getElementById('unsigned-only').addEventListener('change', render);
 
 await loadEmployees();
 await loadStaff();
@@ -737,7 +777,7 @@ if (requestedDocId) {
   const action = actions.find((a) => a.id === requestedDocId);
   const emp = action && empById(action.emp_id);
   if (action && emp) {
-    const bothSigned = action.signature_data_url && action.manager_signature_data_url;
+    const bothSigned = isFullySigned(action);
     if (requestedTaskId && bothSigned) await completeLinkedTask(requestedTaskId);
     pendingSigDocId = requestedDocId;
     pendingSigTaskId = bothSigned ? null : requestedTaskId;

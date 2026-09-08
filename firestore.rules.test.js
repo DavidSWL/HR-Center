@@ -219,6 +219,52 @@ test('David can open, update, and close an ER case', async () => {
   );
 });
 
+test('a case cannot move to review while an interview is still pending, even for David', async () => {
+  const db = as(DAVID);
+  await assertSucceeds(
+    db.collection('er_cases').doc('ER-2026-004').set({
+      status: 'intake',
+      opened_by: DAVID,
+      open_interview_count: 2,
+    })
+  );
+  await assertFails(
+    db.collection('er_cases').doc('ER-2026-004').update({ status: 'review' })
+  );
+  // Claiming the counter is 0 in the same write doesn't help — the check
+  // reads the currently-stored value, not the incoming one.
+  await assertFails(
+    db.collection('er_cases').doc('ER-2026-004').update({ status: 'review', open_interview_count: 0 })
+  );
+  await assertSucceeds(
+    db.collection('er_cases').doc('ER-2026-004').update({ open_interview_count: 0 })
+  );
+  await assertSucceeds(
+    db.collection('er_cases').doc('ER-2026-004').update({ status: 'review' })
+  );
+});
+
+test('David can close a case straight from intake, skipping review, when it does not need an investigation', async () => {
+  const db = as(DAVID);
+  await assertSucceeds(
+    db.collection('er_cases').doc('ER-2026-005').set({
+      status: 'intake',
+      opened_by: DAVID,
+      open_interview_count: 2,
+    })
+  );
+  // The review-gate only blocks a move to 'review' — closing directly
+  // from 'intake' with pending interviews is a separate, allowed path.
+  await assertSucceeds(
+    db.collection('er_cases').doc('ER-2026-005').update({
+      status: 'closed',
+      findings: 'Complaint withdrawn by both parties before any interview.',
+      closed_without_investigation: true,
+      closed_by: DAVID,
+    })
+  );
+});
+
 // ---- disciplinary actions are David-only ---------------------------------
 
 test('Tanya cannot read, file, or update a disciplinary action', async () => {
@@ -250,6 +296,37 @@ test('David can file a disciplinary action', async () => {
       emp_id: 'E100',
       division: 'Maintenance',
       level: 1,
+      entered_by: DAVID,
+    })
+  );
+});
+
+test('a written warning or above requires a follow-up date; a verbal does not', async () => {
+  const db = as(DAVID);
+  await assertSucceeds(
+    db.collection('disciplinary_actions').doc('D5').set({
+      emp_id: 'E100',
+      division: 'Maintenance',
+      level: 1,
+      follow_up_date: '',
+      entered_by: DAVID,
+    })
+  );
+  await assertFails(
+    db.collection('disciplinary_actions').doc('D6').set({
+      emp_id: 'E100',
+      division: 'Maintenance',
+      level: 2,
+      follow_up_date: '',
+      entered_by: DAVID,
+    })
+  );
+  await assertSucceeds(
+    db.collection('disciplinary_actions').doc('D7').set({
+      emp_id: 'E100',
+      division: 'Maintenance',
+      level: 2,
+      follow_up_date: '2026-10-01',
       entered_by: DAVID,
     })
   );

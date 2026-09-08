@@ -124,6 +124,7 @@
             <div class="card-body">
               <div id="gate-status" style="margin-bottom:16px"></div>
               <button class="gh solid" id="move-review-btn" type="button">Move to review</button>
+              <button class="gh" id="skip-investigation-btn" type="button" hidden>Close without investigation</button>
 
               <div id="review-fields" hidden style="margin-top:16px">
                 <div class="field">
@@ -193,7 +194,7 @@ import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
 import { db } from './firebaseconfig.js';
 import {
-  collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, serverTimestamp,
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, serverTimestamp, increment,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
@@ -263,6 +264,10 @@ let staff = [];
 let cases = [];
 let currentCase = null;
 let currentInterviews = [];
+// David can decide a case doesn't warrant a full investigation — set true
+// by clicking "Close without investigation" on a case with pending
+// interviews. Reset whenever a (possibly different) case is opened.
+let skipInvestigation = false;
 let currentInterviewId = null;
 
 function empById(id) { return employees.find((e) => e.id === id); }
@@ -347,7 +352,6 @@ function renderList() {
     const days = opened ? Math.round((Date.now() - opened.getTime()) / 86400000) : '—';
     const statusPill = {
       intake: '<span class="pill">Intake</span>',
-      interviews: '<span class="pill mid">Interviews</span>',
       review: '<span class="pill bad">Waiting on review</span>',
       closed: '<span class="pill ok">Closed</span>',
     }[c.status] || c.status;
@@ -429,6 +433,10 @@ document.getElementById('new-case-form').addEventListener('submit', async (e) =>
       intake_responses: intakeResponses,
       opened_by: profile.uid,
       opened_at: serverTimestamp(),
+      // Denormalized so the "no move to review while an interview is
+      // pending" rule can be enforced in firestore.rules, not just the UI —
+      // rules can't scan the interviews subcollection directly.
+      open_interview_count: 2,
     });
 
     // Everyone named becomes an interview.
@@ -455,7 +463,7 @@ document.getElementById('new-case-form').addEventListener('submit', async (e) =>
 
 function renderCaseSummary() {
   const statusPill = {
-    intake: '<span class="pill">Intake</span>', interviews: '<span class="pill mid">Interviews</span>',
+    intake: '<span class="pill">Intake</span>',
     review: '<span class="pill bad">Waiting on review</span>', closed: '<span class="pill ok">Closed</span>',
   }[currentCase.status] || currentCase.status;
   document.getElementById('case-summary-body').innerHTML = `
@@ -471,6 +479,7 @@ function renderCaseSummary() {
 async function openCase(caseId) {
   const snap = await getDoc(doc(db, 'er_cases', caseId));
   currentCase = { id: caseId, ...snap.data() };
+  skipInvestigation = false;
   document.getElementById('page-title').textContent = `${caseId} — ${TYPE_LABELS[currentCase.type]}`;
   document.getElementById('list-view').hidden = true;
   document.getElementById('detail-view').hidden = false;
@@ -524,6 +533,8 @@ document.getElementById('add-witness-btn').addEventListener('click', async () =>
     await addDoc(collection(db, 'er_cases', currentCase.id, 'interviews'), {
       person_name: name, emp_id: null, role: 'witness', status: 'pending', entered_by: profile.uid,
     });
+    await updateDoc(doc(db, 'er_cases', currentCase.id), { open_interview_count: increment(1) });
+    currentCase.open_interview_count = (currentCase.open_interview_count || 0) + 1;
     document.getElementById('new-witness-name').value = '';
     showToast('Witness added.');
     await loadInterviews();
@@ -638,6 +649,10 @@ document.getElementById('save-interview-btn').addEventListener('click', async ()
       interviewed_by: profile.uid,
       interviewed_at: serverTimestamp(),
     });
+    if (iv.status !== 'complete') {
+      await updateDoc(doc(db, 'er_cases', currentCase.id), { open_interview_count: increment(-1) });
+      currentCase.open_interview_count = Math.max(0, (currentCase.open_interview_count || 0) - 1);
+    }
     showToast('Interview recorded.');
     await loadInterviews();
     renderInterviews();
@@ -704,41 +719,71 @@ async function renderReview() {
   const pending = currentInterviews.filter((i) => i.status !== 'complete');
   const gate = document.getElementById('gate-status');
   const moveBtn = document.getElementById('move-review-btn');
+  const skipBtn = document.getElementById('skip-investigation-btn');
   const reviewFields = document.getElementById('review-fields');
+  const findingsLabel = document.querySelector('label[for="findings"]');
+  const isDavid = profile.role === 'david';
 
   if (currentCase.status === 'closed') {
-    gate.innerHTML = `<span class="pill ok">Closed ${formatDate(currentCase.closed_date)}</span>`;
+    gate.innerHTML = `<span class="pill ok">Closed ${formatDate(currentCase.closed_date)}</span>`
+      + (currentCase.closed_without_investigation ? ' <span class="pill mid">No investigation conducted</span>' : '');
     moveBtn.hidden = true;
-    reviewFields.hidden = true;
+    skipBtn.hidden = true;
+    findingsLabel.textContent = currentCase.closed_without_investigation ? 'Notes' : 'Findings';
     document.getElementById('findings').value = currentCase.findings || '';
     document.getElementById('action').value = currentCase.action || '';
+    document.getElementById('findings').disabled = true;
+    document.getElementById('action').disabled = true;
     reviewFields.hidden = false;
     document.getElementById('close-case-btn').hidden = true;
+    document.getElementById('close-gate-note').textContent = '';
     return;
   }
 
-  if (pending.length) {
+  if (pending.length && !skipInvestigation) {
     gate.innerHTML = `<span class="pill bad">${pending.length} interview${pending.length === 1 ? '' : 's'} still pending</span> — a case can’t move to review while any interview is pending.`;
     moveBtn.hidden = true;
+    skipBtn.hidden = !isDavid;
     reviewFields.hidden = true;
+    return;
+  }
+
+  if (skipInvestigation) {
+    // David decided this case doesn't need interviews — same close
+    // action as a normal review, just reached without one. Case stays
+    // closable straight from 'intake': firestore.rules only gates the
+    // move to 'review', not the move to 'closed'.
+    gate.innerHTML = `<span class="pill mid">Closing without an investigation</span>`;
+    moveBtn.hidden = true;
+    skipBtn.hidden = true;
+    reviewFields.hidden = false;
+    findingsLabel.textContent = 'Notes — why this case is being closed without an investigation';
+    document.getElementById('findings').value = currentCase.findings || '';
+    document.getElementById('action').value = currentCase.action || '';
+    document.getElementById('findings').disabled = false;
+    document.getElementById('action').disabled = false;
+    document.getElementById('close-case-btn').hidden = false;
+    document.getElementById('close-gate-note').textContent = '';
     return;
   }
 
   if (currentCase.status !== 'review') {
     gate.innerHTML = `<span class="pill ok">All interviews complete</span>`;
     moveBtn.hidden = false;
+    skipBtn.hidden = true;
     reviewFields.hidden = true;
     return;
   }
 
   gate.innerHTML = `<span class="pill bad">Waiting on review</span>`;
   moveBtn.hidden = true;
+  skipBtn.hidden = true;
   reviewFields.hidden = false;
+  findingsLabel.textContent = 'Findings';
   document.getElementById('findings').value = currentCase.findings || '';
   document.getElementById('action').value = currentCase.action || '';
 
   const closeBtn = document.getElementById('close-case-btn');
-  const isDavid = profile.role === 'david';
   document.getElementById('findings').disabled = !isDavid;
   document.getElementById('action').disabled = !isDavid;
   if (isDavid) {
@@ -749,6 +794,11 @@ async function renderReview() {
     document.getElementById('close-gate-note').textContent = 'Only David writes the findings and action taken, and closes the case — enforced in the security rules.';
   }
 }
+
+document.getElementById('skip-investigation-btn').addEventListener('click', () => {
+  skipInvestigation = true;
+  renderReview();
+});
 
 document.getElementById('move-review-btn').addEventListener('click', async () => {
   try {
@@ -763,16 +813,23 @@ document.getElementById('move-review-btn').addEventListener('click', async () =>
 });
 
 document.getElementById('close-case-btn').addEventListener('click', async () => {
+  const findings = document.getElementById('findings').value.trim();
+  if (skipInvestigation && !findings) {
+    showToast('Enter a note explaining why no investigation was conducted.', 'error');
+    return;
+  }
   try {
     await updateDoc(doc(db, 'er_cases', currentCase.id), {
       status: 'closed',
-      findings: document.getElementById('findings').value.trim(),
+      findings,
       action: document.getElementById('action').value.trim(),
       closed_by: profile.uid,
       closed_date: new Date().toISOString().slice(0, 10),
+      ...(skipInvestigation ? { closed_without_investigation: true } : {}),
     });
     showToast('Case closed.');
     currentCase.status = 'closed';
+    if (skipInvestigation) currentCase.closed_without_investigation = true;
     renderReview();
   } catch (err) {
     console.error(err);

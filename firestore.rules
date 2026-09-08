@@ -213,8 +213,14 @@ service cloud.firestore {
     // instruction, enforced here rather than just hidden in the nav.
     match /disciplinary_actions/{actionId} {
       allow read: if isDavid();
+      // Verbal (level 1) can skip the follow-up; written warning and up
+      // (level 2+) must have one on file — mirrors the UI's required
+      // field so a direct write can't leave a write-up with no next step.
       allow create: if isDavid() && isClean(request.resource.data)
-        && stamped(request.resource.data);
+        && stamped(request.resource.data)
+        && (request.resource.data.level < 2
+          || (request.resource.data.follow_up_date is string
+            && request.resource.data.follow_up_date.size() > 0));
       allow update: if isDavid() && isClean(request.resource.data);
       allow delete: if false;
     }
@@ -288,7 +294,15 @@ service cloud.firestore {
       // predates the access change and isn't affected by it.
       allow create: if isDavid() && isClean(request.resource.data)
         && request.resource.data.status != 'closed';
-      allow update: if isDavid() && isClean(request.resource.data);
+      // Mirrors the UI's "no move to review while an interview is
+      // pending" rule at the schema level. Rules can't scan the
+      // interviews subcollection, so open_interview_count is a
+      // denormalized counter the app keeps in sync on every interview
+      // create/complete — checked against its currently-stored value,
+      // never the incoming write, so a request can't just claim 0.
+      allow update: if isDavid() && isClean(request.resource.data)
+        && (request.resource.data.status != 'review'
+          || resource.data.get('open_interview_count', 0) == 0);
       allow delete: if false;
 
       match /interviews/{interviewId} {
