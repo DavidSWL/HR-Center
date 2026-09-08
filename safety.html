@@ -299,6 +299,7 @@
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate, readSpreadsheetSheets, objectsFromRows } from './app.js';
 import { db, storage } from './firebaseconfig.js';
+import { LOGO_DATA_URL } from './letterhead-assets.js';
 import {
   collection, doc, getDoc, getDocs, updateDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -641,11 +642,14 @@ function openEdit(id) {
 // renderIncidentReportSheet (kept as a duplicate on purpose, same as
 // every other formatted-document view in this app), showing the Form
 // 7.3 fields and captured signatures alongside the OSHA tracking fields.
+const TREATMENT_LEVEL_LABELS = { none: 'None needed', first_aid: 'First aid', clinic: 'Clinic', er: 'Emergency room', hospitalization: 'Hospitalization', refused: 'Employee refused treatment' };
+
 function renderIncidentReportHtml(inc) {
   const emp = empById(inc.emp_id);
   const checks = inc.followup_checks || {};
   return `
     <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
       <h1 class="form-title">Incident Report</h1>
       <div class="form-grid c2">
         <div class="form-cell"><b>Date</b>${formatDate(inc.date)}</div>
@@ -664,12 +668,12 @@ function renderIncidentReportHtml(inc) {
       <div class="form-grid c3">
         <div class="form-cell"><b>Injury Type</b>${escapeHtml(inc.injury_type) || '—'}</div>
         <div class="form-cell"><b>Body Part</b>${escapeHtml(inc.body_part) || '—'}</div>
-        <div class="form-cell"><b>Treatment Level</b>${escapeHtml(inc.treatment_level) || '—'}</div>
+        <div class="form-cell"><b>Treatment Level</b>${TREATMENT_LEVEL_LABELS[inc.treatment_level] || escapeHtml(inc.treatment_level) || '—'}</div>
         <div class="form-cell"><b>Days Away</b>${inc.days_away || 0}</div>
         <div class="form-cell"><b>Restricted Days</b>${inc.restricted_days || 0}</div>
         <div class="form-cell"><b>Recordable</b>${inc.recordable ? 'Yes' : 'No'}</div>
-        <div class="form-cell"><b>Fatality</b>${inc.fatality ? 'Yes' : 'No'}</div>
       </div>
+      ${inc.fatality ? '<div class="form-callout" style="border-color:var(--alertTx);color:var(--alertTx);font-weight:700">FATALITY</div>' : ''}
       ` : ''}
       <div class="form-section">Name(s) of Person(s) Who Witnessed Incident</div>
       <div class="form-box">${escapeHtml(inc.witnesses) || '—'}</div>
