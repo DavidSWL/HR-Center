@@ -2827,6 +2827,7 @@ function renderIncidentReportSheet(lang = 'en') {
       <div class="form-box">${escapeHtml(f.immediateAction) || '—'}</div>
       <div class="form-section">${isEs ? 'Causa Raíz y Acción Correctiva' : 'Root Cause & Corrective Action'}</div>
       <div class="form-box">${escapeHtml(f.rootCause) || '—'}${f.correctiveAction ? `<br><br><b>${isEs ? 'Acción correctiva:' : 'Corrective action:'}</b> ${escapeHtml(f.correctiveAction)}` : ''}</div>
+      <div class="form-page-break" style="break-inside:avoid">
       <div class="form-section">${isEs ? 'Reporte de Seguimiento y Plan de Acción' : 'Follow-Up Report and Plan of Action'}</div>
       <div class="form-box" style="white-space:normal">
         <p style="margin:0 0 8px"><label><input type="checkbox" class="ir-check no-print" data-key="discussed_staff"><span class="print-only">☐</span> ${isEs ? 'Discutido con el personal involucrado' : 'Discussed with staff involved'}</label>${f.discussedStaffWho ? ` — ${escapeHtml(f.discussedStaffWho)}` : ''}</p>
@@ -2834,13 +2835,14 @@ function renderIncidentReportSheet(lang = 'en') {
         <p style="margin:0 0 8px"><label><input type="checkbox" class="ir-check no-print" data-key="reviewed_procedures"><span class="print-only">☐</span> ${isEs ? 'Se revisaron los procedimientos con la persona' : 'Reviewed procedures with individual'}</label></p>
         <p style="margin:0"><label><input type="checkbox" class="ir-check no-print" data-key="other"><span class="print-only">☐</span> ${isEs ? 'Otro' : 'Other'}</label>${f.otherDetail ? ` — ${escapeHtml(f.otherDetail)}` : ''}</p>
       </div>
+      </div>
       <div class="form-section">${isEs ? 'Comentarios' : 'Comments'}</div>
       <div class="form-box">${escapeHtml(f.comments) || '—'}</div>
       <div class="form-grid c2">
         <div class="form-cell"><b>${isEs ? 'Reporte Preparado Por' : 'Above Report Prepared By'}</b>${escapeHtml(profile.name || '')}</div>
         <div class="form-cell"><b>${isEs ? 'Fecha' : 'Date'}</b>${formatDate(new Date().toISOString().slice(0, 10))}</div>
       </div>
-      <div class="form-page-break">
+      <div>
       <div class="form-section">${isEs ? 'Firma del Gerente' : 'Signature of Manager'}</div>
       <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
         <canvas id="ir-mgr-sig-pad" style="width:100%;height:90px;display:block;cursor:crosshair;touch-action:none"></canvas>
