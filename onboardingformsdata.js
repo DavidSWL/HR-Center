@@ -271,14 +271,24 @@ export const ONBOARDING_FORMS = [
 },
 
 // ---------------------------------------------------------------- 6 --
+// Print-only reference to the real MPN packet David supplied (English and
+// Spanish, each a separate PDF) — the full Title 8 CCR §9767.12 employee
+// notification plus its Acknowledgement of Receipt page, exactly as
+// issued. Task was waiting on this content since the source onboarding
+// packet only ever had the blank acknowledgment page, not the actual MPN
+// notice text; the acknowledgment doesn't need transcribing separately
+// anymore, since it's the last page of these same PDFs. See
+// forms/mpn-notification-en.pdf / forms/mpn-notification-es.pdf.
 {
   key: 'mpn',
-  title: { en: 'Acknowledgement of Receipt of MPN Information', es: 'Acuse de Recibo de Información sobre la Red de Proveedores Médicos (MPN)' },
+  title: { en: 'Medical Provider Network (MPN) Notification & Acknowledgement', es: 'Notificación y Acuse de Recibo de la Red de Proveedores Médicos (MPN)' },
   blocks: [
-    { t: 'p', en: "I acknowledge that I have received information regarding my employer's use of a Medical Provider Network for Worker's Compensation claims, including a notification outlining the MPN and information about continuity of care.",
-      es: 'Reconozco que he recibido información respecto al uso por parte de mi empleador de una Red de Proveedores Médicos (MPN) para reclamaciones de Compensación al Trabajador, incluyendo una notificación que describe la MPN y la información sobre la continuidad de la atención médica.' },
-    { t: 'section', en: 'Employee Certification', es: 'Certificación del Empleado' },
-    { t: 'sig', fieldsEn: ["Employee's Name", "Employee's Signature", 'Date'], fieldsEs: ['Nombre del Empleado', 'Firma del Empleado', 'Fecha'] },
+    { t: 'callout',
+      en: 'This is the real MPN Employee Notification and Acknowledgement of Receipt, attached below as a separate PDF so it prints exactly as issued — nothing on it is filled in or saved electronically in this app.',
+      es: 'Esta es la Notificación al Empleado sobre la MPN y el Acuse de Recibo real, adjunto abajo como un PDF separado para que se imprima exactamente como fue emitido — nada en él se completa ni se guarda electrónicamente en esta aplicación.' },
+    { t: 'pdflink', href: 'forms/mpn-notification-en.pdf', hrefEs: 'forms/mpn-notification-es.pdf',
+      en: 'Open MPN Notification (English) PDF to print', es: 'Abrir el PDF de la Notificación MPN (Español) para imprimir',
+      printEn: 'MPN Notification & Acknowledgement — printed separately from forms/mpn-notification-en.pdf.', printEs: 'Notificación y Acuse de Recibo MPN — impreso por separado desde forms/mpn-notification-es.pdf.' },
   ],
 },
 

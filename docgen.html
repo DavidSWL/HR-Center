@@ -3787,8 +3787,12 @@ function renderFormBlocks(blocks, lang, ctx) {
     }
     if (b.t === 'callout') return `<div class="form-callout">${lang === 'es' ? es : en}</div>`;
     if (b.t === 'pdflink') {
+      // hrefEs is only set when the source actually has a separate
+      // Spanish PDF (MPN); everything else (W-4, DE 4) is an
+      // English-only official form and just falls back to href.
+      const href = (lang === 'es' && b.hrefEs) ? b.hrefEs : b.href;
       const printText = lang === 'es' ? b.printEs : b.printEn;
-      return `<div class="no-print" style="margin:6px 0 16px"><a class="gh solid" href="${b.href}" target="_blank" rel="noopener">${lang === 'es' ? es : en}</a></div><p class="print-only" style="margin:0 0 9px;font-style:italic">${printText}</p>`;
+      return `<div class="no-print" style="margin:6px 0 16px"><a class="gh solid" href="${href}" target="_blank" rel="noopener">${lang === 'es' ? es : en}</a></div><p class="print-only" style="margin:0 0 9px;font-style:italic">${printText}</p>`;
     }
     if (b.t === 'fine') return `<div class="form-fine">${lang === 'es' ? es : en}</div>`;
     if (b.t === 'list') {
