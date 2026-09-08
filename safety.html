@@ -176,7 +176,10 @@
             </select>
           </div>
           <div class="field" id="refusal-field" hidden>
-            <label class="f-lab" for="refusal-file">Medical Treatment Refusal form (signed copy)</label>
+            <label class="f-lab">Medical Treatment Refusal form</label>
+            <button class="gh" id="generate-refusal-btn" type="button">Generate Refusal Form</button>
+            <p class="dim" style="font-size:11.5px;margin:6px 0 10px" id="refusal-doc-status"></p>
+            <label class="f-lab" for="refusal-file">Or upload a signed copy</label>
             <input class="f-in" id="refusal-file" type="file" accept="application/pdf,image/*">
             <p class="dim" style="font-size:11.5px;margin-top:4px" id="refusal-file-status"></p>
           </div>
@@ -502,7 +505,11 @@ function render() {
         <td>${name}</td>
         <td>${i.incident_type}${i.category_needs_review ? ' <span class="pill mid">Verify category</span>' : ''}</td>
         <td>${i.recordable ? '<span class="pill bad">Recordable</span>' : '<span class="pill">Not recordable</span>'}${i.fatality ? ' <span class="pill bad">Fatality</span>' : ''}</td>
-        <td>${i.treatment_level === 'refused' ? '<span class="pill mid">Refused</span>' : '<span class="dim">—</span>'}</td>
+        <td>${i.treatment_level === 'refused'
+          ? (i.refusal_doc_id || i.refusal_form_url
+            ? '<span class="pill mid">Refused</span>'
+            : '<span class="pill bad">Refused — no form on file</span>')
+          : '<span class="dim">—</span>'}</td>
         <td class="mono">${i.days_away || 0}</td>
         <td class="mono dim">${i.division || '—'}</td>
         <td class="mono">${i.cost === null || i.cost === undefined
@@ -616,6 +623,15 @@ function openEdit(id) {
   document.getElementById('refusal-file').value = '';
   document.getElementById('refusal-file-status').textContent = inc.refusal_form_url
     ? 'A signed refusal form is already on file — choosing a new file replaces it.' : '';
+  const generateBtn = document.getElementById('generate-refusal-btn');
+  const docStatus = document.getElementById('refusal-doc-status');
+  if (inc.refusal_doc_id) {
+    generateBtn.textContent = 'Open generated Refusal Form';
+    docStatus.textContent = 'Generated and saved to Documents' + (inc.refusal_doc_signed ? ' — signed.' : ' — not yet signed.');
+  } else {
+    generateBtn.textContent = 'Generate Refusal Form';
+    docStatus.textContent = 'Opens the Medical Treatment Refusal document, pre-filled from this incident, so it can be signed right there.';
+  }
   overlay.hidden = false;
 }
 
@@ -727,6 +743,15 @@ window.addEventListener('afterprint', () => {
 document.getElementById('get-signature-btn').addEventListener('click', () => {
   if (!editingIncidentId) return;
   window.location.href = `docgen.html?open=incidentreport&doc=${editingIncidentId}`;
+});
+document.getElementById('generate-refusal-btn').addEventListener('click', () => {
+  if (!editingIncidentId) return;
+  const inc = incidents.find((x) => x.id === editingIncidentId);
+  if (inc?.refusal_doc_id) {
+    window.location.href = `docgen.html?open=refusal&doc=${inc.refusal_doc_id}`;
+  } else {
+    window.location.href = `docgen.html?open=refusal&incident=${editingIncidentId}`;
+  }
 });
 document.getElementById('void-btn').addEventListener('click', async () => {
   if (!editingIncidentId) return;

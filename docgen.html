@@ -360,6 +360,7 @@ function openGenerator(key) {
   currentKey = key;
   pendingSigDocId = null;
   pendingSigTaskId = null;
+  refusalLinkedIncidentId = null;
   sheetRerender = null;
   document.getElementById('menu-view').hidden = true;
   document.getElementById('gen-view').hidden = false;
@@ -1289,23 +1290,38 @@ function renderTerminationSheet(r, finalPay = {}, lang = 'en') {
       <button type="button" class="gh solid no-print" id="term-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
       ${signedOnHtml(r.signed_at)}
       ${r.id ? signatureTaskFieldsHtml('term') : ''}
+      <div class="form-section">${isEs ? 'Firma Electrónica del Testigo' : 'Witness Electronic Signature'}</div>
+      <div class="dim" style="font-size:11.5px;margin:-4px 0 8px">${isEs ? '(si el empleado se niega a firmar o no está disponible)' : '(if the employee refuses to sign or is unavailable)'}</div>
+      ${signaturePadHtml('term-witness-sig-pad', 'term-witness-sig-clear')}
+      <div class="frow">
+        <div class="field"><label class="f-lab" for="term-witness-name">${isEs ? 'Nombre del Testigo' : 'Witness Printed Name'}</label><input class="f-in" id="term-witness-name" value="${escapeHtml(r.witness_name || '')}"></div>
+        <div class="field"><label class="f-lab" for="term-witness-date">${isEs ? 'Fecha' : 'Date'}</label><input class="f-in" id="term-witness-date" type="date" value="${r.witness_date || ''}"></div>
+      </div>
       <div class="form-atwill"><b>${isEs ? 'Recordatorio de Empleo a Voluntad:' : 'At-will Employment Reminder:'}</b> ${isEs ? 'El empleo con la compañía es a voluntad ("at-will"). Nada en este documento altera ese estatus ni crea un contrato de empleo.' : 'Employment with the company is at-will. Nothing in this document alters that status or creates a contract of employment.'}</div>
     </div>
   `;
   setUpSignaturePad('term-sig-pad', 'term-sig-clear');
   setUpSignaturePad('term-mgr-sig-pad', 'term-mgr-sig-clear');
+  setUpSignaturePad('term-witness-sig-pad', 'term-witness-sig-clear');
   document.getElementById('term-sig-save').addEventListener('click', async () => {
     if (!r.id) { showToast('Register this termination first, then reopen it from the list to save a signature.', 'error'); return; }
     const empState = sigPads['term-sig-pad'];
     const mgrState = sigPads['term-mgr-sig-pad'];
-    if (!(empState?.hasStroke) && !(mgrState?.hasStroke)) {
-      showToast('Get at least one signature first — both pads are empty.', 'error'); return;
+    const witnessState = sigPads['term-witness-sig-pad'];
+    const witnessName = document.getElementById('term-witness-name').value.trim();
+    const witnessDate = document.getElementById('term-witness-date').value;
+    if (!(empState?.hasStroke) && !(mgrState?.hasStroke) && !(witnessState?.hasStroke)) {
+      showToast('Get at least one signature first — all pads are empty.', 'error'); return;
     }
     try {
       const update = { signed_at: serverTimestamp(), signed_by: profile.uid };
       if (empState?.hasStroke) update.signature_data_url = document.getElementById('term-sig-pad').toDataURL('image/png');
       if (mgrState?.hasStroke) update.manager_signature_data_url = document.getElementById('term-mgr-sig-pad').toDataURL('image/png');
+      if (witnessState?.hasStroke) update.witness_signature_data_url = document.getElementById('term-witness-sig-pad').toDataURL('image/png');
+      if (witnessName) update.witness_name = witnessName;
+      if (witnessDate) update.witness_date = witnessDate;
       await updateDoc(doc(db, 'terminations', r.id), update);
+      Object.assign(r, update);
       if (pendingSigTaskId) {
         await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
         pendingSigDocId = null; pendingSigTaskId = null;
@@ -1321,7 +1337,7 @@ function renderTerminationSheet(r, finalPay = {}, lang = 'en') {
       linkedDocType: 'termination', linkedDocId: r.id, title: `Termination — ${r.emp_name}`,
     }));
   }
-  sheetRerender = (l) => withPreservedSignature('term-mgr-sig-pad', () => withPreservedSignature('term-sig-pad', () => renderTerminationSheet(r, finalPay, l)));
+  sheetRerender = (l) => withPreservedSignature('term-witness-sig-pad', () => withPreservedSignature('term-mgr-sig-pad', () => withPreservedSignature('term-sig-pad', () => renderTerminationSheet(r, finalPay, l))));
 }
 
 // ---- Termination import — reads the "Terminations" sheet of the roster
@@ -2298,6 +2314,29 @@ async function saveRefusalForSignatureLater(lang) {
   }
 }
 
+// Pre-fills the Refusal generator from an already-saved incident (Safety's
+// "Generate Refusal Form" button) and remembers it so the first save can
+// link the new record back — mirrors the mid-draft prefill in
+// ir-generate-refusal-btn's handler, just reading from Firestore instead
+// of the in-memory draft.
+async function loadIncidentForRefusal(incidentId) {
+  try {
+    const snap = await getDoc(doc(db, 'incidents', incidentId));
+    if (!snap.exists()) { showToast('That incident could not be found.', 'error'); return; }
+    const inc = snap.data();
+    refusalLinkedIncidentId = incidentId;
+    if (inc.emp_id) setEmpField('ref-emp', inc.emp_id);
+    document.getElementById('ref-date').value = inc.date || '';
+    document.getElementById('ref-incident-datetime').value = inc.date ? `${inc.date}${inc.time ? ', ' + inc.time : ''}` : '';
+    document.getElementById('ref-supervisor').value = inc.supervisor || '';
+    document.getElementById('ref-location').value = inc.location || '';
+    document.getElementById('ref-description').value = inc.what_happened || '';
+  } catch (err) {
+    console.error(err);
+    showToast('Could not load the incident — ' + err.message, 'error');
+  }
+}
+
 function renderRefusalSheet(lang) {
   const isEs = lang === 'es';
   const emp = employees.find((e) => e.id === document.getElementById('ref-emp').value);
@@ -2372,9 +2411,14 @@ function renderRefusalSheet(lang) {
       ${signaturePadHtml('ref-sup-sig-pad', 'ref-sup-sig-clear')}
       <div class="form-sig" style="grid-template-columns:1fr">
         <div style="border-right:none"><label><input type="checkbox" class="ref-check no-print" data-key="declined_to_sign"><span class="print-only">☐</span> ${isEs ? 'El empleado se negó a firmar. Las declaraciones anteriores fueron leídas al empleado en un idioma que entiende, en presencia del testigo indicado abajo.' : 'Employee declined to sign. The statements above were read to the employee in a language they understand, in the presence of the witness below.'}</label></div>
-        <div style="border-right:none;border-top:none">${isEs ? 'Firma del Testigo / Fecha' : 'Witness Signature / Date'}: _______________________________________</div>
-        <div style="border-right:none;border-top:none">${isEs ? 'Nombre del Testigo / Puesto' : 'Witness Printed Name / Title'}: _______________________________________</div>
       </div>
+      <div class="form-box">${isEs ? 'Firma Electrónica del Testigo' : 'Witness Electronic Signature'}</div>
+      ${signaturePadHtml('ref-witness-sig-pad', 'ref-witness-sig-clear')}
+      <div class="frow">
+        <div class="field"><label class="f-lab" for="ref-witness-name">${isEs ? 'Nombre del Testigo (en letra de molde)' : 'Witness Printed Name'}</label><input class="f-in" id="ref-witness-name"></div>
+        <div class="field"><label class="f-lab" for="ref-witness-title">${isEs ? 'Puesto del Testigo' : 'Witness Title'}</label><input class="f-in" id="ref-witness-title"></div>
+      </div>
+      <div class="field"><label class="f-lab" for="ref-witness-date">${isEs ? 'Fecha' : 'Date'}</label><input class="f-in" id="ref-witness-date" type="date"></div>
       <div class="form-page-break">
       <div class="form-section">${isEs ? 'Registro de Seguimiento de RH' : 'HR Follow-Up Log'}</div>
       <div class="form-grid c2">
@@ -2401,6 +2445,7 @@ function renderRefusalSheet(lang) {
   });
   setUpSignaturePad('ref-sig-pad', 'ref-sig-clear');
   setUpSignaturePad('ref-sup-sig-pad', 'ref-sup-sig-clear');
+  setUpSignaturePad('ref-witness-sig-pad', 'ref-witness-sig-clear');
   statements.forEach((s, i) => setUpSignaturePad(`ref-initial-${i}-pad`, `ref-initial-${i}-clear`));
   document.getElementById('ref-sig-save').addEventListener('click', async () => {
     const checks = {};
@@ -2414,22 +2459,38 @@ function renderRefusalSheet(lang) {
     });
     const state = sigPads['ref-sig-pad'];
     const supState = sigPads['ref-sup-sig-pad'];
+    const witnessState = sigPads['ref-witness-sig-pad'];
+    const witnessName = document.getElementById('ref-witness-name').value.trim();
+    const witnessTitle = document.getElementById('ref-witness-title').value.trim();
+    const witnessDate = document.getElementById('ref-witness-date').value;
     try {
       const docRef = pendingSigDocId ? doc(db, 'training_documents', pendingSigDocId) : doc(collection(db, 'training_documents'));
+      const signed = !!(state && state.hasStroke);
       await setDoc(docRef, {
         content_type: 'refusal', category: 'safety', status: 'signed',
         title: `Medical Treatment Refusal — ${emp.first_name} ${emp.last_name} (${formatDate(date)})`,
         emp_id: emp.id, emp_name: `${emp.first_name} ${emp.last_name}`,
         date, incident_datetime: incidentDateTime, supervisor, location, description,
         checks, initials, lang,
-        signature_data_url: state && state.hasStroke ? document.getElementById('ref-sig-pad').toDataURL('image/png') : null,
+        signature_data_url: signed ? document.getElementById('ref-sig-pad').toDataURL('image/png') : null,
         supervisor_signature_data_url: supState && supState.hasStroke ? document.getElementById('ref-sup-sig-pad').toDataURL('image/png') : null,
+        witness_name: witnessName, witness_title: witnessTitle, witness_date: witnessDate,
+        witness_signature_data_url: witnessState && witnessState.hasStroke ? document.getElementById('ref-witness-sig-pad').toDataURL('image/png') : null,
         signed_by: profile.uid, signed_at: serverTimestamp(),
         entered_by: profile.uid, entered_at: serverTimestamp(),
+        ...(refusalLinkedIncidentId ? { linked_incident_id: refusalLinkedIncidentId } : {}),
       }, { merge: true });
       if (pendingSigTaskId) {
         await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
         pendingSigDocId = null; pendingSigTaskId = null;
+      }
+      if (refusalLinkedIncidentId) {
+        // Links the generated form back onto the incident it was made
+        // for, so the Incident Log can show it's on file — same purpose
+        // as the manual "upload a signed copy" path already served.
+        await updateDoc(doc(db, 'incidents', refusalLinkedIncidentId), {
+          refusal_doc_id: docRef.id, refusal_doc_signed: signed,
+        });
       }
       await addDoc(collection(db, 'activity'), {
         module: 'documents', item: `Medical Treatment Refusal saved — ${emp.first_name} ${emp.last_name}`,
@@ -2444,13 +2505,21 @@ function renderRefusalSheet(lang) {
   sheetRerender = (l) => {
     const checks = {};
     document.querySelectorAll('.ref-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
-    withPreservedSignature('ref-sup-sig-pad', () => withPreservedSignature('ref-sig-pad', () => renderRefusalSheet(l)));
+    const witness = {
+      name: document.getElementById('ref-witness-name').value,
+      title: document.getElementById('ref-witness-title').value,
+      date: document.getElementById('ref-witness-date').value,
+    };
+    withPreservedSignature('ref-witness-sig-pad', () => withPreservedSignature('ref-sup-sig-pad', () => withPreservedSignature('ref-sig-pad', () => renderRefusalSheet(l))));
     document.querySelectorAll('.ref-check').forEach((cb) => {
       if (checks[cb.dataset.key]) {
         cb.checked = true;
         cb.closest('label').querySelector('.print-only').textContent = '☑';
       }
     });
+    document.getElementById('ref-witness-name').value = witness.name;
+    document.getElementById('ref-witness-title').value = witness.title;
+    document.getElementById('ref-witness-date').value = witness.date;
   };
 }
 
@@ -2473,6 +2542,12 @@ function renderRefusalSheet(lang) {
 // and restore it. Cleared once restored, or once either document is
 // actually saved, since there's nothing left to resume at that point.
 let incidentDraftForResume = null;
+
+// Set when the Refusal generator is opened from an already-saved incident
+// (Safety's "Generate Refusal Form" button) so the first save can link the
+// new training_documents record back onto that incident. Cleared whenever
+// a generator is (re)opened, so it never leaks into an unrelated save.
+let refusalLinkedIncidentId = null;
 
 function renderIncidentReport() {
   document.getElementById('gen-body').innerHTML = `
@@ -4331,6 +4406,7 @@ async function loadPendingSignatureDoc(type, id) {
       renderTerminationSheet(rec, {}, document.getElementById('lang-select').value);
       await drawExistingSignatureDataUrl('term-sig-pad', rec.signature_data_url);
       await drawExistingSignatureDataUrl('term-mgr-sig-pad', rec.manager_signature_data_url);
+      await drawExistingSignatureDataUrl('term-witness-sig-pad', rec.witness_signature_data_url);
       if (bothSigned) showToast('Already fully signed — shown below.');
       return;
     }
@@ -5220,11 +5296,14 @@ await loadOshaEstablishment();
 // Terminations tab) instead of always landing on the tile menu.
 const requestedOpen = new URLSearchParams(window.location.search).get('open');
 const requestedDocId = new URLSearchParams(window.location.search).get('doc');
+const requestedIncidentId = new URLSearchParams(window.location.search).get('incident');
 const SIGNABLE_DOC_TYPES = ['timecard', 'mealpenalty', 'mileage', 'refusal', 'mealwaiver2', 'offer', 'pip', 'review', 'termination', 'incidentreport'];
 if (requestedOpen && GENERATORS.some((g) => g.key === requestedOpen)) {
   openGenerator(requestedOpen);
   if (requestedDocId && SIGNABLE_DOC_TYPES.includes(requestedOpen)) {
     await loadPendingSignatureDoc(requestedOpen, requestedDocId);
+  } else if (requestedOpen === 'refusal' && requestedIncidentId) {
+    await loadIncidentForRefusal(requestedIncidentId);
   }
 }
 </script>
