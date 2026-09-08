@@ -361,6 +361,7 @@ function openGenerator(key) {
   pendingSigDocId = null;
   pendingSigTaskId = null;
   refusalLinkedIncidentId = null;
+  pendingIncidentRefusalDocId = null;
   sheetRerender = null;
   document.getElementById('menu-view').hidden = true;
   document.getElementById('gen-view').hidden = false;
@@ -2386,7 +2387,7 @@ function renderRefusalSheet(lang) {
       <div class="form-section">${isEs ? 'Descripción de la Lesión o los Síntomas' : 'Description of Injury or Symptoms'}</div>
       <div class="form-box">${escapeHtml(description) || '—'}</div>
       <div class="form-section">${isEs ? 'Reconocimiento del Empleado — lea cada declaración y ponga sus iniciales' : 'Employee Acknowledgment — read each statement and initial'}</div>
-      <div class="form-box">
+      <div class="form-box" style="white-space:normal">
         ${statements.map((s, i) => `
           <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;margin:0 0 10px">
             <label style="flex:1;min-width:220px"><input type="checkbox" class="ref-check no-print" data-key="statement-${i}"><span class="print-only">☐</span> ${s}</label>
@@ -2548,6 +2549,12 @@ let incidentDraftForResume = null;
 // new training_documents record back onto that incident. Cleared whenever
 // a generator is (re)opened, so it never leaks into an unrelated save.
 let refusalLinkedIncidentId = null;
+
+// Carries an already-saved incident's refusal_doc_id (if any) alongside
+// pendingSigDocId when the Incident Report sheet is reopened for
+// signature, so its own "Generate Refusal Form" button resumes/opens that
+// existing document instead of generating a duplicate.
+let pendingIncidentRefusalDocId = null;
 
 function renderIncidentReport() {
   document.getElementById('gen-body').innerHTML = `
@@ -2799,6 +2806,13 @@ function renderIncidentReportSheet(lang = 'en') {
         <div class="form-cell"><b>${isEs ? 'Días con Restricción' : 'Restricted Days'}</b>${f.restrictedDays}</div>
         <div class="form-cell"><b>${isEs ? 'Registrable' : 'Recordable'}</b>${f.recordable ? (isEs ? 'Sí' : 'Yes') : 'No'}</div>
       </div>
+      ${f.treatmentLevel === 'refused' ? `
+      <div class="no-print" style="margin:-6px 0 14px">
+        <button type="button" class="gh" id="ir-generate-refusal-btn-sheet">${pendingIncidentRefusalDocId
+          ? (isEs ? 'Abrir Formulario de Rechazo generado' : 'Open generated Refusal Form')
+          : (isEs ? 'Generar Formulario de Rechazo' : 'Generate Refusal Form')}</button>
+      </div>
+      ` : ''}
       ` : ''}
       <div class="form-section">${isEs ? 'Nombre(s) de Persona(s) que Presenciaron el Incidente' : 'Name(s) of Person(s) Who Witnessed Incident'}</div>
       <div class="form-box">${escapeHtml(f.witnesses) || '—'}</div>
@@ -2814,7 +2828,7 @@ function renderIncidentReportSheet(lang = 'en') {
       <div class="form-section">${isEs ? 'Causa Raíz y Acción Correctiva' : 'Root Cause & Corrective Action'}</div>
       <div class="form-box">${escapeHtml(f.rootCause) || '—'}${f.correctiveAction ? `<br><br><b>${isEs ? 'Acción correctiva:' : 'Corrective action:'}</b> ${escapeHtml(f.correctiveAction)}` : ''}</div>
       <div class="form-section">${isEs ? 'Reporte de Seguimiento y Plan de Acción' : 'Follow-Up Report and Plan of Action'}</div>
-      <div class="form-box">
+      <div class="form-box" style="white-space:normal">
         <p style="margin:0 0 8px"><label><input type="checkbox" class="ir-check no-print" data-key="discussed_staff"><span class="print-only">☐</span> ${isEs ? 'Discutido con el personal involucrado' : 'Discussed with staff involved'}</label>${f.discussedStaffWho ? ` — ${escapeHtml(f.discussedStaffWho)}` : ''}</p>
         <p style="margin:0 0 8px"><label><input type="checkbox" class="ir-check no-print" data-key="discussed_meeting"><span class="print-only">☐</span> ${isEs ? 'Discutido en la reunión del departamento' : 'Discussed at departmental meeting'}</label></p>
         <p style="margin:0 0 8px"><label><input type="checkbox" class="ir-check no-print" data-key="reviewed_procedures"><span class="print-only">☐</span> ${isEs ? 'Se revisaron los procedimientos con la persona' : 'Reviewed procedures with individual'}</label></p>
@@ -2852,6 +2866,34 @@ function renderIncidentReportSheet(lang = 'en') {
   });
   setUpSignaturePad('ir-mgr-sig-pad', 'ir-mgr-sig-clear');
   setUpSignaturePad('ir-emp-sig-pad', 'ir-emp-sig-clear');
+  const refusalBtnSheet = document.getElementById('ir-generate-refusal-btn-sheet');
+  if (refusalBtnSheet) {
+    refusalBtnSheet.addEventListener('click', () => {
+      if (pendingIncidentRefusalDocId) {
+        // Already generated once — resume/view that document instead of
+        // starting a second one (mirrors Safety's own button).
+        window.location.href = `docgen.html?open=refusal&doc=${pendingIncidentRefusalDocId}`;
+        return;
+      }
+      if (pendingSigDocId) {
+        // Already saved (e.g. reopened from a "get signature" task) —
+        // link straight to that incident so the generated form saves
+        // back onto it, same as Safety's own "Generate Refusal Form".
+        window.location.href = `docgen.html?open=refusal&incident=${pendingSigDocId}`;
+        return;
+      }
+      // Not saved yet — same mid-draft handoff as the raw form's own
+      // "Generate Refusal Form" button, just reachable from the sheet too.
+      incidentDraftForResume = f;
+      openGenerator('refusal');
+      if (f.emp) setEmpField('ref-emp', f.emp.id);
+      document.getElementById('ref-date').value = f.date || '';
+      document.getElementById('ref-incident-datetime').value = f.date ? `${f.date}${f.time ? ', ' + f.time : ''}` : '';
+      document.getElementById('ref-supervisor').value = f.supervisor || '';
+      document.getElementById('ref-location').value = f.location || '';
+      document.getElementById('ref-description').value = f.whatHappened || '';
+    });
+  }
   document.getElementById('ir-save-btn').addEventListener('click', () => saveIncidentReport(f));
   document.getElementById('ir-sig-later-btn').addEventListener('click', () => saveIncidentReport(f, true));
   sheetRerender = (l) => {
@@ -4425,6 +4467,7 @@ async function loadPendingSignatureDoc(type, id) {
         return;
       }
       pendingSigDocId = id; pendingSigTaskId = taskId;
+      pendingIncidentRefusalDocId = d.refusal_doc_id || null;
       populateIncidentReportForm(d);
       renderIncidentReportSheet(document.getElementById('lang-select').value);
       if (d.followup_checks) {
@@ -5174,7 +5217,7 @@ function renderMealWaiver2Sheet(lang) {
         ? (isEs ? 'Sí — se confirmó que el primer período de comida se tomó de forma ininterrumpida.' : 'Yes — the first meal period was confirmed taken uninterrupted.')
         : (isEs ? 'No — el primer período de comida no se tomó según lo requerido.' : 'No — the first meal period was not taken as required.')}</div>
       <div class="form-section">${isEs ? 'Confirmación de Oportunidad' : 'Opportunity Confirmation'}</div>
-      <div class="form-box">
+      <div class="form-box" style="white-space:normal">
         ${opportunity.map((s, i) => `<p style="margin:0 0 8px"><label><input type="checkbox" class="mw2-check no-print" data-key="opportunity-${i}"><span class="print-only">☐</span> ${s}</label></p>`).join('')}
       </div>
       <div class="form-section">${isEs ? 'Decisión Voluntaria sobre el Segundo Período de Comida' : 'Voluntary Second Meal Period Decision'}</div>
@@ -5183,7 +5226,7 @@ function renderMealWaiver2Sheet(lang) {
         : (isEs ? 'El empleado toma su segundo período de comida de 30 minutos.' : 'The employee takes their second 30-minute meal period.')}</div>
       ${f.waiving ? `
       <div class="form-section">${isEs ? 'Condiciones de la Renuncia' : 'Conditions of Waiver'}</div>
-      <div class="form-box">
+      <div class="form-box" style="white-space:normal">
         ${conditions.map((s, i) => `<p style="margin:0 0 8px"><label><input type="checkbox" class="mw2-check no-print" data-key="condition-${i}"><span class="print-only">☐</span> ${s}</label></p>`).join('')}
       </div>
       ` : ''}
@@ -5198,7 +5241,7 @@ function renderMealWaiver2Sheet(lang) {
       <button type="button" class="gh no-print" id="mw2-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
       <div class="form-page-break">
       <div class="form-section">${isEs ? 'Certificación del Supervisor' : 'Supervisor Attestation'}</div>
-      <div class="form-box">
+      <div class="form-box" style="white-space:normal">
         ${supervisorPts.map((s, i) => `<p style="margin:0 0 8px"><label><input type="checkbox" class="mw2-check no-print" data-key="supervisor-${i}"><span class="print-only">☐</span> ${s}</label></p>`).join('')}
       </div>
       <div class="form-section">${isEs ? 'Firma Electrónica del Supervisor' : 'Supervisor Electronic Signature'}</div>

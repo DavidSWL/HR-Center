@@ -685,7 +685,7 @@ function renderIncidentReportHtml(inc) {
       <div class="form-section">Root Cause &amp; Corrective Action</div>
       <div class="form-box">${escapeHtml(inc.root_cause) || '—'}${inc.corrective_action ? `<br><br><b>Corrective action:</b> ${escapeHtml(inc.corrective_action)}` : ''}</div>
       <div class="form-section">Follow-Up Report and Plan of Action</div>
-      <div class="form-box">
+      <div class="form-box" style="white-space:normal">
         <p style="margin:0 0 8px">${checks.discussed_staff ? '☑' : '☐'} Discussed with staff involved${inc.discussed_staff_who ? ` — ${escapeHtml(inc.discussed_staff_who)}` : ''}</p>
         <p style="margin:0 0 8px">${checks.discussed_meeting ? '☑' : '☐'} Discussed at departmental meeting</p>
         <p style="margin:0 0 8px">${checks.reviewed_procedures ? '☑' : '☐'} Reviewed procedures with individual</p>
