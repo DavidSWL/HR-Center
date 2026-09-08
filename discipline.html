@@ -717,8 +717,12 @@ function openPrintSheet(emp, a, lang) {
       <button type="button" class="gh solid no-print" id="wu-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
       ${signedOnHtml(a.signed_at)}
       ${a.id ? signatureTaskFieldsHtml('wu') : ''}
-      <div class="form-sig" style="grid-template-columns:1fr;margin-top:10px">
-        <div style="border-right:none">${isEs ? 'Firma del Testigo (si el empleado entiende la amonestación pero se niega a firmar)' : 'Witness Signature (if employee understands warning but refuses to sign)'}&nbsp;&nbsp;&nbsp;${isEs ? 'Fecha' : 'Date'}: _______________</div>
+      <div class="form-section" style="margin-top:10px">${isEs ? 'Firma Electrónica del Testigo' : 'Witness Electronic Signature'}</div>
+      <div class="dim" style="font-size:11.5px;margin:-4px 0 8px">${isEs ? '(si el empleado entiende la amonestación pero se niega a firmar)' : '(if employee understands the warning but refuses to sign)'}</div>
+      ${signaturePadHtml('wu-witness-sig-pad', 'wu-witness-sig-clear')}
+      <div class="frow">
+        <div class="field"><label class="f-lab" for="wu-witness-name">${isEs ? 'Nombre del Testigo' : 'Witness Printed Name'}</label><input class="f-in" id="wu-witness-name" value="${escapeHtml(a.witness_name || '')}"></div>
+        <div class="field"><label class="f-lab" for="wu-witness-date">${isEs ? 'Fecha' : 'Date'}</label><input class="f-in" id="wu-witness-date" type="date" value="${a.witness_date || ''}"></div>
       </div>
     </div>
   `;
@@ -728,17 +732,24 @@ function openPrintSheet(emp, a, lang) {
 
   setUpSignaturePad('wu-emp-sig-pad', 'wu-emp-sig-clear');
   setUpSignaturePad('wu-mgr-sig-pad', 'wu-mgr-sig-clear');
+  setUpSignaturePad('wu-witness-sig-pad', 'wu-witness-sig-clear');
   document.getElementById('wu-sig-save').addEventListener('click', async () => {
     if (!a.id) { showToast('Save this write-up first, then reopen it from the log to save a signature.', 'error'); return; }
     const empState = sigPads['wu-emp-sig-pad'];
     const mgrState = sigPads['wu-mgr-sig-pad'];
-    if (!(empState?.hasStroke) && !(mgrState?.hasStroke)) {
-      showToast('Get at least one signature first — both pads are empty.', 'error'); return;
+    const witnessState = sigPads['wu-witness-sig-pad'];
+    const witnessName = document.getElementById('wu-witness-name').value.trim();
+    const witnessDate = document.getElementById('wu-witness-date').value;
+    if (!(empState?.hasStroke) && !(mgrState?.hasStroke) && !(witnessState?.hasStroke)) {
+      showToast('Get at least one signature first — all pads are empty.', 'error'); return;
     }
     try {
       const update = { signed_at: serverTimestamp(), signed_by: profile.uid };
       if (empState?.hasStroke) update.signature_data_url = document.getElementById('wu-emp-sig-pad').toDataURL('image/png');
       if (mgrState?.hasStroke) update.manager_signature_data_url = document.getElementById('wu-mgr-sig-pad').toDataURL('image/png');
+      if (witnessState?.hasStroke) update.witness_signature_data_url = document.getElementById('wu-witness-sig-pad').toDataURL('image/png');
+      if (witnessName) update.witness_name = witnessName;
+      if (witnessDate) update.witness_date = witnessDate;
       await updateDoc(doc(db, 'disciplinary_actions', a.id), update);
       Object.assign(a, update);
       if (pendingSigTaskId) {
@@ -756,7 +767,7 @@ function openPrintSheet(emp, a, lang) {
       linkedDocId: a.id, title: `Write-up — ${emp.first_name} ${emp.last_name}`,
     }));
   }
-  sheetRerender = (l) => withPreservedSignature('wu-mgr-sig-pad', () => withPreservedSignature('wu-emp-sig-pad', () => openPrintSheet(emp, a, l)));
+  sheetRerender = (l) => withPreservedSignature('wu-witness-sig-pad', () => withPreservedSignature('wu-mgr-sig-pad', () => withPreservedSignature('wu-emp-sig-pad', () => openPrintSheet(emp, a, l))));
 }
 
 document.getElementById('search').addEventListener('input', render);
@@ -784,6 +795,7 @@ if (requestedDocId) {
     openPrintSheet(emp, action);
     await drawExistingSignatureDataUrl('wu-emp-sig-pad', action.signature_data_url);
     await drawExistingSignatureDataUrl('wu-mgr-sig-pad', action.manager_signature_data_url);
+    await drawExistingSignatureDataUrl('wu-witness-sig-pad', action.witness_signature_data_url);
     if (bothSigned) showToast('Already fully signed — shown below.');
   } else {
     showToast('That write-up could not be found.', 'error');
