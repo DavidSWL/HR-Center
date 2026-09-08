@@ -113,7 +113,14 @@
           </select>
         </div>
         <table>
-          <thead><tr><th>Document</th><th>Category</th><th>Uploaded</th><th></th></tr></thead>
+          <thead>
+            <tr id="doc-head-row">
+              <th class="sortable" data-key="title">Document<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="category">Category<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="uploaded">Uploaded<span class="sort-arrow"></span></th>
+              <th></th>
+            </tr>
+          </thead>
           <tbody id="doc-rows"></tbody>
         </table>
       </div>
@@ -739,6 +746,34 @@ document.getElementById('load-sops-btn').addEventListener('click', async () => {
 
 let docs = [];
 
+const DOC_SORT_ACCESSORS = {
+  title: (d) => (d.title || '').toLowerCase(),
+  category: (d) => (CATEGORY_LABELS[d.category] || 'Other reference').toLowerCase(),
+  uploaded: (d) => d.uploaded_at?.seconds || 0,
+};
+let docSortKey = 'title';
+let docSortDir = 'asc';
+
+function updateDocSortIndicators() {
+  document.querySelectorAll('#doc-head-row .sortable').forEach((th) => {
+    const arrow = th.querySelector('.sort-arrow');
+    arrow.textContent = th.dataset.key === docSortKey ? (docSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+  });
+}
+
+document.querySelectorAll('#doc-head-row .sortable').forEach((th) => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.key;
+    if (docSortKey === key) {
+      docSortDir = docSortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      docSortKey = key;
+      docSortDir = 'asc';
+    }
+    render();
+  });
+});
+
 async function loadDocs() {
   const snap = await getDocs(collection(db, 'training_documents'));
   docs = snap.docs
@@ -759,6 +794,15 @@ function render() {
     if (q && !(d.title || '').toLowerCase().includes(q)) return false;
     return true;
   });
+
+  const accessor = DOC_SORT_ACCESSORS[docSortKey] || DOC_SORT_ACCESSORS.title;
+  visible.sort((a, b) => {
+    const av = accessor(a);
+    const bv = accessor(b);
+    const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv));
+    return docSortDir === 'asc' ? cmp : -cmp;
+  });
+  updateDocSortIndicators();
 
   document.getElementById('docs-summary').textContent = `${visible.length} of ${docs.length}`;
   document.getElementById('doc-rows').innerHTML = visible.length ? visible.map((d) => `
