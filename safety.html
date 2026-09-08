@@ -513,7 +513,9 @@ function render() {
         <td class="mono">${i.days_away || 0}</td>
         <td class="mono dim">${i.division || '—'}</td>
         <td class="mono">${i.cost === null || i.cost === undefined
-          ? '<span class="cost-pending" title="No cost has been entered yet — click the row to add it or mark No cost incurred">Needs cost</span>'
+          ? (i.treatment_level === 'refused'
+            ? '<span class="dim" title="Medical treatment was refused — no cost expected. Change Treatment level off Refused if that changes.">No cost — refused</span>'
+            : '<span class="cost-pending" title="No cost has been entered yet — click the row to add it or mark No cost incurred">Needs cost</span>')
           : i.cost === 0 ? '<span class="dim">No cost</span>' : '$' + Number(i.cost).toLocaleString()}</td>
         <td>${i.manager_signature_data_url && i.employee_signature_data_url
           ? `<span class="pill ok">Complete</span> <button class="gh print-row-btn" data-id="${i.id}" type="button">Print</button>`
