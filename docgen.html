@@ -2387,7 +2387,7 @@ function renderRefusalSheet(lang) {
       <div class="form-section">${isEs ? 'Descripción de la Lesión o los Síntomas' : 'Description of Injury or Symptoms'}</div>
       <div class="form-box">${escapeHtml(description) || '—'}</div>
       <div class="form-section">${isEs ? 'Reconocimiento del Empleado — lea cada declaración y ponga sus iniciales' : 'Employee Acknowledgment — read each statement and initial'}</div>
-      <div class="form-box">
+      <div class="form-box" style="white-space:normal">
         ${statements.map((s, i) => `
           <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;margin:0 0 10px">
             <label style="flex:1;min-width:220px"><input type="checkbox" class="ref-check no-print" data-key="statement-${i}"><span class="print-only">☐</span> ${s}</label>
@@ -2828,7 +2828,7 @@ function renderIncidentReportSheet(lang = 'en') {
       <div class="form-section">${isEs ? 'Causa Raíz y Acción Correctiva' : 'Root Cause & Corrective Action'}</div>
       <div class="form-box">${escapeHtml(f.rootCause) || '—'}${f.correctiveAction ? `<br><br><b>${isEs ? 'Acción correctiva:' : 'Corrective action:'}</b> ${escapeHtml(f.correctiveAction)}` : ''}</div>
       <div class="form-section">${isEs ? 'Reporte de Seguimiento y Plan de Acción' : 'Follow-Up Report and Plan of Action'}</div>
-      <div class="form-box">
+      <div class="form-box" style="white-space:normal">
         <p style="margin:0 0 8px"><label><input type="checkbox" class="ir-check no-print" data-key="discussed_staff"><span class="print-only">☐</span> ${isEs ? 'Discutido con el personal involucrado' : 'Discussed with staff involved'}</label>${f.discussedStaffWho ? ` — ${escapeHtml(f.discussedStaffWho)}` : ''}</p>
         <p style="margin:0 0 8px"><label><input type="checkbox" class="ir-check no-print" data-key="discussed_meeting"><span class="print-only">☐</span> ${isEs ? 'Discutido en la reunión del departamento' : 'Discussed at departmental meeting'}</label></p>
         <p style="margin:0 0 8px"><label><input type="checkbox" class="ir-check no-print" data-key="reviewed_procedures"><span class="print-only">☐</span> ${isEs ? 'Se revisaron los procedimientos con la persona' : 'Reviewed procedures with individual'}</label></p>
@@ -5217,7 +5217,7 @@ function renderMealWaiver2Sheet(lang) {
         ? (isEs ? 'Sí — se confirmó que el primer período de comida se tomó de forma ininterrumpida.' : 'Yes — the first meal period was confirmed taken uninterrupted.')
         : (isEs ? 'No — el primer período de comida no se tomó según lo requerido.' : 'No — the first meal period was not taken as required.')}</div>
       <div class="form-section">${isEs ? 'Confirmación de Oportunidad' : 'Opportunity Confirmation'}</div>
-      <div class="form-box">
+      <div class="form-box" style="white-space:normal">
         ${opportunity.map((s, i) => `<p style="margin:0 0 8px"><label><input type="checkbox" class="mw2-check no-print" data-key="opportunity-${i}"><span class="print-only">☐</span> ${s}</label></p>`).join('')}
       </div>
       <div class="form-section">${isEs ? 'Decisión Voluntaria sobre el Segundo Período de Comida' : 'Voluntary Second Meal Period Decision'}</div>
@@ -5226,7 +5226,7 @@ function renderMealWaiver2Sheet(lang) {
         : (isEs ? 'El empleado toma su segundo período de comida de 30 minutos.' : 'The employee takes their second 30-minute meal period.')}</div>
       ${f.waiving ? `
       <div class="form-section">${isEs ? 'Condiciones de la Renuncia' : 'Conditions of Waiver'}</div>
-      <div class="form-box">
+      <div class="form-box" style="white-space:normal">
         ${conditions.map((s, i) => `<p style="margin:0 0 8px"><label><input type="checkbox" class="mw2-check no-print" data-key="condition-${i}"><span class="print-only">☐</span> ${s}</label></p>`).join('')}
       </div>
       ` : ''}
@@ -5241,7 +5241,7 @@ function renderMealWaiver2Sheet(lang) {
       <button type="button" class="gh no-print" id="mw2-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
       <div class="form-page-break">
       <div class="form-section">${isEs ? 'Certificación del Supervisor' : 'Supervisor Attestation'}</div>
-      <div class="form-box">
+      <div class="form-box" style="white-space:normal">
         ${supervisorPts.map((s, i) => `<p style="margin:0 0 8px"><label><input type="checkbox" class="mw2-check no-print" data-key="supervisor-${i}"><span class="print-only">☐</span> ${s}</label></p>`).join('')}
       </div>
       <div class="form-section">${isEs ? 'Firma Electrónica del Supervisor' : 'Supervisor Electronic Signature'}</div>

@@ -466,7 +466,7 @@ function renderRefusalHtml(d) {
       <div class="form-section">Description of Injury or Symptoms</div>
       <div class="form-box">${escapeHtmlAttr(d.description) || '—'}</div>
       <div class="form-section">Employee Acknowledgment</div>
-      <div class="form-box">
+      <div class="form-box" style="white-space:normal">
         ${statements.map((s, i) => `
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 10px">
             <p style="margin:0;flex:1;min-width:220px">${checks[`statement-${i}`] ? '☑' : '☐'} ${escapeHtmlAttr(s)}</p>
@@ -580,14 +580,14 @@ function renderMealWaiver2Html(d) {
       <div class="form-section">First Meal Period Confirmation</div>
       <div class="form-box">${d.first_taken ? 'Yes — the first meal period was confirmed taken uninterrupted.' : 'No — the first meal period was not taken as required.'}</div>
       <div class="form-section">Opportunity Confirmation</div>
-      <div class="form-box">
+      <div class="form-box" style="white-space:normal">
         ${opportunity.map((s, i) => `<p style="margin:0 0 8px">${checks[`opportunity-${i}`] ? '☑' : '☐'} ${escapeHtmlAttr(s)}</p>`).join('')}
       </div>
       <div class="form-section">Voluntary Second Meal Period Decision</div>
       <div class="form-box">${d.waiving ? 'The employee voluntarily waives their second 30-minute meal period for this specific workday.' : 'The employee takes their second 30-minute meal period.'}</div>
       ${d.waiving ? `
       <div class="form-section">Conditions of Waiver</div>
-      <div class="form-box">
+      <div class="form-box" style="white-space:normal">
         ${conditions.map((s, i) => `<p style="margin:0 0 8px">${checks[`condition-${i}`] ? '☑' : '☐'} ${escapeHtmlAttr(s)}</p>`).join('')}
       </div>
       ` : ''}
@@ -597,7 +597,7 @@ function renderMealWaiver2Html(d) {
       ${d.supervisor_signature_data_url ? `<img src="${d.supervisor_signature_data_url}" alt="Supervisor signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not signed.</div>'}
       ${signedOnHtml(d.signed_at)}
       <div class="form-section">Supervisor Attestation</div>
-      <div class="form-box">
+      <div class="form-box" style="white-space:normal">
         ${supervisorPts.map((s, i) => `<p style="margin:0 0 8px">${checks[`supervisor-${i}`] ? '☑' : '☐'} ${escapeHtmlAttr(s)}</p>`).join('')}
       </div>
       <div class="form-fine">A second meal period may only be waived by mutual consent when total hours worked do not exceed 12 and the first meal period was not waived (Labor Code §512).</div>
