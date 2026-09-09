@@ -298,12 +298,11 @@
 <script type="module">
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate, readSpreadsheetSheets, objectsFromRows } from './app.js';
-import { db, storage } from './firebaseconfig.js';
+import { db } from './firebaseconfig.js';
 import { LOGO_DATA_URL } from './letterhead-assets.js';
 import {
   collection, doc, getDoc, getDocs, updateDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
@@ -624,8 +623,8 @@ function openEdit(id) {
   document.getElementById('recordable-hint').hidden = true;
   document.getElementById('refusal-field').hidden = inc.treatment_level !== 'refused';
   document.getElementById('refusal-file').value = '';
-  document.getElementById('refusal-file-status').textContent = inc.refusal_form_url
-    ? 'A signed refusal form is already on file — choosing a new file replaces it.' : '';
+  document.getElementById('refusal-file-status').innerHTML = inc.refusal_form_url
+    ? `A signed refusal form is already on file (<a href="${inc.refusal_form_url}" target="_blank" rel="noopener">view</a>) — choosing a new file replaces it.` : '';
   const generateBtn = document.getElementById('generate-refusal-btn');
   const docStatus = document.getElementById('refusal-doc-status');
   if (inc.refusal_doc_id) {
@@ -850,13 +849,25 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
     const correctiveOwner = document.getElementById('corrective-owner').value;
     const correctiveDue = document.getElementById('corrective-due').value;
 
-    let refusalUrl = null, refusalPath = null;
+    // Embedded as a data URL directly on the incident doc rather than
+    // uploaded to Firebase Storage — this account is on the free Spark
+    // plan, which as of late 2024 can no longer provision a Storage
+    // bucket at all (Google now requires Blaze for that), so uploadBytes
+    // silently fails here. Same fix already applied to employee photos.
+    let refusalUrl = null;
     const refusalFile = document.getElementById('refusal-file').files[0];
     if (isInjury && document.getElementById('treatment-level').value === 'refused' && refusalFile) {
-      refusalPath = `incidents/${editingIncidentId}/${refusalFile.name}`;
-      const storageRef = ref(storage, refusalPath);
-      await uploadBytes(storageRef, refusalFile);
-      refusalUrl = await getDownloadURL(storageRef);
+      if (refusalFile.size > 900 * 1024) {
+        showToast('That file is too large to attach (max ~900KB) — try a lower-resolution scan or photo of it.', 'error');
+        saveBtn.disabled = false;
+        return;
+      }
+      refusalUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(refusalFile);
+      });
     }
 
     const incidentData = {
@@ -889,13 +900,10 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
     const existingIncident = incidents.find((x) => x.id === editingIncidentId);
     if (refusalUrl) {
       incidentData.refusal_form_url = refusalUrl;
-      incidentData.refusal_form_path = refusalPath;
     } else if (isInjury && incidentData.treatment_level === 'refused' && existingIncident?.refusal_form_url) {
       incidentData.refusal_form_url = existingIncident.refusal_form_url;
-      incidentData.refusal_form_path = existingIncident.refusal_form_path;
     } else {
       incidentData.refusal_form_url = null;
-      incidentData.refusal_form_path = null;
     }
 
     await updateDoc(doc(db, 'incidents', editingIncidentId), incidentData);

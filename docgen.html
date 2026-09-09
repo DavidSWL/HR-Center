@@ -148,14 +148,13 @@
 <script type="module">
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate, formatDateTime, readSpreadsheetSheets, objectsFromRows } from './app.js';
-import { db, storage } from './firebaseconfig.js';
+import { db } from './firebaseconfig.js';
 import { LOGO_DATA_URL, LOCATIONS, SCHEDULE_PRESETS, HR_SIGNER, ONBOARDING_CHECKLIST } from './letterhead-assets.js';
 import { JOB_DESCRIPTIONS } from './jobdescriptionsdata.js';
 import { ONBOARDING_FORMS } from './onboardingformsdata.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, writeBatch, serverTimestamp, query, where,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
@@ -2929,13 +2928,26 @@ async function saveIncidentReport(f, wantsSignatureTask = false) {
   try {
     const incidentRef = pendingSigDocId ? doc(db, 'incidents', pendingSigDocId) : doc(collection(db, 'incidents'));
 
-    let refusalUrl = null, refusalPath = null;
+    // Embedded as a data URL directly on the incident doc rather than
+    // uploaded to Firebase Storage — this account is on the free Spark
+    // plan, which as of late 2024 can no longer provision a Storage
+    // bucket at all (Google now requires Blaze for that), so uploadBytes
+    // silently fails here. Same fix already applied to employee photos
+    // and to Safety's own edit-incident upload.
+    let refusalUrl = null;
     const refusalFile = document.getElementById('ir-refusal-file')?.files[0];
     if (f.isInjury && f.treatmentLevel === 'refused' && refusalFile) {
-      refusalPath = `incidents/${incidentRef.id}/${refusalFile.name}`;
-      const storageRef = ref(storage, refusalPath);
-      await uploadBytes(storageRef, refusalFile);
-      refusalUrl = await getDownloadURL(storageRef);
+      if (refusalFile.size > 900 * 1024) {
+        showToast('That file is too large to attach (max ~900KB) — try a lower-resolution scan or photo of it.', 'error');
+        saveBtn.disabled = false;
+        return;
+      }
+      refusalUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(refusalFile);
+      });
     }
 
     const batch = writeBatch(db);
@@ -2952,7 +2964,7 @@ async function saveIncidentReport(f, wantsSignatureTask = false) {
       cost: f.cost, root_cause: f.rootCause,
       corrective_action: f.correctiveAction, corrective_owner: f.correctiveOwner, corrective_due: f.correctiveDue,
       category_needs_review: false,
-      refusal_form_url: refusalUrl, refusal_form_path: refusalPath,
+      refusal_form_url: refusalUrl,
       // ---- Form 7.3 fields, new on the merged record ----
       witnesses: f.witnesses, describe: f.describe, immediate_action: f.immediateAction,
       followup_checks: checks, discussed_staff_who: f.discussedStaffWho, other_detail: f.otherDetail,
