@@ -2603,8 +2603,13 @@ function renderIncidentReport() {
             <input class="f-in" id="ir-refusal-file" type="file" accept="application/pdf,image/*">
           </div>
           <div class="frow">
-            <div class="field"><label class="f-lab">Days away</label><input class="f-in" id="ir-days-away" type="number" min="0" value="0"></div>
-            <div class="field"><label class="f-lab">Restricted days</label><input class="f-in" id="ir-restricted-days" type="number" min="0" value="0"></div>
+            <div class="field"><label class="f-lab" for="ir-return-date">Return to work date</label><input class="f-in" id="ir-return-date" type="date"></div>
+            <div class="field"><label class="f-lab" for="ir-full-duty-date">Full duty date</label><input class="f-in" id="ir-full-duty-date" type="date"></div>
+          </div>
+          <div class="dim" style="font-size:11px;margin:-8px 0 10px">Leave Return to work blank while still out — Days Away keeps counting. Once they're back (even on restricted duty), Full duty stays blank while still restricted — Restricted Days keeps counting from Return to work until then.</div>
+          <div class="frow">
+            <div class="field"><label class="f-lab">Days away</label><div id="ir-days-away-display" style="font-size:12.5px;padding-top:6px"></div></div>
+            <div class="field"><label class="f-lab">Restricted days</label><div id="ir-restricted-days-display" style="font-size:12.5px;padding-top:6px"></div></div>
           </div>
           <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:14px;color:var(--alertTx)"><input type="checkbox" id="ir-fatality"> Fatality</label>
           <div class="field">
@@ -2665,7 +2670,7 @@ function renderIncidentReport() {
   document.getElementById('ir-treatment-level').addEventListener('change', (e) => {
     document.getElementById('ir-refusal-field').hidden = e.target.value !== 'refused';
   });
-  ['ir-treatment-level', 'ir-days-away', 'ir-restricted-days', 'ir-fatality'].forEach((id) => {
+  ['ir-treatment-level', 'ir-date', 'ir-return-date', 'ir-full-duty-date', 'ir-fatality'].forEach((id) => {
     document.getElementById(id).addEventListener('input', updateRecordableDisplay);
     document.getElementById(id).addEventListener('change', updateRecordableDisplay);
   });
@@ -2701,8 +2706,8 @@ function restoreIncidentReportDraft(f) {
   document.getElementById('ir-body-part').value = f.bodyPart || '';
   document.getElementById('ir-treatment-level').value = f.treatmentLevel || 'none';
   document.getElementById('ir-refusal-field').hidden = f.treatmentLevel !== 'refused';
-  document.getElementById('ir-days-away').value = f.daysAway || 0;
-  document.getElementById('ir-restricted-days').value = f.restrictedDays || 0;
+  document.getElementById('ir-return-date').value = f.returnDate || '';
+  document.getElementById('ir-full-duty-date').value = f.fullDutyDate || '';
   document.getElementById('ir-fatality').checked = !!f.fatality;
   updateRecordableDisplay();
   document.getElementById('ir-privacy-case').checked = !!f.privacyCase;
@@ -2724,13 +2729,16 @@ function readIncidentReportForm() {
   const empId = document.getElementById('ir-emp').value;
   const emp = employees.find((e) => e.id === empId) || null; // an incident doesn't have to name one employee
   const isInjury = document.getElementById('ir-type').value === 'Injury';
+  const injuryDate = document.getElementById('ir-date').value;
+  const returnDate = isInjury ? document.getElementById('ir-return-date').value : '';
+  const fullDutyDate = isInjury ? document.getElementById('ir-full-duty-date').value : '';
   const treatmentLevel = isInjury ? document.getElementById('ir-treatment-level').value : '';
-  const daysAway = isInjury ? parseInt(document.getElementById('ir-days-away').value || '0', 10) : 0;
-  const restrictedDays = isInjury ? parseInt(document.getElementById('ir-restricted-days').value || '0', 10) : 0;
+  const daysAway = isInjury ? calcDaysAway(injuryDate, returnDate) : 0;
+  const restrictedDays = isInjury ? calcRestrictedDays(returnDate, fullDutyDate) : 0;
   const fatality = isInjury ? document.getElementById('ir-fatality').checked : false;
   return {
     emp,
-    date: document.getElementById('ir-date').value,
+    date: injuryDate,
     time: document.getElementById('ir-time').value,
     supervisor: document.getElementById('ir-supervisor').value.trim(),
     department: document.getElementById('ir-department').value.trim(),
@@ -2741,6 +2749,8 @@ function readIncidentReportForm() {
     injuryType: isInjury ? document.getElementById('ir-injury-type').value.trim() : '',
     bodyPart: isInjury ? document.getElementById('ir-body-part').value.trim() : '',
     treatmentLevel,
+    returnDate,
+    fullDutyDate,
     daysAway,
     restrictedDays,
     fatality,
@@ -2776,6 +2786,29 @@ function computeRecordable({ treatmentLevel, daysAway, restrictedDays, fatality 
   return treatmentLevel === 'clinic' || treatmentLevel === 'er' || treatmentLevel === 'hospitalization';
 }
 
+// Calendar-day counting per 29 CFR 1904.7(b)(3)/(b)(4) — every calendar
+// day counts (weekends and holidays included), not just workdays. Days
+// Away runs from the day AFTER the injury through the day BEFORE
+// returning (the injury date itself never counts). Restricted Days runs
+// from the return date itself (the first restricted day) through the day
+// BEFORE full duty. Either end left blank means "still ongoing" — counts
+// through today, so nobody has to update it by hand while someone's out.
+const MS_PER_DAY = 86400000;
+function calcDaysAway(injuryDate, returnDate) {
+  if (!injuryDate) return 0;
+  const end = returnDate || new Date().toISOString().slice(0, 10);
+  const start = new Date(injuryDate + 'T00:00:00');
+  const endD = new Date(end + 'T00:00:00');
+  return Math.max(0, Math.round((endD - start) / MS_PER_DAY) - 1);
+}
+function calcRestrictedDays(returnDate, fullDutyDate) {
+  if (!returnDate) return 0; // hasn't returned at all yet, so no restricted period has started
+  const end = fullDutyDate || new Date().toISOString().slice(0, 10);
+  const start = new Date(returnDate + 'T00:00:00');
+  const endD = new Date(end + 'T00:00:00');
+  return Math.max(0, Math.round((endD - start) / MS_PER_DAY));
+}
+
 // Updates the read-only Recordable badge on the raw draft form to match
 // its current fields — called on every relevant field change, plus once
 // whenever the form is populated from a saved incident or a resumed
@@ -2783,9 +2816,21 @@ function computeRecordable({ treatmentLevel, daysAway, restrictedDays, fatality 
 // other call sites can reach it too.
 function updateRecordableDisplay() {
   const level = document.getElementById('ir-treatment-level').value;
-  const daysAway = parseInt(document.getElementById('ir-days-away').value || '0', 10);
-  const restrictedDays = parseInt(document.getElementById('ir-restricted-days').value || '0', 10);
+  const injuryDate = document.getElementById('ir-date').value;
+  const returnDate = document.getElementById('ir-return-date').value;
+  const fullDutyDate = document.getElementById('ir-full-duty-date').value;
   const fatality = document.getElementById('ir-fatality').checked;
+
+  const daysAway = calcDaysAway(injuryDate, returnDate);
+  const restrictedDays = calcRestrictedDays(returnDate, fullDutyDate);
+  document.getElementById('ir-days-away-display').textContent = returnDate
+    ? `${daysAway} day${daysAway === 1 ? '' : 's'}`
+    : (injuryDate ? `${daysAway} day${daysAway === 1 ? '' : 's'} and counting — still out` : '0 days');
+  document.getElementById('ir-restricted-days-display').textContent = !returnDate
+    ? 'Not started yet'
+    : fullDutyDate ? `${restrictedDays} day${restrictedDays === 1 ? '' : 's'}`
+    : `${restrictedDays} day${restrictedDays === 1 ? '' : 's'} and counting — still restricted`;
+
   const display = document.getElementById('ir-recordable-display');
   const recordable = computeRecordable({ treatmentLevel: level, daysAway, restrictedDays, fatality });
   let why;
@@ -2828,6 +2873,12 @@ function renderIncidentReportSheet(lang = 'en') {
         <div class="form-cell"><b>${isEs ? 'Días con Restricción' : 'Restricted Days'}</b>${f.restrictedDays}</div>
         <div class="form-cell"><b>${isEs ? 'Registrable' : 'Recordable'}</b>${f.recordable ? (isEs ? 'Sí' : 'Yes') : 'No'}</div>
       </div>
+      ${f.returnDate || f.fullDutyDate ? `
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Fecha de Regreso al Trabajo' : 'Return to Work Date'}</b>${f.returnDate ? formatDate(f.returnDate) : (isEs ? 'Aún ausente' : 'Still out')}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha de Deber Completo' : 'Full Duty Date'}</b>${f.fullDutyDate ? formatDate(f.fullDutyDate) : (f.returnDate ? (isEs ? 'Aún con restricciones' : 'Still restricted') : '—')}</div>
+      </div>
+      ` : ''}
       ${f.fatality ? `<div class="form-callout" style="border-color:var(--alertTx);color:var(--alertTx);font-weight:700">${isEs ? 'MUERTE' : 'FATALITY'}</div>` : ''}
       ${f.treatmentLevel === 'refused' ? `
       <div class="no-print" style="margin:-6px 0 14px">
@@ -2984,6 +3035,7 @@ async function saveIncidentReport(f, wantsSignatureTask = false) {
       incident_type: f.incidentType, what_happened: f.whatHappened,
       injury_type: f.injuryType, body_part: f.bodyPart, treatment_level: f.treatmentLevel,
       days_away: f.daysAway, restricted_days: f.restrictedDays,
+      return_to_work_date: f.returnDate || null, full_duty_date: f.fullDutyDate || null,
       recordable: f.recordable, fatality: f.fatality, privacy_case: f.privacyCase,
       cost: f.cost, root_cause: f.rootCause,
       corrective_action: f.correctiveAction, corrective_owner: f.correctiveOwner, corrective_due: f.correctiveDue,
@@ -4414,8 +4466,8 @@ function populateIncidentReportForm(d) {
   document.getElementById('ir-body-part').value = d.body_part || '';
   document.getElementById('ir-treatment-level').value = d.treatment_level || 'none';
   document.getElementById('ir-treatment-level').dispatchEvent(new Event('change'));
-  document.getElementById('ir-days-away').value = d.days_away || 0;
-  document.getElementById('ir-restricted-days').value = d.restricted_days || 0;
+  document.getElementById('ir-return-date').value = d.return_to_work_date || '';
+  document.getElementById('ir-full-duty-date').value = d.full_duty_date || '';
   document.getElementById('ir-fatality').checked = !!d.fatality;
   updateRecordableDisplay();
   document.getElementById('ir-privacy-case').checked = !!d.privacy_case;

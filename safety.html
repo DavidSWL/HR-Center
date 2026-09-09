@@ -185,13 +185,18 @@
           </div>
           <div class="frow">
             <div class="field">
-              <label class="f-lab" for="days-away">Days away</label>
-              <input class="f-in" id="days-away" type="number" min="0" value="0">
+              <label class="f-lab" for="return-date">Return to work date</label>
+              <input class="f-in" id="return-date" type="date">
             </div>
             <div class="field">
-              <label class="f-lab" for="restricted-days">Restricted days</label>
-              <input class="f-in" id="restricted-days" type="number" min="0" value="0">
+              <label class="f-lab" for="full-duty-date">Full duty date</label>
+              <input class="f-in" id="full-duty-date" type="date">
             </div>
+          </div>
+          <div class="dim" style="font-size:11px;margin:-8px 0 10px">Leave Return to work blank while still out — Days Away keeps counting. Once they're back (even on restricted duty), Full duty stays blank while still restricted — Restricted Days keeps counting from Return to work until then.</div>
+          <div class="frow">
+            <div class="field"><label class="f-lab">Days away</label><div id="days-away-display" style="font-size:12.5px;padding-top:6px"></div></div>
+            <div class="field"><label class="f-lab">Restricted days</label><div id="restricted-days-display" style="font-size:12.5px;padding-top:6px"></div></div>
           </div>
           <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:14px;color:var(--alertTx)">
             <input type="checkbox" id="fatality"> Fatality
@@ -607,8 +612,8 @@ function openEdit(id) {
   document.getElementById('injury-type').value = inc.injury_type || '';
   document.getElementById('body-part').value = inc.body_part || '';
   document.getElementById('treatment-level').value = inc.treatment_level || 'none';
-  document.getElementById('days-away').value = inc.days_away || 0;
-  document.getElementById('restricted-days').value = inc.restricted_days || 0;
+  document.getElementById('return-date').value = inc.return_to_work_date || '';
+  document.getElementById('full-duty-date').value = inc.full_duty_date || '';
   document.getElementById('privacy-case').checked = !!inc.privacy_case;
   document.getElementById('fatality').checked = !!inc.fatality;
   updateRecordableDisplay();
@@ -671,6 +676,12 @@ function renderIncidentReportHtml(inc) {
         <div class="form-cell"><b>Restricted Days</b>${inc.restricted_days || 0}</div>
         <div class="form-cell"><b>Recordable</b>${inc.recordable ? 'Yes' : 'No'}</div>
       </div>
+      ${inc.return_to_work_date || inc.full_duty_date ? `
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Return to Work Date</b>${inc.return_to_work_date ? formatDate(inc.return_to_work_date) : 'Still out'}</div>
+        <div class="form-cell"><b>Full Duty Date</b>${inc.full_duty_date ? formatDate(inc.full_duty_date) : (inc.return_to_work_date ? 'Still restricted' : '—')}</div>
+      </div>
+      ` : ''}
       ${inc.fatality ? '<div class="form-callout" style="border-color:var(--alertTx);color:var(--alertTx);font-weight:700">FATALITY</div>' : ''}
       ` : ''}
       <div class="form-section">Name(s) of Person(s) Who Witnessed Incident</div>
@@ -817,11 +828,47 @@ function computeRecordable({ treatmentLevel, daysAway, restrictedDays, fatality 
   if (daysAway > 0 || restrictedDays > 0) return true;
   return treatmentLevel === 'clinic' || treatmentLevel === 'er' || treatmentLevel === 'hospitalization';
 }
+
+// Calendar-day counting per 29 CFR 1904.7(b)(3)/(b)(4) — every calendar
+// day counts (weekends and holidays included), not just workdays. Days
+// Away runs from the day AFTER the injury through the day BEFORE
+// returning (the injury date itself never counts). Restricted Days runs
+// from the return date itself (the first restricted day) through the day
+// BEFORE full duty. Either end left blank means "still ongoing" — counts
+// through today, so nobody has to update it by hand while someone's out.
+const MS_PER_DAY = 86400000;
+function calcDaysAway(injuryDate, returnDate) {
+  if (!injuryDate) return 0;
+  const end = returnDate || new Date().toISOString().slice(0, 10);
+  const start = new Date(injuryDate + 'T00:00:00');
+  const endD = new Date(end + 'T00:00:00');
+  return Math.max(0, Math.round((endD - start) / MS_PER_DAY) - 1);
+}
+function calcRestrictedDays(returnDate, fullDutyDate) {
+  if (!returnDate) return 0;
+  const end = fullDutyDate || new Date().toISOString().slice(0, 10);
+  const start = new Date(returnDate + 'T00:00:00');
+  const endD = new Date(end + 'T00:00:00');
+  return Math.max(0, Math.round((endD - start) / MS_PER_DAY));
+}
+
 function updateRecordableDisplay() {
   const level = document.getElementById('treatment-level').value;
-  const daysAway = parseInt(document.getElementById('days-away').value || '0', 10);
-  const restrictedDays = parseInt(document.getElementById('restricted-days').value || '0', 10);
+  const injuryDate = document.getElementById('inc-date').value;
+  const returnDate = document.getElementById('return-date').value;
+  const fullDutyDate = document.getElementById('full-duty-date').value;
   const fatality = document.getElementById('fatality').checked;
+
+  const daysAway = calcDaysAway(injuryDate, returnDate);
+  const restrictedDays = calcRestrictedDays(returnDate, fullDutyDate);
+  document.getElementById('days-away-display').textContent = returnDate
+    ? `${daysAway} day${daysAway === 1 ? '' : 's'}`
+    : (injuryDate ? `${daysAway} day${daysAway === 1 ? '' : 's'} and counting — still out` : '0 days');
+  document.getElementById('restricted-days-display').textContent = !returnDate
+    ? 'Not started yet'
+    : fullDutyDate ? `${restrictedDays} day${restrictedDays === 1 ? '' : 's'}`
+    : `${restrictedDays} day${restrictedDays === 1 ? '' : 's'} and counting — still restricted`;
+
   const display = document.getElementById('recordable-display');
   const recordable = computeRecordable({ treatmentLevel: level, daysAway, restrictedDays, fatality });
   let why;
@@ -831,7 +878,7 @@ function updateRecordableDisplay() {
   else why = 'no days away/restricted, and treatment was first aid, none, or refused';
   display.innerHTML = `<span class="pill${recordable ? ' bad' : ''}">${recordable ? 'Recordable' : 'Not recordable'}</span> <span class="dim" style="font-size:11px">— ${why}</span>`;
 }
-['treatment-level', 'days-away', 'restricted-days', 'fatality'].forEach((id) => {
+['treatment-level', 'inc-date', 'return-date', 'full-duty-date', 'fatality'].forEach((id) => {
   document.getElementById(id).addEventListener('input', updateRecordableDisplay);
   document.getElementById(id).addEventListener('change', updateRecordableDisplay);
 });
@@ -870,8 +917,14 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
       });
     }
 
+    const incDate = document.getElementById('inc-date').value;
+    const returnDate = document.getElementById('return-date').value;
+    const fullDutyDate = document.getElementById('full-duty-date').value;
+    const daysAway = isInjury ? calcDaysAway(incDate, returnDate) : 0;
+    const restrictedDays = isInjury ? calcRestrictedDays(returnDate, fullDutyDate) : 0;
+
     const incidentData = {
-      date: document.getElementById('inc-date').value,
+      date: incDate,
       time: document.getElementById('inc-time').value,
       emp_id: empId,
       division: emp ? emp.division || '' : '', // denormalized at write time
@@ -883,14 +936,16 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
       injury_type: isInjury ? document.getElementById('injury-type').value.trim() : '',
       body_part: isInjury ? document.getElementById('body-part').value.trim() : '',
       treatment_level: isInjury ? document.getElementById('treatment-level').value : '',
-      days_away: isInjury ? parseInt(document.getElementById('days-away').value || '0', 10) : 0,
-      restricted_days: isInjury ? parseInt(document.getElementById('restricted-days').value || '0', 10) : 0,
+      return_to_work_date: isInjury ? (returnDate || null) : null,
+      full_duty_date: isInjury ? (fullDutyDate || null) : null,
+      days_away: daysAway,
+      restricted_days: restrictedDays,
       privacy_case: isInjury ? document.getElementById('privacy-case').checked : false,
       fatality: isInjury ? document.getElementById('fatality').checked : false,
       recordable: isInjury && computeRecordable({
         treatmentLevel: document.getElementById('treatment-level').value,
-        daysAway: parseInt(document.getElementById('days-away').value || '0', 10),
-        restrictedDays: parseInt(document.getElementById('restricted-days').value || '0', 10),
+        daysAway,
+        restrictedDays,
         fatality: document.getElementById('fatality').checked,
       }),
       cost: document.getElementById('no-cost').checked ? 0 : (document.getElementById('cost').value === '' ? null : parseFloat(document.getElementById('cost').value)),
