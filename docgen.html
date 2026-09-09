@@ -2585,6 +2585,10 @@ function renderIncidentReport() {
             <div class="field"><label class="f-lab">Injury type</label><input class="f-in" id="ir-injury-type" placeholder="e.g. Laceration"></div>
             <div class="field"><label class="f-lab">Body part</label><input class="f-in" id="ir-body-part"></div>
           </div>
+          <div class="field">
+            <label class="f-lab" for="ir-related-incident">Related to an earlier incident? (re-injury)</label>
+            <select class="f-in" id="ir-related-incident"><option value="">Not related to an earlier incident</option></select>
+          </div>
           <div class="field"><label class="f-lab">Treatment level</label>
             <select class="f-in" id="ir-treatment-level">
               <option value="none">None needed</option>
@@ -2649,6 +2653,7 @@ function renderIncidentReport() {
 
   document.getElementById('ir-emp').addEventListener('change', (e) => {
     const emp = employees.find((x) => x.id === e.target.value);
+    loadRelatedIncidentOptions(e.target.value, null);
     if (!emp || !emp.manager_emp_id) return;
     const mgr = employees.find((x) => x.id === emp.manager_emp_id);
     if (!mgr) return;
@@ -2695,8 +2700,10 @@ function renderIncidentReport() {
 // Repopulates the raw incident report draft form from a snapshot taken
 // by readIncidentReportForm() -- used when someone comes back from
 // generating a Refusal form mid-draft via "Generate Refusal Form".
-function restoreIncidentReportDraft(f) {
+async function restoreIncidentReportDraft(f) {
   if (f.emp) setEmpField('ir-emp', f.emp.id);
+  await loadRelatedIncidentOptions(f.emp ? f.emp.id : '', null);
+  document.getElementById('ir-related-incident').value = f.relatedIncidentId || '';
   document.getElementById('ir-date').value = f.date || '';
   document.getElementById('ir-time').value = f.time || '';
   document.getElementById('ir-supervisor').value = f.supervisor || '';
@@ -2745,6 +2752,7 @@ function readIncidentReportForm() {
   const daysAway = isInjury ? parseInt(document.getElementById('ir-days-away').value || '0', 10) : 0;
   const restrictedDays = isInjury ? parseInt(document.getElementById('ir-restricted-days').value || '0', 10) : 0;
   const fatality = isInjury ? document.getElementById('ir-fatality').checked : false;
+  const relatedSel = document.getElementById('ir-related-incident');
   return {
     emp,
     date: injuryDate,
@@ -2757,6 +2765,11 @@ function readIncidentReportForm() {
     isInjury,
     injuryType: isInjury ? document.getElementById('ir-injury-type').value.trim() : '',
     bodyPart: isInjury ? document.getElementById('ir-body-part').value.trim() : '',
+    // The label is never stored — it's just whatever the dropdown is
+    // currently showing for the picked id, re-derived every time the
+    // options are loaded (see loadRelatedIncidentOptions).
+    relatedIncidentId: isInjury ? (relatedSel.value || null) : null,
+    relatedIncidentLabel: isInjury && relatedSel.value ? relatedSel.options[relatedSel.selectedIndex].textContent : '',
     treatmentLevel,
     returnDate,
     fullDutyDate,
@@ -2816,6 +2829,24 @@ function calcRestrictedDays(returnDate, fullDutyDate) {
   const start = new Date(returnDate + 'T00:00:00');
   const endD = new Date(end + 'T00:00:00');
   return Math.max(0, Math.round((endD - start) / MS_PER_DAY));
+}
+
+// The chosen employee's other incidents, for tagging a re-injury as
+// related to an earlier one. excludeId keeps a saved incident being
+// reopened from listing itself as a possible relative of itself.
+async function loadRelatedIncidentOptions(empId, excludeId) {
+  const sel = document.getElementById('ir-related-incident');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Not related to an earlier incident</option>';
+  if (!empId) return;
+  const snap = await getDocs(query(collection(db, 'incidents'), where('emp_id', '==', empId)));
+  const past = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((i) => i.id !== excludeId && !i.voided)
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  sel.innerHTML = '<option value="">Not related to an earlier incident</option>' + past.map((i) =>
+    `<option value="${i.id}">${formatDate(i.date)} — ${escapeHtml(i.injury_type || i.incident_type || 'Incident')}${i.body_part ? ' / ' + escapeHtml(i.body_part) : ''}</option>`
+  ).join('');
 }
 
 // Fills the Days Away / Restricted Days number fields from the dates —
@@ -2888,6 +2919,7 @@ function renderIncidentReportSheet(lang = 'en') {
         <div class="form-cell"><b>${isEs ? 'Fecha de Deber Completo' : 'Full Duty Date'}</b>${f.fullDutyDate ? formatDate(f.fullDutyDate) : (f.returnDate ? (isEs ? 'Aún con restricciones' : 'Still restricted') : '—')}</div>
       </div>
       ` : ''}
+      ${f.relatedIncidentId ? `<div class="form-callout">${isEs ? 'Nueva lesión — relacionada con el incidente del' : 'Re-injury — related to the incident on'} ${escapeHtml(f.relatedIncidentLabel)}.</div>` : ''}
       ${f.fatality ? `<div class="form-callout" style="border-color:var(--alertTx);color:var(--alertTx);font-weight:700">${isEs ? 'MUERTE' : 'FATALITY'}</div>` : ''}
       ${f.treatmentLevel === 'refused' ? `
       <div class="no-print" style="margin:-6px 0 14px">
@@ -3042,7 +3074,8 @@ async function saveIncidentReport(f, wantsSignatureTask = false) {
       division: f.emp ? f.emp.division || '' : '',
       department: f.department, supervisor: f.supervisor, location: f.location,
       incident_type: f.incidentType, what_happened: f.whatHappened,
-      injury_type: f.injuryType, body_part: f.bodyPart, treatment_level: f.treatmentLevel,
+      injury_type: f.injuryType, body_part: f.bodyPart, related_incident_id: f.relatedIncidentId || null,
+      treatment_level: f.treatmentLevel,
       days_away: f.daysAway, restricted_days: f.restrictedDays,
       return_to_work_date: f.returnDate || null, full_duty_date: f.fullDutyDate || null,
       recordable: f.recordable, fatality: f.fatality, privacy_case: f.privacyCase,
@@ -4462,7 +4495,7 @@ function drawExistingSignatureDataUrl(canvasId, dataUrl) {
   });
 }
 
-function populateIncidentReportForm(d) {
+async function populateIncidentReportForm(d) {
   document.getElementById('ir-date').value = d.date || '';
   document.getElementById('ir-time').value = d.time || '';
   setEmpField('ir-emp', d.emp_id);
@@ -4473,6 +4506,8 @@ function populateIncidentReportForm(d) {
   document.getElementById('ir-what-happened').value = d.what_happened || '';
   document.getElementById('ir-injury-type').value = d.injury_type || '';
   document.getElementById('ir-body-part').value = d.body_part || '';
+  await loadRelatedIncidentOptions(d.emp_id, pendingSigDocId);
+  document.getElementById('ir-related-incident').value = d.related_incident_id || '';
   document.getElementById('ir-treatment-level').value = d.treatment_level || 'none';
   document.getElementById('ir-treatment-level').dispatchEvent(new Event('change'));
   document.getElementById('ir-return-date').value = d.return_to_work_date || '';
@@ -4570,7 +4605,7 @@ async function loadPendingSignatureDoc(type, id) {
       }
       pendingSigDocId = id; pendingSigTaskId = taskId;
       pendingIncidentRefusalDocId = d.refusal_doc_id || null;
-      populateIncidentReportForm(d);
+      await populateIncidentReportForm(d);
       renderIncidentReportSheet(document.getElementById('lang-select').value);
       if (d.followup_checks) {
         document.querySelectorAll('.ir-check').forEach((cb) => {

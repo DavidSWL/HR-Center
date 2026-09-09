@@ -165,6 +165,13 @@
             </div>
           </div>
           <div class="field">
+            <label class="f-lab" for="related-incident">Related to an earlier incident? (re-injury)</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select class="f-in" id="related-incident" style="flex:1"><option value="">Not related to an earlier incident</option></select>
+              <button class="gh" id="view-related-incident-btn" type="button" hidden style="white-space:nowrap">View</button>
+            </div>
+          </div>
+          <div class="field">
             <label class="f-lab" for="treatment-level">Treatment level</label>
             <select class="f-in" id="treatment-level">
               <option value="none">None needed</option>
@@ -594,6 +601,26 @@ const overlay = document.getElementById('modal-overlay');
 // by the time the form is submitted.
 let editingIncidentId = null;
 
+// Same employee's other incidents, for tagging a re-injury as related to
+// an earlier one. Read straight from the already-loaded incidents array
+// rather than a fresh query — this page has the whole list in memory.
+function populateRelatedIncidentOptions(empId, excludeId) {
+  const sel = document.getElementById('related-incident');
+  const past = incidents
+    .filter((i) => i.emp_id === empId && i.id !== excludeId && !i.voided)
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  sel.innerHTML = '<option value="">Not related to an earlier incident</option>' + past.map((i) =>
+    `<option value="${i.id}">${formatDate(i.date)} — ${escapeHtml(i.injury_type || i.incident_type || 'Incident')}${i.body_part ? ' / ' + escapeHtml(i.body_part) : ''}</option>`
+  ).join('');
+}
+document.getElementById('related-incident').addEventListener('change', (e) => {
+  document.getElementById('view-related-incident-btn').hidden = !e.target.value;
+});
+document.getElementById('view-related-incident-btn').addEventListener('click', () => {
+  const id = document.getElementById('related-incident').value;
+  if (id) openEdit(id);
+});
+
 function openEdit(id) {
   const inc = incidents.find((x) => x.id === id);
   if (!inc) return;
@@ -611,6 +638,9 @@ function openEdit(id) {
   document.getElementById('what-happened').value = inc.what_happened || '';
   document.getElementById('injury-type').value = inc.injury_type || '';
   document.getElementById('body-part').value = inc.body_part || '';
+  populateRelatedIncidentOptions(inc.emp_id, inc.id);
+  document.getElementById('related-incident').value = inc.related_incident_id || '';
+  document.getElementById('view-related-incident-btn').hidden = !inc.related_incident_id;
   document.getElementById('treatment-level').value = inc.treatment_level || 'none';
   document.getElementById('return-date').value = inc.return_to_work_date || '';
   document.getElementById('full-duty-date').value = inc.full_duty_date || '';
@@ -684,6 +714,10 @@ function renderIncidentReportHtml(inc) {
         <div class="form-cell"><b>Full Duty Date</b>${inc.full_duty_date ? formatDate(inc.full_duty_date) : (inc.return_to_work_date ? 'Still restricted' : '—')}</div>
       </div>
       ` : ''}
+      ${inc.related_incident_id ? (() => {
+        const related = incidents.find((x) => x.id === inc.related_incident_id);
+        return `<div class="form-callout">Re-injury — related to the incident on ${related ? formatDate(related.date) : 'an earlier date'}${related && related.body_part ? ` (${escapeHtml(related.body_part)})` : ''}.</div>`;
+      })() : ''}
       ${inc.fatality ? '<div class="form-callout" style="border-color:var(--alertTx);color:var(--alertTx);font-weight:700">FATALITY</div>' : ''}
       ` : ''}
       <div class="form-section">Name(s) of Person(s) Who Witnessed Incident</div>
@@ -944,6 +978,7 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
       what_happened: document.getElementById('what-happened').value.trim(),
       injury_type: isInjury ? document.getElementById('injury-type').value.trim() : '',
       body_part: isInjury ? document.getElementById('body-part').value.trim() : '',
+      related_incident_id: isInjury ? (document.getElementById('related-incident').value || null) : null,
       treatment_level: isInjury ? document.getElementById('treatment-level').value : '',
       return_to_work_date: isInjury ? (returnDate || null) : null,
       full_duty_date: isInjury ? (fullDutyDate || null) : null,
