@@ -205,6 +205,8 @@ const GENERATORS = [
   { key: 'review', title: '30 / 60 / 90 review', desc: 'Matches the SWL new-hire review template', category: 'Performance & conduct' },
 
   { key: 'termination', title: 'Termination', desc: 'Matches the SWL termination form — log, generate, and import', category: 'Separation' },
+  { key: 'termsummary', title: 'Employee Termination Summary', desc: 'Internal one-page summary, pulled from the termination on file — never includes SSN or DOB', category: 'Separation' },
+  { key: 'changenotice', title: 'CA Notice of Change in Employment Status', desc: 'Required by CUIC §1089 — pulled from the termination, employee- and manager-signed, saves to Documents', category: 'Separation' },
 
   { key: 'mileage', title: 'Mileage reimbursement', desc: 'CA business-mileage reimbursement — log trips, calculate the total from the current IRS rate, employee-signed', category: 'Pay & time' },
   { key: 'timecard', title: 'Time card adjustment', desc: 'Employee-signed record of an Aspire punch correction — print, sign, file', category: 'Pay & time' },
@@ -361,6 +363,7 @@ function openGenerator(key) {
   pendingSigTaskId = null;
   refusalLinkedIncidentId = null;
   pendingIncidentRefusalDocId = null;
+  linkedTerminationId = null;
   sheetRerender = null;
   document.getElementById('menu-view').hidden = true;
   document.getElementById('gen-view').hidden = false;
@@ -369,7 +372,7 @@ function openGenerator(key) {
   // exactly as supplied — those forms are English-only, so the language
   // toggle only applies to PIP, Onboarding, and the letters (which manage
   // English/Spanish through their own letter-type list instead).
-  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty' || key === 'mealwaiver2' || key === 'mileage' || key === 'review' || key === 'termination' || key === 'incidentreport') ? '' : 'none';
+  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty' || key === 'mealwaiver2' || key === 'mileage' || key === 'review' || key === 'termination' || key === 'incidentreport' || key === 'termsummary' || key === 'changenotice') ? '' : 'none';
   renderCurrent();
 }
 
@@ -390,6 +393,8 @@ function renderCurrent() {
   if (currentKey === 'incidentreport') renderIncidentReport();
   if (currentKey === 'osha300a') renderOsha300a();
   if (currentKey === 'employeefile') renderEmployeeFile();
+  if (currentKey === 'termsummary') renderTermSummary(lang);
+  if (currentKey === 'changenotice') renderChangeNotice(lang);
 }
 
 // ---- PIP ----
@@ -862,20 +867,23 @@ function renderReviewSheet(emp, milestone, data, lang = 'en') {
 // dollar amounts are typed on the generator, printed, and never written to
 // Firestore — same rule as the offer letter's rate field. ----
 
-const TERM_REASONS = ['Voluntary Resignation', 'Layoff / Reduction in Force', 'Performance', 'Attendance / Tardiness', 'Policy/Conduct Violation', 'Other'];
+const TERM_REASONS = ['Voluntary Resignation', 'Job Abandonment', 'Layoff / Reduction in Force', 'Performance', 'Attendance / Tardiness', 'Policy/Conduct Violation', 'Other'];
 // Sheet output only is bilingual — the data-entry form above stays in
 // English (HR fills it out); a saved termination's reason/property/notice
 // values are stored in English and looked up here for display.
 const TERM_REASONS_ES = {
-  'Voluntary Resignation': 'Renuncia Voluntaria', 'Layoff / Reduction in Force': 'Despido / Reducción de Personal',
+  'Voluntary Resignation': 'Renuncia Voluntaria', 'Job Abandonment': 'Abandono del Trabajo',
+  'Layoff / Reduction in Force': 'Despido / Reducción de Personal',
   Performance: 'Desempeño', 'Attendance / Tardiness': 'Asistencia / Tardanza',
   'Policy/Conduct Violation': 'Violación de Política/Conducta', Other: 'Otro',
 };
-const PROPERTY_ITEMS = ['Keys', 'Uniform', 'Laptop', 'Phone', 'CC/Gas Card', 'Vehicle', 'Email/System Access Revoked', 'Building/Key Fob Access Revoked'];
+const PROPERTY_ITEMS = ['Keys', 'Uniform', 'Laptop', 'Phone', 'CC/Gas Card', 'Vehicle', 'Email/System Access Revoked', 'Building/Key Fob Access Revoked', 'Tools and/or Equipment', 'Proprietary Information and Documents'];
 const PROPERTY_ITEMS_ES = {
   Keys: 'Llaves', Uniform: 'Uniforme', Laptop: 'Laptop', Phone: 'Teléfono', 'CC/Gas Card': 'Tarjeta de Crédito/Gasolina',
   Vehicle: 'Vehículo', 'Email/System Access Revoked': 'Acceso a Correo/Sistemas Revocado',
   'Building/Key Fob Access Revoked': 'Acceso al Edificio/Llavero Revocado',
+  'Tools and/or Equipment': 'Herramientas y/o Equipo',
+  'Proprietary Information and Documents': 'Información y Documentos Confidenciales',
 };
 const NOTICE_ITEMS = [
   { key: 'edd', label: 'EDD "For Your Benefit" Pamphlet (DE 2320)' },
@@ -908,6 +916,53 @@ const NO_SIG_REASONS_ES = {
   other: 'Otro',
 };
 
+// ---- Employee Termination Summary — internal one-page reference,
+// matches the SWL summary sheet exactly. Never includes SSN or DOB: those
+// two lines are print-only inputs (typed at generation time, printed,
+// never written to Firestore), the same pattern the offer letter uses for
+// pay rate. ----
+const SUMMARY_TYPES = [
+  { value: 'voluntary', label: 'Voluntary Resignation' },
+  { value: 'abandonment', label: 'Job Abandonment' },
+  { value: 'layoff', label: 'Layoff/Reduction in Force' },
+  { value: 'performance', label: 'Termination - Performance' },
+  { value: 'policy', label: 'Termination – Policy Violation / Misconduct' },
+];
+const SUMMARY_TYPES_ES = {
+  voluntary: 'Renuncia Voluntaria', abandonment: 'Abandono del Trabajo',
+  layoff: 'Despido/Reducción de Personal', performance: 'Terminación - Desempeño',
+  policy: 'Terminación – Violación de Política / Mala Conducta',
+};
+// Best-effort starting point from the termination's own reason — shown
+// pre-selected but always changeable before printing, since a couple of
+// our reasons (Attendance/Tardiness, Other) don't have a clean match.
+const REASON_TO_SUMMARY_TYPE = {
+  'Voluntary Resignation': 'voluntary', 'Job Abandonment': 'abandonment',
+  'Layoff / Reduction in Force': 'layoff', Performance: 'performance',
+  'Attendance / Tardiness': 'performance', 'Policy/Conduct Violation': 'policy', Other: 'policy',
+};
+
+// ---- CA Notice of Change in Employment Status — required by California
+// Unemployment Insurance Code §1089, matches the SWL notice exactly. One
+// copy to the employee (who acknowledges receipt), one for the file — its
+// own signatures, separate from the termination form's. ----
+const CHANGE_TYPES = [
+  { value: 'discharge', label: 'Discharge' },
+  { value: 'layoff', label: 'Layoff' },
+  { value: 'leave', label: 'Leave of absence' },
+  { value: 'voluntary', label: 'Voluntary Resignation / Leaving for Other Employment' },
+  { value: 'other', label: 'Other' },
+];
+const CHANGE_TYPES_ES = {
+  discharge: 'Despido', layoff: 'Recorte de Personal', leave: 'Licencia',
+  voluntary: 'Renuncia Voluntaria / Dejando por Otro Empleo', other: 'Otro',
+};
+const REASON_TO_CHANGE_TYPE = {
+  'Voluntary Resignation': 'voluntary', 'Job Abandonment': 'other',
+  'Layoff / Reduction in Force': 'layoff', Performance: 'discharge',
+  'Attendance / Tardiness': 'discharge', 'Policy/Conduct Violation': 'discharge', Other: 'other',
+};
+
 let terminations = [];
 let termSortKey = 'date';
 let termSortDir = 'desc';
@@ -937,6 +992,7 @@ function renderTermination() {
             <th class="sortable" data-key="type">Type<span class="sort-arrow"></span></th>
             <th>Rehire</th>
             <th>Notes / exit interview</th>
+            <th>Offboarding docs</th>
           </tr>
         </thead>
         <tbody id="term-rows"></tbody>
@@ -1087,8 +1143,12 @@ function renderTermRows() {
         </select>
       </td>
       <td class="dim term-notes-cell" data-id="${r.id}" style="cursor:pointer" title="Click to add or edit">${escapeHtml(r.circumstances || '— click to add')}</td>
+      <td onclick="event.stopPropagation()" style="white-space:nowrap">
+        <button class="gh term-summary-btn" data-id="${r.id}" type="button" style="font-size:11px;padding:3px 7px">Summary</button>
+        <button class="gh term-changenotice-btn" data-id="${r.id}" type="button" style="font-size:11px;padding:3px 7px">CA Notice</button>
+      </td>
     </tr>
-  `).join('') : '<tr><td colspan="8" class="dim">No terminations logged yet.</td></tr>';
+  `).join('') : '<tr><td colspan="9" class="dim">No terminations logged yet.</td></tr>';
   document.querySelectorAll('#term-rows tr').forEach((tr) => {
     tr.addEventListener('click', (e) => {
       if (e.target.closest('.term-notes-cell')) return; // handled separately below
@@ -1138,6 +1198,12 @@ function renderTermRows() {
         renderTermRows();
       }
     });
+  });
+  document.querySelectorAll('.term-summary-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { openGenerator('termsummary'); loadTerminationForSummary(btn.dataset.id); });
+  });
+  document.querySelectorAll('.term-changenotice-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { openGenerator('changenotice'); loadTerminationForChangeNotice(btn.dataset.id); });
   });
 }
 
@@ -1388,6 +1454,336 @@ function renderTerminationSheet(r, finalPay = {}, lang = 'en') {
     }));
   }
   sheetRerender = (l) => withPreservedSignature('term-witness-sig-pad', () => withPreservedSignature('term-mgr-sig-pad', () => withPreservedSignature('term-sig-pad', () => renderTerminationSheet(r, finalPay, l))));
+}
+
+// Pre-fills the Termination Summary generator from an already-registered
+// termination (the "Summary" button in the terminations list) so nothing
+// already on file has to be re-typed.
+function loadTerminationForSummary(terminationId) {
+  const rec = terminations.find((t) => t.id === terminationId);
+  if (!rec) { showToast('That termination could not be found.', 'error'); return; }
+  linkedTerminationId = terminationId;
+  setEmpField('ts-emp', rec.emp_id, allEmployeesEver);
+  document.getElementById('ts-hire-date').value = rec.hire_date || '';
+  document.getElementById('ts-lastday').value = rec.last_day_worked || '';
+  document.getElementById('ts-term-date').value = rec.termination_date || '';
+  document.getElementById('ts-type').value = REASON_TO_SUMMARY_TYPE[rec.reason] || 'policy';
+  document.getElementById('ts-summary').value = rec.circumstances || '';
+}
+
+function renderTermSummary(lang) {
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <p class="dim" style="font-size:12px;margin:0 0 10px">Internal reference only — open it from a termination's "Summary" button to pull everything in automatically, or fill it in by hand below. SSN and DOB are never saved — type them here only if you want them on the printed page.</p>
+        ${empSearchFieldHtml('ts-emp', '<label class="f-lab">Employee</label>', allEmployeesEver)}
+        <div class="frow">
+          <div class="field"><label class="f-lab">Date of hire</label><input class="f-in" id="ts-hire-date" type="date"></div>
+          <div class="field"><label class="f-lab">Last day worked</label><input class="f-in" id="ts-lastday" type="date"></div>
+        </div>
+        <div class="field"><label class="f-lab">Termination date</label><input class="f-in" id="ts-term-date" type="date"></div>
+        <div class="frow">
+          <div class="field"><label class="f-lab" style="color:var(--alertTx)">DOB — printed only, never saved</label><input class="f-in" id="ts-dob" type="date"></div>
+          <div class="field"><label class="f-lab" style="color:var(--alertTx)">SSN — printed only, never saved</label><input class="f-in" id="ts-ssn" placeholder="XXX-XX-XXXX"></div>
+        </div>
+        <div class="field"><label class="f-lab">Type of termination</label>
+          <select class="f-in" id="ts-type">${SUMMARY_TYPES.map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label class="f-lab">Summary</label><textarea class="f-in" id="ts-summary" rows="4" style="resize:vertical"></textarea></div>
+        <button class="gh solid" id="ts-generate-btn" type="button">Generate</button>
+      </div>
+    </div>
+    <div class="form-doc" id="ts-sheet" hidden></div>
+  `;
+  wireEmpSearch('ts-emp', allEmployeesEver);
+  if (linkedTerminationId) loadTerminationForSummary(linkedTerminationId);
+  document.getElementById('ts-generate-btn').addEventListener('click', () => renderTermSummarySheet(lang));
+}
+
+function renderTermSummarySheet(lang) {
+  const isEs = lang === 'es';
+  const emp = allEmployeesEver.find((e) => e.id === document.getElementById('ts-emp').value);
+  if (!emp) { showToast('Select an employee.', 'error'); return; }
+  const hireDate = document.getElementById('ts-hire-date').value;
+  const lastDay = document.getElementById('ts-lastday').value;
+  const termDate = document.getElementById('ts-term-date').value;
+  const dob = document.getElementById('ts-dob').value;
+  const ssn = document.getElementById('ts-ssn').value.trim();
+  const type = document.getElementById('ts-type').value;
+  const summary = document.getElementById('ts-summary').value.trim();
+  const types = isEs ? SUMMARY_TYPES_ES : Object.fromEntries(SUMMARY_TYPES.map((t) => [t.value, t.label]));
+
+  const sheet = document.getElementById('ts-sheet');
+  sheet.hidden = false;
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  sheet.innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">${isEs ? 'Resumen de Terminación del Empleado' : 'Employee Termination Summary'}</h1>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Nombre del Empleado' : 'Employee Name'}</b>${emp.first_name} ${emp.last_name}</div>
+        <div class="form-cell"><b>DOH</b>${formatDate(hireDate)}</div>
+        <div class="form-cell"><b>DOB</b>${dob ? formatDate(dob) : '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Último Día Trabajado' : 'Last Day Worked'}</b>${formatDate(lastDay)}</div>
+        <div class="form-cell"><b>SSN</b>${escapeHtml(ssn) || '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha de Terminación' : 'Term Date'}</b>${formatDate(termDate)}</div>
+      </div>
+      <div class="form-section">${isEs ? 'Tipo de Terminación' : 'Type of Termination'}</div>
+      <div class="form-checks">${SUMMARY_TYPES.map((t) => `<label>${t.value === type ? '☑' : '☐'} ${types[t.value]}</label>`).join('')}</div>
+      <div class="form-section">${isEs ? 'Resumen' : 'Summary'}</div>
+      <div class="form-box">${escapeHtml(summary) || '—'}</div>
+      <button type="button" class="gh solid no-print" id="ts-save-btn" style="margin-top:10px">${isEs ? 'Guardar en Documentos' : 'Save to Documents'}</button>
+    </div>
+    <button class="gh no-print" id="ts-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
+  `;
+  document.getElementById('ts-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  document.getElementById('ts-save-btn').addEventListener('click', async () => {
+    try {
+      await setDoc(doc(collection(db, 'training_documents')), {
+        content_type: 'termsummary', category: 'termination', status: 'filed',
+        title: `Employee Termination Summary — ${emp.first_name} ${emp.last_name} (${formatDate(termDate)})`,
+        emp_id: emp.id, emp_name: `${emp.first_name} ${emp.last_name}`,
+        hire_date: hireDate, last_day_worked: lastDay, termination_date: termDate,
+        type, summary, lang,
+        ...(linkedTerminationId ? { linked_termination_id: linkedTerminationId } : {}),
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast('Saved to Documents. (SSN and DOB were not saved — they only print on the copy you have open.)');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
+  sheetRerender = (l) => renderTermSummarySheet(l);
+}
+
+// ---- CA Notice of Change in Employment Status ----
+
+// Pre-fills the CA Notice generator from an already-registered termination
+// (the "CA Notice" button in the terminations list).
+function loadTerminationForChangeNotice(terminationId) {
+  const rec = terminations.find((t) => t.id === terminationId);
+  if (!rec) { showToast('That termination could not be found.', 'error'); return; }
+  linkedTerminationId = terminationId;
+  setEmpField('cn-emp', rec.emp_id, allEmployeesEver);
+  document.getElementById('cn-effective-date').value = rec.termination_date || '';
+  document.getElementById('cn-lastday').value = rec.last_day_worked || '';
+  const mapped = REASON_TO_CHANGE_TYPE[rec.reason] || 'other';
+  document.getElementById('cn-type').value = mapped;
+  document.getElementById('cn-type-other-field').hidden = mapped !== 'other';
+  if (mapped === 'other') document.getElementById('cn-type-other').value = rec.reason || '';
+  PROPERTY_ITEMS.forEach((p) => {
+    const sel = document.getElementById(`cn-prop-${PROPERTY_ITEMS.indexOf(p)}`);
+    if (sel) sel.value = (rec.property_returned || []).includes(p) ? 'yes' : 'na';
+  });
+  document.getElementById('cn-comments').value = rec.circumstances || '';
+  document.getElementById('cn-manager-name').value = rec.delivered_by || '';
+}
+
+function renderChangeNotice(lang) {
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <p class="dim" style="font-size:12px;margin:0 0 10px">Required by California Unemployment Insurance Code §1089. Open it from a termination's "CA Notice" button to pull everything in automatically, or fill it in by hand below.</p>
+        ${empSearchFieldHtml('cn-emp', '<label class="f-lab">Employee</label>', allEmployeesEver)}
+        <div class="frow">
+          <div class="field"><label class="f-lab">Effective date</label><input class="f-in" id="cn-effective-date" type="date"></div>
+          <div class="field"><label class="f-lab">Last date of work</label><input class="f-in" id="cn-lastday" type="date"></div>
+        </div>
+        <div class="field"><label class="f-lab">Change type</label>
+          <select class="f-in" id="cn-type">${CHANGE_TYPES.map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}</select>
+        </div>
+        <div class="field" id="cn-type-other-field" hidden><label class="f-lab">Other — describe</label><input class="f-in" id="cn-type-other"></div>
+        <div class="field"><label class="f-lab">Company property return</label>
+          ${PROPERTY_ITEMS.map((p, i) => `
+            <div class="frow" style="align-items:flex-end;margin-bottom:6px">
+              <div class="field" style="margin-bottom:0"><span style="font-size:12px">${p}</span></div>
+              <div class="field" style="margin-bottom:0"><select class="f-in" id="cn-prop-${i}" style="height:36px"><option value="na">N/A</option><option value="yes">Yes</option><option value="no">No</option></select></div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="field"><label class="f-lab">Exit interview performed</label>
+          <select class="f-in" id="cn-exit"><option value="na">N/A</option><option value="yes">Yes</option><option value="no">No</option></select>
+        </div>
+        <div class="field"><label class="f-lab">Exit interview date</label><input class="f-in" id="cn-exit-date" type="date"></div>
+        <div class="field"><label class="f-lab">Work-related injury or illness reported? (voluntary)</label>
+          <select class="f-in" id="cn-injury"><option value="">Not asked</option><option value="yes">Yes</option><option value="no">No</option></select>
+        </div>
+        <div class="field"><label class="f-lab">Additional information or comments</label><textarea class="f-in" id="cn-comments" rows="3" style="resize:vertical"></textarea></div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Manager printed name</label><input class="f-in" id="cn-manager-name" value="${escapeHtml(profile.name || '')}"></div>
+          <div class="field"><label class="f-lab">Manager title</label><input class="f-in" id="cn-manager-title"></div>
+        </div>
+        <button class="gh solid" id="cn-generate-btn" type="button">Generate</button>
+        ${signatureTaskFieldsHtml('cn')}
+      </div>
+    </div>
+    <div class="form-doc" id="cn-sheet" hidden></div>
+  `;
+  wireEmpSearch('cn-emp', allEmployeesEver);
+  document.getElementById('cn-type').addEventListener('change', (e) => {
+    document.getElementById('cn-type-other-field').hidden = e.target.value !== 'other';
+  });
+  if (linkedTerminationId) loadTerminationForChangeNotice(linkedTerminationId);
+  document.getElementById('cn-generate-btn').addEventListener('click', () => renderChangeNoticeSheet(lang));
+  document.getElementById('cn-sig-later-btn').addEventListener('click', () => saveChangeNoticeForSignatureLater(lang));
+}
+
+async function saveChangeNoticeForSignatureLater(lang) {
+  const emp = allEmployeesEver.find((e) => e.id === document.getElementById('cn-emp').value);
+  if (!emp) { showToast('Select an employee.', 'error'); return; }
+  const assigneeId = document.getElementById('cn-sig-assignee').value;
+  const dueDate = document.getElementById('cn-sig-due').value;
+  if (!assigneeId || !dueDate) { showToast('Pick who should get the signature and by when.', 'error'); return; }
+  const assignee = staff.find((s) => s.id === assigneeId);
+  const fields = readChangeNoticeForm(emp);
+  try {
+    const docRef = doc(collection(db, 'training_documents'));
+    await setDoc(docRef, {
+      content_type: 'changenotice', category: 'termination', status: 'pending_signature',
+      title: `Notice of Change in Employment Status — ${emp.first_name} ${emp.last_name} (${formatDate(fields.effective_date)})`,
+      ...fields, lang,
+      ...(linkedTerminationId ? { linked_termination_id: linkedTerminationId } : {}),
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    await addDoc(collection(db, 'tasks'), {
+      assigned_to: assigneeId, due_date: dueDate,
+      instructions: `Get signature — Notice of Change in Employment Status — ${emp.first_name} ${emp.last_name}`,
+      recurring: 'none', status: 'open', linked_doc_id: docRef.id, linked_doc_type: 'changenotice',
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    showToast(`Saved. A task was created for ${assignee?.name || assigneeId} — open it from Tasks when ready to sign.`);
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+}
+
+function readChangeNoticeForm(emp) {
+  const propertyReturned = {};
+  PROPERTY_ITEMS.forEach((p, i) => { propertyReturned[p] = document.getElementById(`cn-prop-${i}`).value; });
+  return {
+    emp_id: emp.id, emp_name: `${emp.first_name} ${emp.last_name}`,
+    effective_date: document.getElementById('cn-effective-date').value,
+    last_day_worked: document.getElementById('cn-lastday').value,
+    change_type: document.getElementById('cn-type').value,
+    change_type_other: document.getElementById('cn-type').value === 'other' ? document.getElementById('cn-type-other').value.trim() : '',
+    property_returned: propertyReturned,
+    exit_interview: document.getElementById('cn-exit').value,
+    exit_interview_date: document.getElementById('cn-exit-date').value,
+    injury_reported: document.getElementById('cn-injury').value,
+    comments: document.getElementById('cn-comments').value.trim(),
+    manager_name: document.getElementById('cn-manager-name').value.trim(),
+    manager_title: document.getElementById('cn-manager-title').value.trim(),
+  };
+}
+
+function renderChangeNoticeSheet(lang) {
+  const isEs = lang === 'es';
+  const emp = allEmployeesEver.find((e) => e.id === document.getElementById('cn-emp').value);
+  if (!emp) { showToast('Select an employee.', 'error'); return; }
+  const f = readChangeNoticeForm(emp);
+  const changeTypes = isEs ? CHANGE_TYPES_ES : Object.fromEntries(CHANGE_TYPES.map((t) => [t.value, t.label]));
+  const propLabel = (p) => (isEs ? PROPERTY_ITEMS_ES[p] || p : p);
+  const yesNoNa = { yes: isEs ? 'Sí' : 'Yes', no: 'No', na: 'N/A' };
+
+  const sheet = document.getElementById('cn-sheet');
+  sheet.hidden = false;
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  sheet.innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">${isEs ? 'Aviso de Cambio en el Estado de Empleo' : 'Notice of Change in Employment Status'}</h1>
+      <p class="dim" style="font-size:11px;margin:0 0 10px">${isEs
+        ? 'Código de Seguro de Desempleo de California, Sección 1089. Toda la información es requerida; una copia para el empleado, una para los registros del empleador.'
+        : 'California Unemployment Insurance Code Section 1089. All information required; one copy to employee, one for employer’s records.'}</p>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Empleador' : 'Employer'}</b>SouthWest Landscape Inc.</div>
+        <div class="form-cell"><b>${isEs ? 'Dirección del Empleador' : 'Employer Address'}</b>PO Box 15611, Santa Ana, CA 92735</div>
+        <div class="form-cell"><b>${isEs ? 'Empleado' : 'Employee'}</b>${emp.first_name} ${emp.last_name}</div>
+        <div class="form-cell"><b>${isEs ? 'ID del Empleado' : 'Employee #'}</b>${escapeHtml(emp.id)}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha Efectiva' : 'Effective Date'}</b>${formatDate(f.effective_date)}</div>
+        <div class="form-cell"><b>${isEs ? 'Último Día de Trabajo' : 'Last Date of Work'}</b>${formatDate(f.last_day_worked)}</div>
+      </div>
+      <div class="form-section">${isEs ? 'Cambio en el Estado de Empleo' : 'Change in Employment Status'}</div>
+      <div class="form-checks">${CHANGE_TYPES.map((t) => `<label>${t.value === f.change_type ? '☑' : '☐'} ${changeTypes[t.value]}${t.value === 'other' && f.change_type === 'other' ? `: ${escapeHtml(f.change_type_other)}` : ''}</label>`).join('')}</div>
+      <div class="form-box">${isEs
+        ? 'Cuando la ley lo requiere, el Empleador ha proporcionado al Empleado el folleto del Departamento de Desarrollo del Empleo de California (EDD) DE 2320 – Para Su Beneficio: Programas de California para los Desempleados, que explica la posible elegibilidad para beneficios de seguro de desempleo.'
+        : 'When required by law, the Employer has provided the Employee with the California Employment Development Department (EDD) pamphlet DE 2320 – For Your Benefit: California’s Programs for the Unemployed, which explains potential eligibility for unemployment insurance benefits.'}</div>
+      <div class="form-section">${isEs ? 'Verificación de Devolución de Propiedad de la Compañía' : 'Company Property Return Verification'}</div>
+      <table class="form-notice-table">
+        <thead><tr><th>${isEs ? 'Artículo' : 'Item'}</th><th>${isEs ? 'Estado' : 'Status'}</th></tr></thead>
+        <tbody>${PROPERTY_ITEMS.map((p) => `<tr><td>${propLabel(p)}</td><td style="text-align:center">${yesNoNa[f.property_returned[p]] || 'N/A'}</td></tr>`).join('')}</tbody>
+      </table>
+      <div class="form-section">${isEs ? 'Entrevista de Salida Realizada' : 'Exit Interview Performed'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Estado' : 'Status'}</b>${yesNoNa[f.exit_interview] || 'N/A'}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha Realizada' : 'Date Performed'}</b>${formatDate(f.exit_interview_date)}</div>
+      </div>
+      <div class="form-section">${isEs ? 'Información o Comentarios Adicionales' : 'Additional Information or Comments'}</div>
+      <div class="form-box">${escapeHtml(f.comments) || '—'}</div>
+      <div class="form-section">${isEs ? 'Gerente' : 'Manager'}</div>
+      ${signaturePadHtml('cn-mgr-sig-pad', 'cn-mgr-sig-clear')}
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Nombre en Letra de Molde' : 'Print Name'}</b>${escapeHtml(f.manager_name)}</div>
+        <div class="form-cell"><b>${isEs ? 'Puesto' : 'Title'}</b>${escapeHtml(f.manager_title)}</div>
+      </div>
+      <div class="form-section">${isEs ? 'Consulta Voluntaria de Lesión o Enfermedad Relacionada al Trabajo' : 'Work-Related Injury or Illness Inquiry (Voluntary)'}</div>
+      <div class="form-box">${isEs
+        ? `A la fecha de este aviso, ¿ha reportado alguna lesión o enfermedad relacionada con el trabajo a la Compañía? ${f.injury_reported === 'yes' ? 'Sí' : f.injury_reported === 'no' ? 'No' : '— sin responder —'}`
+        : `As of the date of this notice, have you reported any work-related injury or illness to the Company? ${f.injury_reported === 'yes' ? 'Yes' : f.injury_reported === 'no' ? 'No' : '— not answered —'}`}
+        <br><span class="dim" style="font-size:10.5px">${isEs
+          ? 'Este reconocimiento es únicamente para fines de mantenimiento de registros y no limita ni renuncia al derecho del Empleado de reportar una lesión o enfermedad relacionada con el trabajo en cualquier momento, según lo permita la ley.'
+          : 'This acknowledgment is for record-keeping purposes only and does not limit or waive the Employee’s right to report a work-related injury or illness at any time, as permitted by law.'}</span></div>
+      <div class="form-section">${isEs ? 'Firma Electrónica del Empleado — acuso recibo' : 'Employee Electronic Signature — acknowledges receipt'}</div>
+      ${signaturePadHtml('cn-emp-sig-pad', 'cn-emp-sig-clear')}
+      <div class="form-cell"><b>${isEs ? 'Nombre en Letra de Molde' : 'Print Name'}</b>${emp.first_name} ${emp.last_name}</div>
+      <button type="button" class="gh solid no-print" id="cn-save-btn" style="margin-top:10px">${isEs ? 'Guardar' : 'Save'}</button>
+    </div>
+    <button class="gh no-print" id="cn-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
+  `;
+  document.getElementById('cn-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  setUpSignaturePad('cn-mgr-sig-pad', 'cn-mgr-sig-clear');
+  setUpSignaturePad('cn-emp-sig-pad', 'cn-emp-sig-clear');
+  document.getElementById('cn-save-btn').addEventListener('click', async () => {
+    const mgrState = sigPads['cn-mgr-sig-pad'];
+    const empState = sigPads['cn-emp-sig-pad'];
+    try {
+      const docRef = pendingSigDocId ? doc(db, 'training_documents', pendingSigDocId) : doc(collection(db, 'training_documents'));
+      const signed = !!(mgrState?.hasStroke) || !!(empState?.hasStroke);
+      await setDoc(docRef, {
+        content_type: 'changenotice', category: 'termination', status: signed ? 'signed' : 'pending_signature',
+        title: `Notice of Change in Employment Status — ${emp.first_name} ${emp.last_name} (${formatDate(f.effective_date)})`,
+        ...f, lang,
+        manager_signature_data_url: mgrState?.hasStroke ? document.getElementById('cn-mgr-sig-pad').toDataURL('image/png') : null,
+        employee_signature_data_url: empState?.hasStroke ? document.getElementById('cn-emp-sig-pad').toDataURL('image/png') : null,
+        signed_by: profile.uid, signed_at: serverTimestamp(),
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+        ...(linkedTerminationId ? { linked_termination_id: linkedTerminationId } : {}),
+      }, { merge: true });
+      if (pendingSigTaskId) {
+        await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
+        pendingSigDocId = null; pendingSigTaskId = null;
+      }
+      // Generating a document files its record — this one also flips the
+      // termination's own "Notice to Employee as to Change in Relationship"
+      // checklist item, so the two stay in sync instead of one silently
+      // going stale.
+      if (linkedTerminationId) {
+        const term = terminations.find((t) => t.id === linkedTerminationId);
+        if (term && Array.isArray(term.notices)) {
+          const notices = term.notices.map((n) => n.key === 'change' ? { ...n, status: 'provided', date: f.effective_date } : n);
+          await updateDoc(doc(db, 'terminations', linkedTerminationId), { notices, entered_by: profile.uid });
+          term.notices = notices;
+        }
+      }
+      showToast('Saved.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
+  sheetRerender = (l) => withPreservedSignature('cn-emp-sig-pad', () => withPreservedSignature('cn-mgr-sig-pad', () => renderChangeNoticeSheet(l)));
 }
 
 // ---- Termination import — reads the "Terminations" sheet of the roster
@@ -2598,6 +2994,12 @@ let incidentDraftForResume = null;
 // new training_documents record back onto that incident. Cleared whenever
 // a generator is (re)opened, so it never leaks into an unrelated save.
 let refusalLinkedIncidentId = null;
+
+// Set when the Termination Summary or CA Notice of Change generators are
+// opened from a registered termination (the "Summary"/"CA Notice" buttons
+// in the terminations list) so pre-fill and the first save can both refer
+// back to it. Cleared whenever a generator is (re)opened.
+let linkedTerminationId = null;
 
 // Carries an already-saved incident's refusal_doc_id (if any) alongside
 // pendingSigDocId when the Incident Report sheet is reopened for
@@ -4726,6 +5128,26 @@ async function loadPendingSignatureDoc(type, id) {
       document.getElementById('ref-location').value = d.location || '';
       document.getElementById('ref-description').value = d.description || '';
       renderRefusalSheet(d.lang || 'en');
+    } else if (type === 'changenotice') {
+      setEmpField('cn-emp', d.emp_id, allEmployeesEver);
+      document.getElementById('cn-effective-date').value = d.effective_date || '';
+      document.getElementById('cn-lastday').value = d.last_day_worked || '';
+      document.getElementById('cn-type').value = d.change_type || 'other';
+      document.getElementById('cn-type-other-field').hidden = d.change_type !== 'other';
+      document.getElementById('cn-type-other').value = d.change_type_other || '';
+      PROPERTY_ITEMS.forEach((p, i) => {
+        document.getElementById(`cn-prop-${i}`).value = (d.property_returned || {})[p] || 'na';
+      });
+      document.getElementById('cn-exit').value = d.exit_interview || 'na';
+      document.getElementById('cn-exit-date').value = d.exit_interview_date || '';
+      document.getElementById('cn-injury').value = d.injury_reported || '';
+      document.getElementById('cn-comments').value = d.comments || '';
+      document.getElementById('cn-manager-name').value = d.manager_name || '';
+      document.getElementById('cn-manager-title').value = d.manager_title || '';
+      linkedTerminationId = d.linked_termination_id || null;
+      renderChangeNoticeSheet(d.lang || 'en');
+      await drawExistingSignatureDataUrl('cn-mgr-sig-pad', d.manager_signature_data_url);
+      await drawExistingSignatureDataUrl('cn-emp-sig-pad', d.employee_signature_data_url);
     } else if (type === 'mealwaiver2') {
       setEmpField('mw2-emp', d.emp_id);
       const branchKey = Object.entries(LOCATIONS).find(([, v]) => v.label === d.branch)?.[0];
@@ -5531,7 +5953,7 @@ await loadOshaEstablishment();
 const requestedOpen = new URLSearchParams(window.location.search).get('open');
 const requestedDocId = new URLSearchParams(window.location.search).get('doc');
 const requestedIncidentId = new URLSearchParams(window.location.search).get('incident');
-const SIGNABLE_DOC_TYPES = ['timecard', 'mealpenalty', 'mileage', 'refusal', 'mealwaiver2', 'offer', 'pip', 'review', 'termination', 'incidentreport'];
+const SIGNABLE_DOC_TYPES = ['timecard', 'mealpenalty', 'mileage', 'refusal', 'mealwaiver2', 'offer', 'pip', 'review', 'termination', 'incidentreport', 'changenotice'];
 if (requestedOpen && GENERATORS.some((g) => g.key === requestedOpen)) {
   openGenerator(requestedOpen);
   if (requestedDocId && SIGNABLE_DOC_TYPES.includes(requestedOpen)) {

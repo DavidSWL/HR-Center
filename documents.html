@@ -113,7 +113,14 @@
           </select>
         </div>
         <table>
-          <thead><tr><th>Document</th><th>Category</th><th>Uploaded</th><th></th></tr></thead>
+          <thead>
+            <tr id="doc-head-row">
+              <th class="sortable" data-key="title">Document<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="category">Category<span class="sort-arrow"></span></th>
+              <th class="sortable" data-key="uploaded">Uploaded<span class="sort-arrow"></span></th>
+              <th></th>
+            </tr>
+          </thead>
           <tbody id="doc-rows"></tbody>
         </table>
       </div>
@@ -605,6 +612,77 @@ function renderMealWaiver2Html(d) {
   `;
 }
 
+// Mirrors docgen.html's renderTermSummarySheet (kept as a duplicate on
+// purpose, same as every other formatted-document view in this file).
+const TS_TYPES = {
+  voluntary: 'Voluntary Resignation', abandonment: 'Job Abandonment', layoff: 'Layoff/Reduction in Force',
+  performance: 'Termination - Performance', policy: 'Termination – Policy Violation / Misconduct',
+};
+function renderTermSummaryHtml(d) {
+  return `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">Employee Termination Summary</h1>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Employee Name</b>${escapeHtmlAttr(d.emp_name)}</div>
+        <div class="form-cell"><b>DOH</b>${formatDate(d.hire_date)}</div>
+        <div class="form-cell"><b>Last Day Worked</b>${formatDate(d.last_day_worked)}</div>
+        <div class="form-cell"><b>Term Date</b>${formatDate(d.termination_date)}</div>
+      </div>
+      <div class="form-section">Type of Termination</div>
+      <div class="form-box">${TS_TYPES[d.type] || d.type || '—'}</div>
+      <div class="form-section">Summary</div>
+      <div class="form-box">${escapeHtmlAttr(d.summary) || '—'}</div>
+      <div class="form-fine">SSN and DOB are never stored in this system — they only ever appeared on the paper copy printed at the time this was generated.</div>
+    </div>
+  `;
+}
+
+// Mirrors docgen.html's renderChangeNoticeSheet (kept as a duplicate on
+// purpose, same as every other formatted-document view in this file).
+const CN_TYPES = {
+  discharge: 'Discharge', layoff: 'Layoff', leave: 'Leave of absence',
+  voluntary: 'Voluntary Resignation / Leaving for Other Employment', other: 'Other',
+};
+function renderChangeNoticeHtml(d) {
+  const propertyReturned = d.property_returned || {};
+  const items = Object.keys(propertyReturned);
+  return `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">Notice of Change in Employment Status</h1>
+      <p class="dim" style="font-size:11px;margin:0 0 10px">California Unemployment Insurance Code Section 1089.</p>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Employer</b>SouthWest Landscape Inc.</div>
+        <div class="form-cell"><b>Employee</b>${escapeHtmlAttr(d.emp_name)}</div>
+        <div class="form-cell"><b>Effective Date</b>${formatDate(d.effective_date)}</div>
+        <div class="form-cell"><b>Last Date of Work</b>${formatDate(d.last_day_worked)}</div>
+      </div>
+      <div class="form-section">Change in Employment Status</div>
+      <div class="form-box">${CN_TYPES[d.change_type] || d.change_type || '—'}${d.change_type === 'other' && d.change_type_other ? `: ${escapeHtmlAttr(d.change_type_other)}` : ''}</div>
+      <div class="form-section">Company Property Return Verification</div>
+      <div class="form-box" style="white-space:normal">
+        ${items.length ? items.map((i) => `<p style="margin:0 0 4px">${escapeHtmlAttr(i)}: ${(propertyReturned[i] || 'na').toUpperCase()}</p>`).join('') : '—'}
+      </div>
+      <div class="form-section">Exit Interview Performed</div>
+      <div class="form-box">${(d.exit_interview || 'na').toUpperCase()}${d.exit_interview_date ? ` — ${formatDate(d.exit_interview_date)}` : ''}</div>
+      <div class="form-section">Additional Information or Comments</div>
+      <div class="form-box">${escapeHtmlAttr(d.comments) || '—'}</div>
+      <div class="form-section">Manager</div>
+      ${d.manager_signature_data_url ? `<img src="${d.manager_signature_data_url}" alt="Manager signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not signed.</div>'}
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Print Name</b>${escapeHtmlAttr(d.manager_name)}</div>
+        <div class="form-cell"><b>Title</b>${escapeHtmlAttr(d.manager_title)}</div>
+      </div>
+      <div class="form-section">Work-Related Injury or Illness Inquiry</div>
+      <div class="form-box">${d.injury_reported === 'yes' ? 'Yes' : d.injury_reported === 'no' ? 'No' : 'Not answered'}</div>
+      <div class="form-section">Employee Electronic Signature — acknowledges receipt</div>
+      ${d.employee_signature_data_url ? `<img src="${d.employee_signature_data_url}" alt="Employee signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not signed.</div>'}
+      ${signedOnHtml(d.signed_at)}
+    </div>
+  `;
+}
+
 function openView(d) {
   const sheet = document.getElementById('view-sheet');
   const isSop = d.content_type === 'sop';
@@ -615,6 +693,8 @@ function openView(d) {
   const isRefusal = d.content_type === 'refusal';
   const isMealWaiver2 = d.content_type === 'mealwaiver2';
   const isLetter = d.content_type === 'letter';
+  const isTermSummary = d.content_type === 'termsummary';
+  const isChangeNotice = d.content_type === 'changenotice';
   sheet.className = isSop ? 'sop-doc' : isJobDesc ? 'jd-doc' : 'form-doc';
   sheet.innerHTML = isSop
     ? renderSopHtml(d)
@@ -632,6 +712,10 @@ function openView(d) {
     ? renderMealWaiver2Html(d)
     : isLetter
     ? renderLetterHtml(d)
+    : isTermSummary
+    ? renderTermSummaryHtml(d)
+    : isChangeNotice
+    ? renderChangeNoticeHtml(d)
     : `<div class="form-doc-inner"><div class="form-title">${escapeHtmlAttr(d.title)}</div>${renderBodyHtml(d.body)}</div>`;
   document.getElementById('view-overlay').hidden = false;
 }
@@ -739,6 +823,34 @@ document.getElementById('load-sops-btn').addEventListener('click', async () => {
 
 let docs = [];
 
+const DOC_SORT_ACCESSORS = {
+  title: (d) => (d.title || '').toLowerCase(),
+  category: (d) => (CATEGORY_LABELS[d.category] || 'Other reference').toLowerCase(),
+  uploaded: (d) => d.uploaded_at?.seconds || 0,
+};
+let docSortKey = 'title';
+let docSortDir = 'asc';
+
+function updateDocSortIndicators() {
+  document.querySelectorAll('#doc-head-row .sortable').forEach((th) => {
+    const arrow = th.querySelector('.sort-arrow');
+    arrow.textContent = th.dataset.key === docSortKey ? (docSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+  });
+}
+
+document.querySelectorAll('#doc-head-row .sortable').forEach((th) => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.key;
+    if (docSortKey === key) {
+      docSortDir = docSortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      docSortKey = key;
+      docSortDir = 'asc';
+    }
+    render();
+  });
+});
+
 async function loadDocs() {
   const snap = await getDocs(collection(db, 'training_documents'));
   docs = snap.docs
@@ -760,10 +872,19 @@ function render() {
     return true;
   });
 
+  const accessor = DOC_SORT_ACCESSORS[docSortKey] || DOC_SORT_ACCESSORS.title;
+  visible.sort((a, b) => {
+    const av = accessor(a);
+    const bv = accessor(b);
+    const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv));
+    return docSortDir === 'asc' ? cmp : -cmp;
+  });
+  updateDocSortIndicators();
+
   document.getElementById('docs-summary').textContent = `${visible.length} of ${docs.length}`;
   document.getElementById('doc-rows').innerHTML = visible.length ? visible.map((d) => `
     <tr>
-      <td>${d.content_type === 'text' || d.content_type === 'sop' || d.content_type === 'jobdesc' || d.content_type === 'timecard' || d.content_type === 'mealpenalty' || d.content_type === 'mileage' || d.content_type === 'refusal' || d.content_type === 'mealwaiver2' || d.content_type === 'letter'
+      <td>${d.content_type === 'text' || d.content_type === 'sop' || d.content_type === 'jobdesc' || d.content_type === 'timecard' || d.content_type === 'mealpenalty' || d.content_type === 'mileage' || d.content_type === 'refusal' || d.content_type === 'mealwaiver2' || d.content_type === 'letter' || d.content_type === 'termsummary' || d.content_type === 'changenotice'
         ? `<a href="#" class="view-doc-link" data-id="${d.id}">${escapeHtmlAttr(d.title)}</a>`
         : `<a href="${d.file_url}" target="_blank" rel="noopener">${escapeHtmlAttr(d.title)}</a>`
       }${d.policy_doc_id ? ' <span class="pill ok">In Policy Compliance</span>' : ''}</td>
