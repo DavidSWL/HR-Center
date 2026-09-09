@@ -193,10 +193,10 @@
               <input class="f-in" id="full-duty-date" type="date">
             </div>
           </div>
-          <div class="dim" style="font-size:11px;margin:-8px 0 10px">Leave Return to work blank while still out — Days Away keeps counting. Once they're back (even on restricted duty), Full duty stays blank while still restricted — Restricted Days keeps counting from Return to work until then.</div>
+          <div class="dim" style="font-size:11px;margin:-8px 0 10px">Leave Return to work blank while still out — Days Away keeps counting. Once they're back (even on restricted duty), Full duty stays blank while still restricted — Restricted Days keeps counting from Return to work until then. Both are filled in from the dates above, but you can type over either number if it doesn't come out right — for example if they never missed a full day and went straight to restricted duty.</div>
           <div class="frow">
-            <div class="field"><label class="f-lab">Days away</label><div id="days-away-display" style="font-size:12.5px;padding-top:6px"></div></div>
-            <div class="field"><label class="f-lab">Restricted days</label><div id="restricted-days-display" style="font-size:12.5px;padding-top:6px"></div></div>
+            <div class="field"><label class="f-lab" for="days-away">Days away</label><input class="f-in" id="days-away" type="number" min="0" value="0"></div>
+            <div class="field"><label class="f-lab" for="restricted-days">Restricted days</label><input class="f-in" id="restricted-days" type="number" min="0" value="0"></div>
           </div>
           <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:14px;color:var(--alertTx)">
             <input type="checkbox" id="fatality"> Fatality
@@ -614,6 +614,8 @@ function openEdit(id) {
   document.getElementById('treatment-level').value = inc.treatment_level || 'none';
   document.getElementById('return-date').value = inc.return_to_work_date || '';
   document.getElementById('full-duty-date').value = inc.full_duty_date || '';
+  document.getElementById('days-away').value = inc.days_away || 0;
+  document.getElementById('restricted-days').value = inc.restricted_days || 0;
   document.getElementById('privacy-case').checked = !!inc.privacy_case;
   document.getElementById('fatality').checked = !!inc.fatality;
   updateRecordableDisplay();
@@ -852,22 +854,22 @@ function calcRestrictedDays(returnDate, fullDutyDate) {
   return Math.max(0, Math.round((endD - start) / MS_PER_DAY));
 }
 
-function updateRecordableDisplay() {
-  const level = document.getElementById('treatment-level').value;
+// Fills the Days Away / Restricted Days number fields from the dates —
+// called only when a date (or the injury date) changes, so it never
+// clobbers a number someone typed by hand afterward.
+function recalcDaysFromDates() {
   const injuryDate = document.getElementById('inc-date').value;
   const returnDate = document.getElementById('return-date').value;
   const fullDutyDate = document.getElementById('full-duty-date').value;
-  const fatality = document.getElementById('fatality').checked;
+  document.getElementById('days-away').value = calcDaysAway(injuryDate, returnDate);
+  document.getElementById('restricted-days').value = calcRestrictedDays(returnDate, fullDutyDate);
+}
 
-  const daysAway = calcDaysAway(injuryDate, returnDate);
-  const restrictedDays = calcRestrictedDays(returnDate, fullDutyDate);
-  document.getElementById('days-away-display').textContent = returnDate
-    ? `${daysAway} day${daysAway === 1 ? '' : 's'}`
-    : (injuryDate ? `${daysAway} day${daysAway === 1 ? '' : 's'} and counting — still out` : '0 days');
-  document.getElementById('restricted-days-display').textContent = !returnDate
-    ? 'Not started yet'
-    : fullDutyDate ? `${restrictedDays} day${restrictedDays === 1 ? '' : 's'}`
-    : `${restrictedDays} day${restrictedDays === 1 ? '' : 's'} and counting — still restricted`;
+function updateRecordableDisplay() {
+  const level = document.getElementById('treatment-level').value;
+  const fatality = document.getElementById('fatality').checked;
+  const daysAway = parseInt(document.getElementById('days-away').value || '0', 10);
+  const restrictedDays = parseInt(document.getElementById('restricted-days').value || '0', 10);
 
   const display = document.getElementById('recordable-display');
   const recordable = computeRecordable({ treatmentLevel: level, daysAway, restrictedDays, fatality });
@@ -878,7 +880,10 @@ function updateRecordableDisplay() {
   else why = 'no days away/restricted, and treatment was first aid, none, or refused';
   display.innerHTML = `<span class="pill${recordable ? ' bad' : ''}">${recordable ? 'Recordable' : 'Not recordable'}</span> <span class="dim" style="font-size:11px">— ${why}</span>`;
 }
-['treatment-level', 'inc-date', 'return-date', 'full-duty-date', 'fatality'].forEach((id) => {
+['inc-date', 'return-date', 'full-duty-date'].forEach((id) => {
+  document.getElementById(id).addEventListener('change', () => { recalcDaysFromDates(); updateRecordableDisplay(); });
+});
+['treatment-level', 'days-away', 'restricted-days', 'fatality'].forEach((id) => {
   document.getElementById(id).addEventListener('input', updateRecordableDisplay);
   document.getElementById(id).addEventListener('change', updateRecordableDisplay);
 });
@@ -920,8 +925,12 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
     const incDate = document.getElementById('inc-date').value;
     const returnDate = document.getElementById('return-date').value;
     const fullDutyDate = document.getElementById('full-duty-date').value;
-    const daysAway = isInjury ? calcDaysAway(incDate, returnDate) : 0;
-    const restrictedDays = isInjury ? calcRestrictedDays(returnDate, fullDutyDate) : 0;
+    // Read the number fields themselves rather than recomputing from the
+    // dates — they're pre-filled from the dates, but someone may have
+    // typed over them by hand (e.g. treatment refused so no exact return
+    // date, or a stretch of days that didn't match a clean date range).
+    const daysAway = isInjury ? parseInt(document.getElementById('days-away').value || '0', 10) : 0;
+    const restrictedDays = isInjury ? parseInt(document.getElementById('restricted-days').value || '0', 10) : 0;
 
     const incidentData = {
       date: incDate,
