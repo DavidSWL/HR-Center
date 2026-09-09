@@ -2606,8 +2606,11 @@ function renderIncidentReport() {
             <div class="field"><label class="f-lab">Days away</label><input class="f-in" id="ir-days-away" type="number" min="0" value="0"></div>
             <div class="field"><label class="f-lab">Restricted days</label><input class="f-in" id="ir-restricted-days" type="number" min="0" value="0"></div>
           </div>
-          <div id="ir-recordable-hint" class="login-error" style="background:var(--hover);color:var(--muted);border-color:var(--line)" hidden></div>
-          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:14px"><input type="checkbox" id="ir-recordable"> Recordable (Cal/OSHA Form 300)</label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:14px;color:var(--alertTx)"><input type="checkbox" id="ir-fatality"> Fatality</label>
+          <div class="field">
+            <label class="f-lab">Recordable (Cal/OSHA Form 300)</label>
+            <div id="ir-recordable-display" style="font-size:12.5px"></div>
+          </div>
           <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:14px"><input type="checkbox" id="ir-privacy-case"> Privacy case — withhold name from Form 300 export</label>
         </div>
 
@@ -2662,29 +2665,11 @@ function renderIncidentReport() {
   document.getElementById('ir-treatment-level').addEventListener('change', (e) => {
     document.getElementById('ir-refusal-field').hidden = e.target.value !== 'refused';
   });
-  function updateRecordableHint() {
-    const level = document.getElementById('ir-treatment-level').value;
-    const daysAway = parseInt(document.getElementById('ir-days-away').value || '0', 10);
-    const restrictedDays = parseInt(document.getElementById('ir-restricted-days').value || '0', 10);
-    const hint = document.getElementById('ir-recordable-hint');
-    const checkbox = document.getElementById('ir-recordable');
-    if (daysAway > 0 || restrictedDays > 0) {
-      checkbox.checked = true; hint.hidden = false;
-      hint.textContent = 'Days away or restricted days were entered — this is recordable regardless of treatment level.';
-    } else if (level === 'clinic' || level === 'er' || level === 'hospitalization') {
-      checkbox.checked = true; hint.hidden = false;
-      hint.textContent = 'Clinic/ER/hospitalization treatment is likely recordable — pre-checked, but review before saving.';
-    } else if (level === 'first_aid') {
-      checkbox.checked = false; hint.hidden = false;
-      hint.textContent = 'First aid only is usually not recordable — unless days away or restricted work apply.';
-    } else {
-      hint.hidden = true;
-    }
-  }
-  ['ir-treatment-level', 'ir-days-away', 'ir-restricted-days'].forEach((id) => {
-    document.getElementById(id).addEventListener('input', updateRecordableHint);
-    document.getElementById(id).addEventListener('change', updateRecordableHint);
+  ['ir-treatment-level', 'ir-days-away', 'ir-restricted-days', 'ir-fatality'].forEach((id) => {
+    document.getElementById(id).addEventListener('input', updateRecordableDisplay);
+    document.getElementById(id).addEventListener('change', updateRecordableDisplay);
   });
+  updateRecordableDisplay();
   document.getElementById('ir-generate-btn').addEventListener('click', () => renderIncidentReportSheet(document.getElementById('lang-select').value));
   document.getElementById('ir-generate-refusal-btn').addEventListener('click', () => {
     incidentDraftForResume = readIncidentReportForm();
@@ -2718,7 +2703,8 @@ function restoreIncidentReportDraft(f) {
   document.getElementById('ir-refusal-field').hidden = f.treatmentLevel !== 'refused';
   document.getElementById('ir-days-away').value = f.daysAway || 0;
   document.getElementById('ir-restricted-days').value = f.restrictedDays || 0;
-  document.getElementById('ir-recordable').checked = !!f.recordable;
+  document.getElementById('ir-fatality').checked = !!f.fatality;
+  updateRecordableDisplay();
   document.getElementById('ir-privacy-case').checked = !!f.privacyCase;
   document.getElementById('ir-witnesses').value = f.witnesses || '';
   document.getElementById('ir-describe').value = f.describe || '';
@@ -2738,6 +2724,10 @@ function readIncidentReportForm() {
   const empId = document.getElementById('ir-emp').value;
   const emp = employees.find((e) => e.id === empId) || null; // an incident doesn't have to name one employee
   const isInjury = document.getElementById('ir-type').value === 'Injury';
+  const treatmentLevel = isInjury ? document.getElementById('ir-treatment-level').value : '';
+  const daysAway = isInjury ? parseInt(document.getElementById('ir-days-away').value || '0', 10) : 0;
+  const restrictedDays = isInjury ? parseInt(document.getElementById('ir-restricted-days').value || '0', 10) : 0;
+  const fatality = isInjury ? document.getElementById('ir-fatality').checked : false;
   return {
     emp,
     date: document.getElementById('ir-date').value,
@@ -2750,10 +2740,11 @@ function readIncidentReportForm() {
     isInjury,
     injuryType: isInjury ? document.getElementById('ir-injury-type').value.trim() : '',
     bodyPart: isInjury ? document.getElementById('ir-body-part').value.trim() : '',
-    treatmentLevel: isInjury ? document.getElementById('ir-treatment-level').value : '',
-    daysAway: isInjury ? parseInt(document.getElementById('ir-days-away').value || '0', 10) : 0,
-    restrictedDays: isInjury ? parseInt(document.getElementById('ir-restricted-days').value || '0', 10) : 0,
-    recordable: isInjury ? document.getElementById('ir-recordable').checked : false,
+    treatmentLevel,
+    daysAway,
+    restrictedDays,
+    fatality,
+    recordable: isInjury && computeRecordable({ treatmentLevel, daysAway, restrictedDays, fatality }),
     privacyCase: isInjury ? document.getElementById('ir-privacy-case').checked : false,
     witnesses: document.getElementById('ir-witnesses').value.trim(),
     describe: document.getElementById('ir-describe').value,
@@ -2772,6 +2763,38 @@ function readIncidentReportForm() {
 const INCIDENT_TYPE_ES = { Injury: 'Lesión', 'Near miss': 'Casi accidente', 'Property damage': 'Daño a la propiedad', 'Vehicle accident': 'Accidente vehicular' };
 const TREATMENT_LEVEL_LABELS = { none: 'None needed', first_aid: 'First aid', clinic: 'Clinic', er: 'Emergency room', hospitalization: 'Hospitalization', refused: 'Employee refused treatment' };
 const TREATMENT_LEVEL_LABELS_ES = { none: 'No se necesitó', first_aid: 'Primeros auxilios', clinic: 'Clínica', er: 'Sala de emergencias', hospitalization: 'Hospitalización', refused: 'Empleado rechazó tratamiento' };
+
+// Cal/OSHA Form 300 recordability (29 CFR 1904.7): a fatality, any days
+// away from work, any restricted/transferred days, or medical treatment
+// beyond first aid (clinic/ER/hospitalization) makes a case recordable.
+// First aid only, no treatment, or a declined/refused treatment is not
+// recordable on its own. Computed so nobody has to know the rule to
+// apply it correctly — no manual checkbox to get wrong.
+function computeRecordable({ treatmentLevel, daysAway, restrictedDays, fatality }) {
+  if (fatality) return true;
+  if (daysAway > 0 || restrictedDays > 0) return true;
+  return treatmentLevel === 'clinic' || treatmentLevel === 'er' || treatmentLevel === 'hospitalization';
+}
+
+// Updates the read-only Recordable badge on the raw draft form to match
+// its current fields — called on every relevant field change, plus once
+// whenever the form is populated from a saved incident or a resumed
+// draft. Module-level (not nested in renderIncidentReport) so those
+// other call sites can reach it too.
+function updateRecordableDisplay() {
+  const level = document.getElementById('ir-treatment-level').value;
+  const daysAway = parseInt(document.getElementById('ir-days-away').value || '0', 10);
+  const restrictedDays = parseInt(document.getElementById('ir-restricted-days').value || '0', 10);
+  const fatality = document.getElementById('ir-fatality').checked;
+  const display = document.getElementById('ir-recordable-display');
+  const recordable = computeRecordable({ treatmentLevel: level, daysAway, restrictedDays, fatality });
+  let why;
+  if (fatality) why = 'a fatality';
+  else if (daysAway > 0 || restrictedDays > 0) why = 'days away or restricted days were entered';
+  else if (recordable) why = 'treatment level was clinic, ER, or hospitalization';
+  else why = 'no days away/restricted, and treatment was first aid, none, or refused';
+  display.innerHTML = `<span class="pill${recordable ? ' bad' : ''}">${recordable ? 'Recordable' : 'Not recordable'}</span> <span class="dim" style="font-size:11px">— ${why}</span>`;
+}
 
 function renderIncidentReportSheet(lang = 'en') {
   const isEs = lang === 'es';
@@ -2805,6 +2828,7 @@ function renderIncidentReportSheet(lang = 'en') {
         <div class="form-cell"><b>${isEs ? 'Días con Restricción' : 'Restricted Days'}</b>${f.restrictedDays}</div>
         <div class="form-cell"><b>${isEs ? 'Registrable' : 'Recordable'}</b>${f.recordable ? (isEs ? 'Sí' : 'Yes') : 'No'}</div>
       </div>
+      ${f.fatality ? `<div class="form-callout" style="border-color:var(--alertTx);color:var(--alertTx);font-weight:700">${isEs ? 'MUERTE' : 'FATALITY'}</div>` : ''}
       ${f.treatmentLevel === 'refused' ? `
       <div class="no-print" style="margin:-6px 0 14px">
         <button type="button" class="gh" id="ir-generate-refusal-btn-sheet">${pendingIncidentRefusalDocId
@@ -2960,7 +2984,7 @@ async function saveIncidentReport(f, wantsSignatureTask = false) {
       incident_type: f.incidentType, what_happened: f.whatHappened,
       injury_type: f.injuryType, body_part: f.bodyPart, treatment_level: f.treatmentLevel,
       days_away: f.daysAway, restricted_days: f.restrictedDays,
-      recordable: f.recordable, privacy_case: f.privacyCase,
+      recordable: f.recordable, fatality: f.fatality, privacy_case: f.privacyCase,
       cost: f.cost, root_cause: f.rootCause,
       corrective_action: f.correctiveAction, corrective_owner: f.correctiveOwner, corrective_due: f.correctiveDue,
       category_needs_review: false,
@@ -4392,7 +4416,8 @@ function populateIncidentReportForm(d) {
   document.getElementById('ir-treatment-level').dispatchEvent(new Event('change'));
   document.getElementById('ir-days-away').value = d.days_away || 0;
   document.getElementById('ir-restricted-days').value = d.restricted_days || 0;
-  document.getElementById('ir-recordable').checked = !!d.recordable;
+  document.getElementById('ir-fatality').checked = !!d.fatality;
+  updateRecordableDisplay();
   document.getElementById('ir-privacy-case').checked = !!d.privacy_case;
   document.getElementById('ir-witnesses').value = d.witnesses || '';
   document.getElementById('ir-describe').value = d.describe || '';
