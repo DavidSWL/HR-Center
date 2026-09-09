@@ -1393,6 +1393,17 @@ function renderTerminationSheet(r, finalPay = {}, lang = 'en') {
       </div>
       <div class="form-atwill"><b>${isEs ? 'Recordatorio de Empleo a Voluntad:' : 'At-will Employment Reminder:'}</b> ${isEs ? 'El empleo con la compañía es a voluntad ("at-will"). Nada en este documento altera ese estatus ni crea un contrato de empleo.' : 'Employment with the company is at-will. Nothing in this document alters that status or creates a contract of employment.'}</div>
     </div>
+    ${r.id ? `
+    <div class="card no-print" style="margin-top:16px">
+      <div class="card-body">
+        <button class="gh" id="term-gen-summary-btn" type="button">Generate Termination Summary</button>
+        <button class="gh" id="term-gen-changenotice-btn" type="button">Generate CA Notice of Change</button>
+        <p class="dim" style="font-size:11.5px;margin:8px 0 0">Both pull straight from this termination — generate them here so the employee can sign everything in one sitting, then Print picks up every page together.</p>
+      </div>
+    </div>
+    ` : ''}
+    <div id="term-summary-embed"></div>
+    <div id="term-changenotice-embed"></div>
   `;
   setUpSignaturePad('term-sig-pad', 'term-sig-clear');
   setUpSignaturePad('term-mgr-sig-pad', 'term-mgr-sig-clear');
@@ -1452,8 +1463,255 @@ function renderTerminationSheet(r, finalPay = {}, lang = 'en') {
     document.getElementById('term-sig-later-btn').addEventListener('click', () => createSignatureFollowupTask('term', {
       linkedDocType: 'termination', linkedDocId: r.id, title: `Termination — ${r.emp_name}`,
     }));
+    document.getElementById('term-gen-summary-btn').addEventListener('click', () => renderEmbeddedTermSummary(r, lang));
+    document.getElementById('term-gen-changenotice-btn').addEventListener('click', () => renderEmbeddedChangeNotice(r, lang));
   }
   sheetRerender = (l) => withPreservedSignature('term-witness-sig-pad', () => withPreservedSignature('term-mgr-sig-pad', () => withPreservedSignature('term-sig-pad', () => renderTerminationSheet(r, finalPay, l))));
+}
+
+// Generates the Termination Summary right on the termination sheet itself
+// (the "Generate Termination Summary" button) — pulled straight from the
+// termination record so there's just a couple of fields to check before
+// printing, no separate screen to navigate to. Two steps, same as every
+// other generator: a small editable card, then "Generate" draws the
+// actual static, printable sheet below it. Print (the existing button)
+// picks up every visible sheet together since nothing here is hidden.
+function renderEmbeddedTermSummary(r, lang) {
+  const isEs = lang === 'es';
+  const type = REASON_TO_SUMMARY_TYPE[r.reason] || 'policy';
+  const embed = document.getElementById('term-summary-embed');
+  embed.innerHTML = `
+    <div class="card no-print" style="margin-top:16px">
+      <div class="card-body">
+        <div class="frow">
+          <div class="field"><label class="f-lab" style="color:var(--alertTx)">DOB — printed only, never saved</label><input class="f-in" id="tse-dob" type="date"></div>
+          <div class="field"><label class="f-lab" style="color:var(--alertTx)">SSN — printed only, never saved</label><input class="f-in" id="tse-ssn" placeholder="XXX-XX-XXXX"></div>
+        </div>
+        <div class="field"><label class="f-lab">Type of termination</label>
+          <select class="f-in" id="tse-type">${SUMMARY_TYPES.map((t) => `<option value="${t.value}" ${t.value === type ? 'selected' : ''}>${t.label}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label class="f-lab">Summary</label><textarea class="f-in" id="tse-summary" rows="3" style="resize:vertical">${escapeHtml(r.circumstances || '')}</textarea></div>
+        <button type="button" class="gh solid" id="tse-generate-btn">Generate</button>
+      </div>
+    </div>
+    <div class="form-doc" id="tse-sheet" hidden></div>
+  `;
+  document.getElementById('tse-generate-btn').addEventListener('click', () => renderEmbeddedTermSummarySheet(r, lang));
+  embed.scrollIntoView({ behavior: 'smooth' });
+}
+
+function renderEmbeddedTermSummarySheet(r, lang) {
+  const isEs = lang === 'es';
+  const dob = document.getElementById('tse-dob').value;
+  const ssn = document.getElementById('tse-ssn').value.trim();
+  const type = document.getElementById('tse-type').value;
+  const summary = document.getElementById('tse-summary').value.trim();
+  const types = isEs ? SUMMARY_TYPES_ES : Object.fromEntries(SUMMARY_TYPES.map((t) => [t.value, t.label]));
+  const sheet = document.getElementById('tse-sheet');
+  sheet.hidden = false;
+  sheet.innerHTML = `
+    <div class="form-page-break">
+      <div class="form-doc-inner">
+        <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+        <h1 class="form-title">${isEs ? 'Resumen de Terminación del Empleado' : 'Employee Termination Summary'}</h1>
+        <div class="form-grid c2">
+          <div class="form-cell"><b>${isEs ? 'Nombre del Empleado' : 'Employee Name'}</b>${escapeHtml(r.emp_name)}</div>
+          <div class="form-cell"><b>DOH</b>${formatDate(r.hire_date)}</div>
+          <div class="form-cell"><b>DOB</b>${dob ? formatDate(dob) : '—'}</div>
+          <div class="form-cell"><b>${isEs ? 'Último Día Trabajado' : 'Last Day Worked'}</b>${formatDate(r.last_day_worked)}</div>
+          <div class="form-cell"><b>SSN</b>${escapeHtml(ssn) || '—'}</div>
+          <div class="form-cell"><b>${isEs ? 'Fecha de Terminación' : 'Term Date'}</b>${formatDate(r.termination_date)}</div>
+        </div>
+        <div class="form-section">${isEs ? 'Tipo de Terminación' : 'Type of Termination'}</div>
+        <div class="form-checks">${SUMMARY_TYPES.map((t) => `<label>${t.value === type ? '☑' : '☐'} ${types[t.value]}</label>`).join('')}</div>
+        <div class="form-section">${isEs ? 'Resumen' : 'Summary'}</div>
+        <div class="form-box">${escapeHtml(summary) || '—'}</div>
+        <button type="button" class="gh solid no-print" id="tse-save-btn" style="margin-top:10px">${isEs ? 'Guardar en Documentos' : 'Save to Documents'}</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('tse-save-btn').addEventListener('click', async () => {
+    try {
+      await setDoc(doc(collection(db, 'training_documents')), {
+        content_type: 'termsummary', category: 'termination', status: 'filed',
+        title: `Employee Termination Summary — ${r.emp_name} (${formatDate(r.termination_date)})`,
+        emp_id: r.emp_id, emp_name: r.emp_name,
+        hire_date: r.hire_date, last_day_worked: r.last_day_worked, termination_date: r.termination_date,
+        type, summary, lang,
+        linked_termination_id: r.id,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast('Saved to Documents. (SSN and DOB were not saved — they only print on the copy you have open.)');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
+  sheet.scrollIntoView({ behavior: 'smooth' });
+}
+
+// Generates the CA Notice of Change right on the termination sheet itself
+// (the "Generate CA Notice of Change" button) — same two-step reasoning
+// as the Termination Summary above, plus its own signatures.
+function renderEmbeddedChangeNotice(r, lang) {
+  const isEs = lang === 'es';
+  const mappedType = REASON_TO_CHANGE_TYPE[r.reason] || 'other';
+  const embed = document.getElementById('term-changenotice-embed');
+  embed.innerHTML = `
+    <div class="card no-print" style="margin-top:16px">
+      <div class="card-body">
+        <div class="field"><label class="f-lab">Change type</label>
+          <select class="f-in" id="cne-type">${CHANGE_TYPES.map((t) => `<option value="${t.value}" ${t.value === mappedType ? 'selected' : ''}>${t.label}</option>`).join('')}</select>
+        </div>
+        <div class="field" id="cne-type-other-field" ${mappedType !== 'other' ? 'hidden' : ''}><label class="f-lab">Other — describe</label><input class="f-in" id="cne-type-other" value="${mappedType === 'other' ? escapeHtml(r.reason || '') : ''}"></div>
+        <div class="field"><label class="f-lab">Company property return</label>
+          ${PROPERTY_ITEMS.map((p, i) => `
+            <div class="frow" style="align-items:flex-end;margin-bottom:6px">
+              <div class="field" style="margin-bottom:0"><span style="font-size:12px">${p}</span></div>
+              <div class="field" style="margin-bottom:0"><select class="f-in" id="cne-prop-${i}" style="height:36px">
+                <option value="na">N/A</option>
+                <option value="yes" ${(r.property_returned || []).includes(p) ? 'selected' : ''}>Yes</option>
+                <option value="no">No</option>
+              </select></div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Exit interview performed</label><select class="f-in" id="cne-exit"><option value="na">N/A</option><option value="yes">Yes</option><option value="no">No</option></select></div>
+          <div class="field"><label class="f-lab">Exit interview date</label><input class="f-in" id="cne-exit-date" type="date"></div>
+        </div>
+        <div class="field"><label class="f-lab">Work-related injury or illness reported? (voluntary)</label>
+          <select class="f-in" id="cne-injury"><option value="">Not asked</option><option value="yes">Yes</option><option value="no">No</option></select>
+        </div>
+        <div class="field"><label class="f-lab">Additional information or comments</label><textarea class="f-in" id="cne-comments" rows="2" style="resize:vertical">${escapeHtml(r.circumstances || '')}</textarea></div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Manager printed name</label><input class="f-in" id="cne-manager-name" value="${escapeHtml(r.delivered_by || profile.name || '')}"></div>
+          <div class="field"><label class="f-lab">Manager title</label><input class="f-in" id="cne-manager-title"></div>
+        </div>
+        <button type="button" class="gh solid" id="cne-generate-btn">Generate</button>
+      </div>
+    </div>
+    <div class="form-doc" id="cne-sheet" hidden></div>
+  `;
+  document.getElementById('cne-type').addEventListener('change', (e) => {
+    document.getElementById('cne-type-other-field').hidden = e.target.value !== 'other';
+  });
+  document.getElementById('cne-generate-btn').addEventListener('click', () => renderEmbeddedChangeNoticeSheet(r, lang));
+  embed.scrollIntoView({ behavior: 'smooth' });
+}
+
+function readEmbeddedChangeNoticeForm(r) {
+  const propertyReturned = {};
+  PROPERTY_ITEMS.forEach((p, i) => { propertyReturned[p] = document.getElementById(`cne-prop-${i}`).value; });
+  return {
+    emp_id: r.emp_id, emp_name: r.emp_name,
+    effective_date: r.termination_date, last_day_worked: r.last_day_worked,
+    change_type: document.getElementById('cne-type').value,
+    change_type_other: document.getElementById('cne-type').value === 'other' ? document.getElementById('cne-type-other').value.trim() : '',
+    property_returned: propertyReturned,
+    exit_interview: document.getElementById('cne-exit').value,
+    exit_interview_date: document.getElementById('cne-exit-date').value,
+    injury_reported: document.getElementById('cne-injury').value,
+    comments: document.getElementById('cne-comments').value.trim(),
+    manager_name: document.getElementById('cne-manager-name').value.trim(),
+    manager_title: document.getElementById('cne-manager-title').value.trim(),
+  };
+}
+
+function renderEmbeddedChangeNoticeSheet(r, lang) {
+  const isEs = lang === 'es';
+  const f = readEmbeddedChangeNoticeForm(r);
+  const changeTypes = isEs ? CHANGE_TYPES_ES : Object.fromEntries(CHANGE_TYPES.map((t) => [t.value, t.label]));
+  const propLabel = (p) => (isEs ? PROPERTY_ITEMS_ES[p] || p : p);
+  const yesNoNa = { yes: isEs ? 'Sí' : 'Yes', no: 'No', na: 'N/A' };
+  const sheet = document.getElementById('cne-sheet');
+  sheet.hidden = false;
+  sheet.innerHTML = `
+    <div class="form-page-break">
+      <div class="form-doc-inner">
+        <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+        <h1 class="form-title">${isEs ? 'Aviso de Cambio en el Estado de Empleo' : 'Notice of Change in Employment Status'}</h1>
+        <p class="dim" style="font-size:11px;margin:0 0 10px">${isEs
+          ? 'Código de Seguro de Desempleo de California, Sección 1089. Toda la información es requerida; una copia para el empleado, una para los registros del empleador.'
+          : 'California Unemployment Insurance Code Section 1089. All information required; one copy to employee, one for employer’s records.'}</p>
+        <div class="form-grid c2">
+          <div class="form-cell"><b>${isEs ? 'Empleador' : 'Employer'}</b>SouthWest Landscape Inc.</div>
+          <div class="form-cell"><b>${isEs ? 'Dirección del Empleador' : 'Employer Address'}</b>PO Box 15611, Santa Ana, CA 92735</div>
+          <div class="form-cell"><b>${isEs ? 'Empleado' : 'Employee'}</b>${escapeHtml(r.emp_name)}</div>
+          <div class="form-cell"><b>${isEs ? 'ID del Empleado' : 'Employee #'}</b>${escapeHtml(r.emp_id)}</div>
+          <div class="form-cell"><b>${isEs ? 'Fecha Efectiva' : 'Effective Date'}</b>${formatDate(f.effective_date)}</div>
+          <div class="form-cell"><b>${isEs ? 'Último Día de Trabajo' : 'Last Date of Work'}</b>${formatDate(f.last_day_worked)}</div>
+        </div>
+        <div class="form-section">${isEs ? 'Cambio en el Estado de Empleo' : 'Change in Employment Status'}</div>
+        <div class="form-checks">${CHANGE_TYPES.map((t) => `<label>${t.value === f.change_type ? '☑' : '☐'} ${changeTypes[t.value]}${t.value === 'other' && f.change_type === 'other' ? `: ${escapeHtml(f.change_type_other)}` : ''}</label>`).join('')}</div>
+        <div class="form-box">${isEs
+          ? 'Cuando la ley lo requiere, el Empleador ha proporcionado al Empleado el folleto del Departamento de Desarrollo del Empleo de California (EDD) DE 2320 – Para Su Beneficio: Programas de California para los Desempleados, que explica la posible elegibilidad para beneficios de seguro de desempleo.'
+          : 'When required by law, the Employer has provided the Employee with the California Employment Development Department (EDD) pamphlet DE 2320 – For Your Benefit: California’s Programs for the Unemployed, which explains potential eligibility for unemployment insurance benefits.'}</div>
+        <div class="form-section">${isEs ? 'Verificación de Devolución de Propiedad de la Compañía' : 'Company Property Return Verification'}</div>
+        <table class="form-notice-table">
+          <thead><tr><th>${isEs ? 'Artículo' : 'Item'}</th><th>${isEs ? 'Estado' : 'Status'}</th></tr></thead>
+          <tbody>${PROPERTY_ITEMS.map((p) => `<tr><td>${propLabel(p)}</td><td style="text-align:center">${yesNoNa[f.property_returned[p]] || 'N/A'}</td></tr>`).join('')}</tbody>
+        </table>
+        <div class="form-section">${isEs ? 'Entrevista de Salida Realizada' : 'Exit Interview Performed'}</div>
+        <div class="form-grid c2">
+          <div class="form-cell"><b>${isEs ? 'Estado' : 'Status'}</b>${yesNoNa[f.exit_interview] || 'N/A'}</div>
+          <div class="form-cell"><b>${isEs ? 'Fecha Realizada' : 'Date Performed'}</b>${formatDate(f.exit_interview_date)}</div>
+        </div>
+        <div class="form-section">${isEs ? 'Información o Comentarios Adicionales' : 'Additional Information or Comments'}</div>
+        <div class="form-box">${escapeHtml(f.comments) || '—'}</div>
+        <div class="form-section">${isEs ? 'Gerente' : 'Manager'}</div>
+        ${signaturePadHtml('cne-mgr-sig-pad', 'cne-mgr-sig-clear')}
+        <div class="form-grid c2">
+          <div class="form-cell"><b>${isEs ? 'Nombre en Letra de Molde' : 'Print Name'}</b>${escapeHtml(f.manager_name)}</div>
+          <div class="form-cell"><b>${isEs ? 'Puesto' : 'Title'}</b>${escapeHtml(f.manager_title)}</div>
+        </div>
+        <div class="form-section">${isEs ? 'Consulta Voluntaria de Lesión o Enfermedad Relacionada al Trabajo' : 'Work-Related Injury or Illness Inquiry (Voluntary)'}</div>
+        <div class="form-box">${isEs
+          ? `A la fecha de este aviso, ¿ha reportado alguna lesión o enfermedad relacionada con el trabajo a la Compañía? ${f.injury_reported === 'yes' ? 'Sí' : f.injury_reported === 'no' ? 'No' : '— sin responder —'}`
+          : `As of the date of this notice, have you reported any work-related injury or illness to the Company? ${f.injury_reported === 'yes' ? 'Yes' : f.injury_reported === 'no' ? 'No' : '— not answered —'}`}
+          <br><span class="dim" style="font-size:10.5px">${isEs
+            ? 'Este reconocimiento es únicamente para fines de mantenimiento de registros y no limita ni renuncia al derecho del Empleado de reportar una lesión o enfermedad relacionada con el trabajo en cualquier momento, según lo permita la ley.'
+            : 'This acknowledgment is for record-keeping purposes only and does not limit or waive the Employee’s right to report a work-related injury or illness at any time, as permitted by law.'}</span></div>
+        <div class="form-section">${isEs ? 'Firma Electrónica del Empleado — acuso recibo' : 'Employee Electronic Signature — acknowledges receipt'}</div>
+        ${signaturePadHtml('cne-emp-sig-pad', 'cne-emp-sig-clear')}
+        <div class="form-cell"><b>${isEs ? 'Nombre en Letra de Molde' : 'Print Name'}</b>${escapeHtml(r.emp_name)}</div>
+        <button type="button" class="gh solid no-print" id="cne-save-btn" style="margin-top:10px">${isEs ? 'Guardar' : 'Save'}</button>
+      </div>
+    </div>
+  `;
+  setUpSignaturePad('cne-mgr-sig-pad', 'cne-mgr-sig-clear');
+  setUpSignaturePad('cne-emp-sig-pad', 'cne-emp-sig-clear');
+  document.getElementById('cne-save-btn').addEventListener('click', async () => {
+    const mgrState = sigPads['cne-mgr-sig-pad'];
+    const empState = sigPads['cne-emp-sig-pad'];
+    try {
+      const signed = !!(mgrState?.hasStroke) || !!(empState?.hasStroke);
+      await setDoc(doc(collection(db, 'training_documents')), {
+        content_type: 'changenotice', category: 'termination', status: signed ? 'signed' : 'pending_signature',
+        title: `Notice of Change in Employment Status — ${r.emp_name} (${formatDate(f.effective_date)})`,
+        ...f, lang,
+        manager_signature_data_url: mgrState?.hasStroke ? document.getElementById('cne-mgr-sig-pad').toDataURL('image/png') : null,
+        employee_signature_data_url: empState?.hasStroke ? document.getElementById('cne-emp-sig-pad').toDataURL('image/png') : null,
+        signed_by: profile.uid, signed_at: serverTimestamp(),
+        linked_termination_id: r.id,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      // Generating a document files its record — this one also flips the
+      // termination's own "Notice to Employee as to Change in Relationship"
+      // checklist item, so the two stay in sync instead of one silently
+      // going stale.
+      if (Array.isArray(r.notices)) {
+        const notices = r.notices.map((n) => n.key === 'change' ? { ...n, status: 'provided', date: f.effective_date } : n);
+        await updateDoc(doc(db, 'terminations', r.id), { notices, entered_by: profile.uid });
+        r.notices = notices;
+      }
+      showToast('Saved.');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save — ' + err.message, 'error');
+    }
+  });
+  sheet.scrollIntoView({ behavior: 'smooth' });
 }
 
 // Pre-fills the Termination Summary generator from an already-registered
