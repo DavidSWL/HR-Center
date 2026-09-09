@@ -22,16 +22,16 @@ export const NAV_SECTIONS = [
   {
     label: 'People',
     items: [
-      { key: 'roster', label: 'Employee roster', href: 'employees.html', built: true },
-      { key: 'orgchart', label: 'Org chart', href: 'orgchart.html', built: true },
       { key: 'applicants', label: 'ATS', href: 'applicants.html', built: true },
-      { key: 'comp', label: 'Policy compliance', href: 'compliance.html', built: true },
-      { key: 'harassment_training', label: 'Harassment training', href: 'harassmenttraining.html', built: true },
       { key: 'attendance', label: 'Attendance', href: 'attendance.html', built: true },
-      { key: 'reviews', label: 'New hires & reviews', href: 'reviews.html', built: true },
       { key: 'discipline', label: 'Disciplinary actions', href: 'discipline.html', built: true, davidOnly: true },
-      { key: 'terminations', label: 'Terminations', href: 'docgen.html?open=termination', built: true },
+      { key: 'roster', label: 'Employee roster', href: 'employees.html', built: true },
+      { key: 'harassment_training', label: 'Harassment training', href: 'harassmenttraining.html', built: true },
+      { key: 'reviews', label: 'New hires & reviews', href: 'reviews.html', built: true },
       { key: 'notes', label: 'Notes & files', href: 'notes.html', built: true },
+      { key: 'orgchart', label: 'Org chart', href: 'orgchart.html', built: true },
+      { key: 'comp', label: 'Policy compliance', href: 'compliance.html', built: true },
+      { key: 'terminations', label: 'Terminations', href: 'docgen.html?open=termination', built: true },
     ],
   },
   {
@@ -45,19 +45,19 @@ export const NAV_SECTIONS = [
   {
     label: 'HR team',
     items: [
-      { key: 'tasks', label: 'Tasks', href: 'tasks.html', built: true },
-      { key: 'training', label: 'Team training', href: 'training.html', built: true },
+      { key: 'completed', label: 'Completed work', href: 'activity.html', built: true },
       { key: 'documents', label: 'Documents', href: 'documents.html', built: true },
       { key: 'ipads', label: 'iPad tracking', href: 'ipads.html', built: true },
-      { key: 'completed', label: 'Completed work', href: 'activity.html', built: true },
+      { key: 'tasks', label: 'Tasks', href: 'tasks.html', built: true },
+      { key: 'training', label: 'Team training', href: 'training.html', built: true },
     ],
   },
   {
     label: 'Reporting',
     items: [
-      { key: 'reports', label: 'Reports', href: 'reports.html', built: true },
-      { key: 'er', label: 'Employee relations', href: 'er.html', built: true, davidOnly: true },
       { key: 'docgen', label: 'Document generator', href: 'docgen.html', built: true },
+      { key: 'er', label: 'Employee relations', href: 'er.html', built: true, davidOnly: true },
+      { key: 'reports', label: 'Reports', href: 'reports.html', built: true },
     ],
   },
   {
