@@ -5579,7 +5579,7 @@ function signaturePadHtml(canvasId, clearId, height = 90) {
 // Time Card/Missed Meal Period's.
 function signatureTaskFieldsHtml(prefix, buttonLabel = 'Save for signature later') {
   return `
-    <div class="frow" style="margin-top:10px;align-items:flex-end">
+    <div class="frow no-print" style="margin-top:10px;align-items:flex-end">
       <div class="field" style="margin:0">
         <label class="f-lab">Not signing right now? Get the signature later — who should get it signed</label>
         <select class="f-in" id="${prefix}-sig-assignee"><option value="">Choose…</option>${staff.map((s) => `<option value="${s.id}">${s.name}</option>`).join('')}</select>

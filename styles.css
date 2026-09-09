@@ -37,6 +37,10 @@ body{font-family:var(--sans);font-size:14px;line-height:1.5;background:#000;colo
   .form-notice-table tr { break-inside:avoid; }
   .form-notice-table thead { display:table-header-group; }
   .form-page-break { break-before:page; }
+  /* A section header (the dark label bar) must never be the last thing
+     on a page with its box/grid/table stranded alone at the top of the
+     next one — keep it glued to whatever comes right after it. */
+  .form-section { break-after:avoid; }
 }
 
 /* ============================================================
