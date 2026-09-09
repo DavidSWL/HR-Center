@@ -179,12 +179,11 @@
 <script type="module">
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
-import { db, storage } from './firebaseconfig.js';
+import { db } from './firebaseconfig.js';
 import { LOGO_DATA_URL } from './letterhead-assets.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
@@ -431,13 +430,27 @@ document.getElementById('action-form').addEventListener('submit', async (e) => {
     if (!emp) { showToast('Select an employee.', 'error'); saveBtn.disabled = false; return; }
     const actionRef = doc(collection(db, 'disciplinary_actions'));
 
-    let fileUrl = null, filePath = null;
+    // Embedded as a data URL directly on the record rather than uploaded
+    // to Firebase Storage — this account is on the free Spark plan, which
+    // as of late 2024 can no longer provision a Storage bucket at all
+    // (Google now requires Blaze for that), so uploadBytes silently
+    // failed here, blocking the write-up from filing at all whenever a
+    // file was attached. Same fix already applied to employee photos and
+    // to Safety's incident uploads.
+    let fileUrl = null;
     const file = document.getElementById('doc-file').files[0];
     if (file) {
-      filePath = `disciplinary/${actionRef.id}/${file.name}`;
-      const storageRef = ref(storage, filePath);
-      await uploadBytes(storageRef, file);
-      fileUrl = await getDownloadURL(storageRef);
+      if (file.size > 900 * 1024) {
+        showToast('That file is too large to attach (max ~900KB) — try a lower-resolution scan or photo of it.', 'error');
+        saveBtn.disabled = false;
+        return;
+      }
+      fileUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
     }
 
     const offenses = [...document.querySelectorAll('.offense-check:checked')].map((c) => c.value);
@@ -467,7 +480,6 @@ document.getElementById('action-form').addEventListener('submit', async (e) => {
       employee_comments: document.getElementById('employee-comments').value.trim(),
       issued_by: document.getElementById('issued-by').value.trim(),
       form_on_file: !!file,
-      file_path: filePath,
       file_url: fileUrl,
       entered_by: profile.uid,
       entered_at: serverTimestamp(),

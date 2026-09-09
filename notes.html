@@ -79,14 +79,11 @@
 
 <script type="module">
 import { requireAuth } from './auth.js';
-import { initShell, showToast, formatDate } from './app.js';
-import { db, storage } from './firebaseconfig.js';
+import { initShell, showToast, formatDate, formatDateTime } from './app.js';
+import { db } from './firebaseconfig.js';
 import {
   collection, doc, getDocs, setDoc, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import {
-  ref, uploadBytes, getDownloadURL,
-} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
@@ -105,10 +102,20 @@ const TYPE_LABELS = {
 
 let employees = [];
 let notes = [];
+let staff = [];
 
 function empName(id) {
   const e = employees.find((x) => x.id === id);
   return e ? `${e.first_name} ${e.last_name}` : id;
+}
+
+function staffName(uid) {
+  const s = staff.find((x) => x.id === uid);
+  return s ? s.name : (uid || '—');
+}
+async function loadStaff() {
+  const snap = await getDocs(collection(db, 'users'));
+  staff = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
 function escapeHtml(str) {
@@ -162,12 +169,12 @@ function render() {
   document.getElementById('notes-summary').textContent = `${visible.length} of ${notes.length}`;
   document.getElementById('rows').innerHTML = visible.length ? visible.map((n) => `
     <tr>
-      <td class="mono">${n.entered_at?.seconds ? formatDate(new Date(n.entered_at.seconds * 1000)) : '—'}</td>
+      <td class="mono" style="font-size:11.5px">${formatDateTime(n.entered_at)}</td>
       <td>${empName(n.emp_id)}</td>
       <td class="dim">${TYPE_LABELS[n.type] || n.type}</td>
       <td>${(n.body || '').slice(0, 90)}${(n.body || '').length > 90 ? '…' : ''}</td>
       <td>${n.attachment_url ? `<a href="${n.attachment_url}" target="_blank" rel="noopener">View</a>` : '<span class="dim">—</span>'}</td>
-      <td class="mono dim">${n.entered_by === profile.uid ? 'You' : n.entered_by}</td>
+      <td class="mono dim">${staffName(n.entered_by)}</td>
     </tr>
   `).join('') : '<tr><td colspan="6" class="dim">No notes yet.</td></tr>';
 }
@@ -185,21 +192,35 @@ document.getElementById('note-form').addEventListener('submit', async (e) => {
 
   try {
     const noteRef = doc(collection(db, 'notes_to_file'));
-    let attachmentUrl = null, attachmentPath = null;
+    // Embedded as a data URL directly on the note rather than uploaded to
+    // Firebase Storage — this account is on the free Spark plan, which as
+    // of late 2024 can no longer provision a Storage bucket at all
+    // (Google now requires Blaze for that), so uploadBytes silently
+    // failed here, blocking the note from saving at all whenever a file
+    // was attached. Same fix already applied to employee photos and to
+    // Safety's incident uploads.
+    let attachmentUrl = null;
 
     const file = document.getElementById('note-file').files[0];
     if (file) {
-      attachmentPath = `notes/${noteRef.id}/${file.name}`;
-      const storageRef = ref(storage, attachmentPath);
-      await uploadBytes(storageRef, file);
-      attachmentUrl = await getDownloadURL(storageRef);
+      if (file.size > 900 * 1024) {
+        showToast('That file is too large to attach (max ~900KB) — try a lower-resolution scan or photo of it.', 'error');
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save note';
+        return;
+      }
+      attachmentUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
     }
 
     await setDoc(noteRef, {
       emp_id: empId,
       type: document.getElementById('note-type').value,
       body: document.getElementById('note-body').value.trim(),
-      attachment_path: attachmentPath,
       attachment_url: attachmentUrl,
       entered_by: profile.uid,
       entered_at: serverTimestamp(),
@@ -217,7 +238,7 @@ document.getElementById('note-form').addEventListener('submit', async (e) => {
   }
 });
 
-await loadEmployees();
+await Promise.all([loadEmployees(), loadStaff()]);
 await loadNotes();
 </script>
 </body>

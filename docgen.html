@@ -148,14 +148,13 @@
 <script type="module">
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate, formatDateTime, readSpreadsheetSheets, objectsFromRows } from './app.js';
-import { db, storage } from './firebaseconfig.js';
+import { db } from './firebaseconfig.js';
 import { LOGO_DATA_URL, LOCATIONS, SCHEDULE_PRESETS, HR_SIGNER, ONBOARDING_CHECKLIST } from './letterhead-assets.js';
 import { JOB_DESCRIPTIONS } from './jobdescriptionsdata.js';
 import { ONBOARDING_FORMS } from './onboardingformsdata.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, writeBatch, serverTimestamp, query, where,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
@@ -2586,6 +2585,10 @@ function renderIncidentReport() {
             <div class="field"><label class="f-lab">Injury type</label><input class="f-in" id="ir-injury-type" placeholder="e.g. Laceration"></div>
             <div class="field"><label class="f-lab">Body part</label><input class="f-in" id="ir-body-part"></div>
           </div>
+          <div class="field">
+            <label class="f-lab" for="ir-related-incident">Related to an earlier incident? (re-injury)</label>
+            <select class="f-in" id="ir-related-incident"><option value="">Not related to an earlier incident</option></select>
+          </div>
           <div class="field"><label class="f-lab">Treatment level</label>
             <select class="f-in" id="ir-treatment-level">
               <option value="none">None needed</option>
@@ -2604,11 +2607,19 @@ function renderIncidentReport() {
             <input class="f-in" id="ir-refusal-file" type="file" accept="application/pdf,image/*">
           </div>
           <div class="frow">
-            <div class="field"><label class="f-lab">Days away</label><input class="f-in" id="ir-days-away" type="number" min="0" value="0"></div>
-            <div class="field"><label class="f-lab">Restricted days</label><input class="f-in" id="ir-restricted-days" type="number" min="0" value="0"></div>
+            <div class="field"><label class="f-lab" for="ir-return-date">Return to work date</label><input class="f-in" id="ir-return-date" type="date"></div>
+            <div class="field"><label class="f-lab" for="ir-full-duty-date">Full duty date</label><input class="f-in" id="ir-full-duty-date" type="date"></div>
           </div>
-          <div id="ir-recordable-hint" class="login-error" style="background:var(--hover);color:var(--muted);border-color:var(--line)" hidden></div>
-          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:14px"><input type="checkbox" id="ir-recordable"> Recordable (Cal/OSHA Form 300)</label>
+          <div class="dim" style="font-size:11px;margin:-8px 0 10px">Leave Return to work blank while still out — Days Away keeps counting. Once they're back (even on restricted duty), Full duty stays blank while still restricted — Restricted Days keeps counting from Return to work until then. Both are filled in from the dates above, but you can type over either number if it doesn't come out right — for example if they never missed a full day and went straight to restricted duty.</div>
+          <div class="frow">
+            <div class="field"><label class="f-lab" for="ir-days-away">Days away</label><input class="f-in" id="ir-days-away" type="number" min="0" value="0"></div>
+            <div class="field"><label class="f-lab" for="ir-restricted-days">Restricted days</label><input class="f-in" id="ir-restricted-days" type="number" min="0" value="0"></div>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:14px;color:var(--alertTx)"><input type="checkbox" id="ir-fatality"> Fatality</label>
+          <div class="field">
+            <label class="f-lab">Recordable (Cal/OSHA Form 300)</label>
+            <div id="ir-recordable-display" style="font-size:12.5px"></div>
+          </div>
           <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:14px"><input type="checkbox" id="ir-privacy-case"> Privacy case — withhold name from Form 300 export</label>
         </div>
 
@@ -2642,6 +2653,7 @@ function renderIncidentReport() {
 
   document.getElementById('ir-emp').addEventListener('change', (e) => {
     const emp = employees.find((x) => x.id === e.target.value);
+    loadRelatedIncidentOptions(e.target.value, null);
     if (!emp || !emp.manager_emp_id) return;
     const mgr = employees.find((x) => x.id === emp.manager_emp_id);
     if (!mgr) return;
@@ -2663,29 +2675,14 @@ function renderIncidentReport() {
   document.getElementById('ir-treatment-level').addEventListener('change', (e) => {
     document.getElementById('ir-refusal-field').hidden = e.target.value !== 'refused';
   });
-  function updateRecordableHint() {
-    const level = document.getElementById('ir-treatment-level').value;
-    const daysAway = parseInt(document.getElementById('ir-days-away').value || '0', 10);
-    const restrictedDays = parseInt(document.getElementById('ir-restricted-days').value || '0', 10);
-    const hint = document.getElementById('ir-recordable-hint');
-    const checkbox = document.getElementById('ir-recordable');
-    if (daysAway > 0 || restrictedDays > 0) {
-      checkbox.checked = true; hint.hidden = false;
-      hint.textContent = 'Days away or restricted days were entered — this is recordable regardless of treatment level.';
-    } else if (level === 'clinic' || level === 'er' || level === 'hospitalization') {
-      checkbox.checked = true; hint.hidden = false;
-      hint.textContent = 'Clinic/ER/hospitalization treatment is likely recordable — pre-checked, but review before saving.';
-    } else if (level === 'first_aid') {
-      checkbox.checked = false; hint.hidden = false;
-      hint.textContent = 'First aid only is usually not recordable — unless days away or restricted work apply.';
-    } else {
-      hint.hidden = true;
-    }
-  }
-  ['ir-treatment-level', 'ir-days-away', 'ir-restricted-days'].forEach((id) => {
-    document.getElementById(id).addEventListener('input', updateRecordableHint);
-    document.getElementById(id).addEventListener('change', updateRecordableHint);
+  ['ir-date', 'ir-return-date', 'ir-full-duty-date'].forEach((id) => {
+    document.getElementById(id).addEventListener('change', () => { recalcDaysFromDates(); updateRecordableDisplay(); });
   });
+  ['ir-treatment-level', 'ir-days-away', 'ir-restricted-days', 'ir-fatality'].forEach((id) => {
+    document.getElementById(id).addEventListener('input', updateRecordableDisplay);
+    document.getElementById(id).addEventListener('change', updateRecordableDisplay);
+  });
+  updateRecordableDisplay();
   document.getElementById('ir-generate-btn').addEventListener('click', () => renderIncidentReportSheet(document.getElementById('lang-select').value));
   document.getElementById('ir-generate-refusal-btn').addEventListener('click', () => {
     incidentDraftForResume = readIncidentReportForm();
@@ -2703,8 +2700,10 @@ function renderIncidentReport() {
 // Repopulates the raw incident report draft form from a snapshot taken
 // by readIncidentReportForm() -- used when someone comes back from
 // generating a Refusal form mid-draft via "Generate Refusal Form".
-function restoreIncidentReportDraft(f) {
+async function restoreIncidentReportDraft(f) {
   if (f.emp) setEmpField('ir-emp', f.emp.id);
+  await loadRelatedIncidentOptions(f.emp ? f.emp.id : '', null);
+  document.getElementById('ir-related-incident').value = f.relatedIncidentId || '';
   document.getElementById('ir-date').value = f.date || '';
   document.getElementById('ir-time').value = f.time || '';
   document.getElementById('ir-supervisor').value = f.supervisor || '';
@@ -2717,9 +2716,12 @@ function restoreIncidentReportDraft(f) {
   document.getElementById('ir-body-part').value = f.bodyPart || '';
   document.getElementById('ir-treatment-level').value = f.treatmentLevel || 'none';
   document.getElementById('ir-refusal-field').hidden = f.treatmentLevel !== 'refused';
+  document.getElementById('ir-return-date').value = f.returnDate || '';
+  document.getElementById('ir-full-duty-date').value = f.fullDutyDate || '';
   document.getElementById('ir-days-away').value = f.daysAway || 0;
   document.getElementById('ir-restricted-days').value = f.restrictedDays || 0;
-  document.getElementById('ir-recordable').checked = !!f.recordable;
+  document.getElementById('ir-fatality').checked = !!f.fatality;
+  updateRecordableDisplay();
   document.getElementById('ir-privacy-case').checked = !!f.privacyCase;
   document.getElementById('ir-witnesses').value = f.witnesses || '';
   document.getElementById('ir-describe').value = f.describe || '';
@@ -2739,9 +2741,21 @@ function readIncidentReportForm() {
   const empId = document.getElementById('ir-emp').value;
   const emp = employees.find((e) => e.id === empId) || null; // an incident doesn't have to name one employee
   const isInjury = document.getElementById('ir-type').value === 'Injury';
+  const injuryDate = document.getElementById('ir-date').value;
+  const returnDate = isInjury ? document.getElementById('ir-return-date').value : '';
+  const fullDutyDate = isInjury ? document.getElementById('ir-full-duty-date').value : '';
+  const treatmentLevel = isInjury ? document.getElementById('ir-treatment-level').value : '';
+  // Read the number fields themselves rather than recomputing from the
+  // dates — they're pre-filled from the dates, but someone may have typed
+  // over them by hand (e.g. treatment refused so no exact return date, or
+  // a stretch of days that didn't match a clean date range).
+  const daysAway = isInjury ? parseInt(document.getElementById('ir-days-away').value || '0', 10) : 0;
+  const restrictedDays = isInjury ? parseInt(document.getElementById('ir-restricted-days').value || '0', 10) : 0;
+  const fatality = isInjury ? document.getElementById('ir-fatality').checked : false;
+  const relatedSel = document.getElementById('ir-related-incident');
   return {
     emp,
-    date: document.getElementById('ir-date').value,
+    date: injuryDate,
     time: document.getElementById('ir-time').value,
     supervisor: document.getElementById('ir-supervisor').value.trim(),
     department: document.getElementById('ir-department').value.trim(),
@@ -2751,10 +2765,18 @@ function readIncidentReportForm() {
     isInjury,
     injuryType: isInjury ? document.getElementById('ir-injury-type').value.trim() : '',
     bodyPart: isInjury ? document.getElementById('ir-body-part').value.trim() : '',
-    treatmentLevel: isInjury ? document.getElementById('ir-treatment-level').value : '',
-    daysAway: isInjury ? parseInt(document.getElementById('ir-days-away').value || '0', 10) : 0,
-    restrictedDays: isInjury ? parseInt(document.getElementById('ir-restricted-days').value || '0', 10) : 0,
-    recordable: isInjury ? document.getElementById('ir-recordable').checked : false,
+    // The label is never stored — it's just whatever the dropdown is
+    // currently showing for the picked id, re-derived every time the
+    // options are loaded (see loadRelatedIncidentOptions).
+    relatedIncidentId: isInjury ? (relatedSel.value || null) : null,
+    relatedIncidentLabel: isInjury && relatedSel.value ? relatedSel.options[relatedSel.selectedIndex].textContent : '',
+    treatmentLevel,
+    returnDate,
+    fullDutyDate,
+    daysAway,
+    restrictedDays,
+    fatality,
+    recordable: isInjury && computeRecordable({ treatmentLevel, daysAway, restrictedDays, fatality }),
     privacyCase: isInjury ? document.getElementById('ir-privacy-case').checked : false,
     witnesses: document.getElementById('ir-witnesses').value.trim(),
     describe: document.getElementById('ir-describe').value,
@@ -2773,6 +2795,91 @@ function readIncidentReportForm() {
 const INCIDENT_TYPE_ES = { Injury: 'Lesión', 'Near miss': 'Casi accidente', 'Property damage': 'Daño a la propiedad', 'Vehicle accident': 'Accidente vehicular' };
 const TREATMENT_LEVEL_LABELS = { none: 'None needed', first_aid: 'First aid', clinic: 'Clinic', er: 'Emergency room', hospitalization: 'Hospitalization', refused: 'Employee refused treatment' };
 const TREATMENT_LEVEL_LABELS_ES = { none: 'No se necesitó', first_aid: 'Primeros auxilios', clinic: 'Clínica', er: 'Sala de emergencias', hospitalization: 'Hospitalización', refused: 'Empleado rechazó tratamiento' };
+
+// Cal/OSHA Form 300 recordability (29 CFR 1904.7): a fatality, any days
+// away from work, any restricted/transferred days, or medical treatment
+// beyond first aid (clinic/ER/hospitalization) makes a case recordable.
+// First aid only, no treatment, or a declined/refused treatment is not
+// recordable on its own. Computed so nobody has to know the rule to
+// apply it correctly — no manual checkbox to get wrong.
+function computeRecordable({ treatmentLevel, daysAway, restrictedDays, fatality }) {
+  if (fatality) return true;
+  if (daysAway > 0 || restrictedDays > 0) return true;
+  return treatmentLevel === 'clinic' || treatmentLevel === 'er' || treatmentLevel === 'hospitalization';
+}
+
+// Calendar-day counting per 29 CFR 1904.7(b)(3)/(b)(4) — every calendar
+// day counts (weekends and holidays included), not just workdays. Days
+// Away runs from the day AFTER the injury through the day BEFORE
+// returning (the injury date itself never counts). Restricted Days runs
+// from the return date itself (the first restricted day) through the day
+// BEFORE full duty. Either end left blank means "still ongoing" — counts
+// through today, so nobody has to update it by hand while someone's out.
+const MS_PER_DAY = 86400000;
+function calcDaysAway(injuryDate, returnDate) {
+  if (!injuryDate) return 0;
+  const end = returnDate || new Date().toISOString().slice(0, 10);
+  const start = new Date(injuryDate + 'T00:00:00');
+  const endD = new Date(end + 'T00:00:00');
+  return Math.max(0, Math.round((endD - start) / MS_PER_DAY) - 1);
+}
+function calcRestrictedDays(returnDate, fullDutyDate) {
+  if (!returnDate) return 0; // hasn't returned at all yet, so no restricted period has started
+  const end = fullDutyDate || new Date().toISOString().slice(0, 10);
+  const start = new Date(returnDate + 'T00:00:00');
+  const endD = new Date(end + 'T00:00:00');
+  return Math.max(0, Math.round((endD - start) / MS_PER_DAY));
+}
+
+// The chosen employee's other incidents, for tagging a re-injury as
+// related to an earlier one. excludeId keeps a saved incident being
+// reopened from listing itself as a possible relative of itself.
+async function loadRelatedIncidentOptions(empId, excludeId) {
+  const sel = document.getElementById('ir-related-incident');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Not related to an earlier incident</option>';
+  if (!empId) return;
+  const snap = await getDocs(query(collection(db, 'incidents'), where('emp_id', '==', empId)));
+  const past = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((i) => i.id !== excludeId && !i.voided)
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  sel.innerHTML = '<option value="">Not related to an earlier incident</option>' + past.map((i) =>
+    `<option value="${i.id}">${formatDate(i.date)} — ${escapeHtml(i.injury_type || i.incident_type || 'Incident')}${i.body_part ? ' / ' + escapeHtml(i.body_part) : ''}</option>`
+  ).join('');
+}
+
+// Fills the Days Away / Restricted Days number fields from the dates —
+// called only when a date changes, so it never clobbers a number someone
+// typed by hand afterward.
+function recalcDaysFromDates() {
+  const injuryDate = document.getElementById('ir-date').value;
+  const returnDate = document.getElementById('ir-return-date').value;
+  const fullDutyDate = document.getElementById('ir-full-duty-date').value;
+  document.getElementById('ir-days-away').value = calcDaysAway(injuryDate, returnDate);
+  document.getElementById('ir-restricted-days').value = calcRestrictedDays(returnDate, fullDutyDate);
+}
+
+// Updates the read-only Recordable badge on the raw draft form to match
+// its current fields — called on every relevant field change, plus once
+// whenever the form is populated from a saved incident or a resumed
+// draft. Module-level (not nested in renderIncidentReport) so those
+// other call sites can reach it too.
+function updateRecordableDisplay() {
+  const level = document.getElementById('ir-treatment-level').value;
+  const fatality = document.getElementById('ir-fatality').checked;
+  const daysAway = parseInt(document.getElementById('ir-days-away').value || '0', 10);
+  const restrictedDays = parseInt(document.getElementById('ir-restricted-days').value || '0', 10);
+
+  const display = document.getElementById('ir-recordable-display');
+  const recordable = computeRecordable({ treatmentLevel: level, daysAway, restrictedDays, fatality });
+  let why;
+  if (fatality) why = 'a fatality';
+  else if (daysAway > 0 || restrictedDays > 0) why = 'days away or restricted days were entered';
+  else if (recordable) why = 'treatment level was clinic, ER, or hospitalization';
+  else why = 'no days away/restricted, and treatment was first aid, none, or refused';
+  display.innerHTML = `<span class="pill${recordable ? ' bad' : ''}">${recordable ? 'Recordable' : 'Not recordable'}</span> <span class="dim" style="font-size:11px">— ${why}</span>`;
+}
 
 function renderIncidentReportSheet(lang = 'en') {
   const isEs = lang === 'es';
@@ -2806,6 +2913,14 @@ function renderIncidentReportSheet(lang = 'en') {
         <div class="form-cell"><b>${isEs ? 'Días con Restricción' : 'Restricted Days'}</b>${f.restrictedDays}</div>
         <div class="form-cell"><b>${isEs ? 'Registrable' : 'Recordable'}</b>${f.recordable ? (isEs ? 'Sí' : 'Yes') : 'No'}</div>
       </div>
+      ${f.returnDate || f.fullDutyDate ? `
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Fecha de Regreso al Trabajo' : 'Return to Work Date'}</b>${f.returnDate ? formatDate(f.returnDate) : (isEs ? 'Aún ausente' : 'Still out')}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha de Deber Completo' : 'Full Duty Date'}</b>${f.fullDutyDate ? formatDate(f.fullDutyDate) : (f.returnDate ? (isEs ? 'Aún con restricciones' : 'Still restricted') : '—')}</div>
+      </div>
+      ` : ''}
+      ${f.relatedIncidentId ? `<div class="form-callout">${isEs ? 'Nueva lesión — relacionada con el incidente del' : 'Re-injury — related to the incident on'} ${escapeHtml(f.relatedIncidentLabel)}.</div>` : ''}
+      ${f.fatality ? `<div class="form-callout" style="border-color:var(--alertTx);color:var(--alertTx);font-weight:700">${isEs ? 'MUERTE' : 'FATALITY'}</div>` : ''}
       ${f.treatmentLevel === 'refused' ? `
       <div class="no-print" style="margin:-6px 0 14px">
         <button type="button" class="gh" id="ir-generate-refusal-btn-sheet">${pendingIncidentRefusalDocId
@@ -2929,13 +3044,26 @@ async function saveIncidentReport(f, wantsSignatureTask = false) {
   try {
     const incidentRef = pendingSigDocId ? doc(db, 'incidents', pendingSigDocId) : doc(collection(db, 'incidents'));
 
-    let refusalUrl = null, refusalPath = null;
+    // Embedded as a data URL directly on the incident doc rather than
+    // uploaded to Firebase Storage — this account is on the free Spark
+    // plan, which as of late 2024 can no longer provision a Storage
+    // bucket at all (Google now requires Blaze for that), so uploadBytes
+    // silently fails here. Same fix already applied to employee photos
+    // and to Safety's own edit-incident upload.
+    let refusalUrl = null;
     const refusalFile = document.getElementById('ir-refusal-file')?.files[0];
     if (f.isInjury && f.treatmentLevel === 'refused' && refusalFile) {
-      refusalPath = `incidents/${incidentRef.id}/${refusalFile.name}`;
-      const storageRef = ref(storage, refusalPath);
-      await uploadBytes(storageRef, refusalFile);
-      refusalUrl = await getDownloadURL(storageRef);
+      if (refusalFile.size > 900 * 1024) {
+        showToast('That file is too large to attach (max ~900KB) — try a lower-resolution scan or photo of it.', 'error');
+        saveBtn.disabled = false;
+        return;
+      }
+      refusalUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(refusalFile);
+      });
     }
 
     const batch = writeBatch(db);
@@ -2946,13 +3074,15 @@ async function saveIncidentReport(f, wantsSignatureTask = false) {
       division: f.emp ? f.emp.division || '' : '',
       department: f.department, supervisor: f.supervisor, location: f.location,
       incident_type: f.incidentType, what_happened: f.whatHappened,
-      injury_type: f.injuryType, body_part: f.bodyPart, treatment_level: f.treatmentLevel,
+      injury_type: f.injuryType, body_part: f.bodyPart, related_incident_id: f.relatedIncidentId || null,
+      treatment_level: f.treatmentLevel,
       days_away: f.daysAway, restricted_days: f.restrictedDays,
-      recordable: f.recordable, privacy_case: f.privacyCase,
+      return_to_work_date: f.returnDate || null, full_duty_date: f.fullDutyDate || null,
+      recordable: f.recordable, fatality: f.fatality, privacy_case: f.privacyCase,
       cost: f.cost, root_cause: f.rootCause,
       corrective_action: f.correctiveAction, corrective_owner: f.correctiveOwner, corrective_due: f.correctiveDue,
       category_needs_review: false,
-      refusal_form_url: refusalUrl, refusal_form_path: refusalPath,
+      refusal_form_url: refusalUrl,
       // ---- Form 7.3 fields, new on the merged record ----
       witnesses: f.witnesses, describe: f.describe, immediate_action: f.immediateAction,
       followup_checks: checks, discussed_staff_who: f.discussedStaffWho, other_detail: f.otherDetail,
@@ -4365,7 +4495,7 @@ function drawExistingSignatureDataUrl(canvasId, dataUrl) {
   });
 }
 
-function populateIncidentReportForm(d) {
+async function populateIncidentReportForm(d) {
   document.getElementById('ir-date').value = d.date || '';
   document.getElementById('ir-time').value = d.time || '';
   setEmpField('ir-emp', d.emp_id);
@@ -4376,11 +4506,16 @@ function populateIncidentReportForm(d) {
   document.getElementById('ir-what-happened').value = d.what_happened || '';
   document.getElementById('ir-injury-type').value = d.injury_type || '';
   document.getElementById('ir-body-part').value = d.body_part || '';
+  await loadRelatedIncidentOptions(d.emp_id, pendingSigDocId);
+  document.getElementById('ir-related-incident').value = d.related_incident_id || '';
   document.getElementById('ir-treatment-level').value = d.treatment_level || 'none';
   document.getElementById('ir-treatment-level').dispatchEvent(new Event('change'));
+  document.getElementById('ir-return-date').value = d.return_to_work_date || '';
+  document.getElementById('ir-full-duty-date').value = d.full_duty_date || '';
   document.getElementById('ir-days-away').value = d.days_away || 0;
   document.getElementById('ir-restricted-days').value = d.restricted_days || 0;
-  document.getElementById('ir-recordable').checked = !!d.recordable;
+  document.getElementById('ir-fatality').checked = !!d.fatality;
+  updateRecordableDisplay();
   document.getElementById('ir-privacy-case').checked = !!d.privacy_case;
   document.getElementById('ir-witnesses').value = d.witnesses || '';
   document.getElementById('ir-describe').value = d.describe || '';
@@ -4470,7 +4605,7 @@ async function loadPendingSignatureDoc(type, id) {
       }
       pendingSigDocId = id; pendingSigTaskId = taskId;
       pendingIncidentRefusalDocId = d.refusal_doc_id || null;
-      populateIncidentReportForm(d);
+      await populateIncidentReportForm(d);
       renderIncidentReportSheet(document.getElementById('lang-select').value);
       if (d.followup_checks) {
         document.querySelectorAll('.ir-check').forEach((cb) => {
