@@ -54,11 +54,11 @@
             <div class="frow">
               <div class="field">
                 <label class="f-lab" for="tp-video">Video link (optional)</label>
-                <input class="f-in" id="tp-video" placeholder="https://…">
+                <input class="f-in" id="tp-video" placeholder="https://… (YouTube link — embeds automatically)">
               </div>
               <div class="field">
-                <label class="f-lab" for="tp-handout">Handout link (optional)</label>
-                <input class="f-in" id="tp-handout" placeholder="https://… (Drive/Dropbox link — files aren't stored in this app)">
+                <label class="f-lab" for="tp-handout">Slides / handout link (optional)</label>
+                <input class="f-in" id="tp-handout" placeholder="https://… (Google Slides link embeds automatically; anything else just opens)">
               </div>
             </div>
             <div class="field">
@@ -68,9 +68,10 @@
             <button type="submit" class="gh solid">Save topic</button>
           </form>
           <table style="margin-top:14px">
-            <thead><tr><th>Title</th><th>Video</th><th>Handout</th><th></th></tr></thead>
+            <thead><tr><th>Title</th><th>Video</th><th>Slides</th><th></th></tr></thead>
             <tbody id="topic-rows"></tbody>
           </table>
+          <div id="topic-present-panel" style="margin-top:14px"></div>
         </div>
       </div>
 
@@ -266,20 +267,44 @@ async function loadTopics() {
     topics.map((t) => `<option value="${escapeHtml(t.title)}">${escapeHtml(t.title)}</option>`).join('');
 }
 
+// Pulls the video ID out of a youtube.com/watch?v=, youtu.be/, or
+// /embed/ link — same pattern Team training uses.
+function youtubeEmbedId(url) {
+  const m = (url || '').match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/))([\w-]{6,})/);
+  return m ? m[1] : null;
+}
+// A Google Slides share/edit link ("…/presentation/d/ID/edit…") or an
+// already-published embed link ("…/presentation/d/e/ID/embed…") both
+// resolve to the same /embed URL, so the actual slides show inline —
+// paste either kind. Anything else (OneDrive, Dropbox, a plain PDF)
+// just shows as an "Open" link instead of trying to embed it.
+function googleSlidesEmbedUrl(url) {
+  const m = (url || '').match(/presentation\/d\/(e\/)?([a-zA-Z0-9_-]+)/);
+  if (!m) return null;
+  return `https://docs.google.com/presentation/d/${m[1] || ''}${m[2]}/embed?start=false&loop=false&delayms=3000`;
+}
+
 function renderTopics() {
   document.getElementById('topic-rows').innerHTML = topics.length ? topics.map((t) => `
     <tr>
       <td>${escapeHtml(t.title)}</td>
       <td>${t.video_url ? `<a href="${escapeHtml(t.video_url)}" target="_blank" rel="noopener">Open</a>` : '<span class="dim">—</span>'}</td>
       <td>${t.handout_url ? `<a href="${escapeHtml(t.handout_url)}" target="_blank" rel="noopener">Open</a>` : '<span class="dim">—</span>'}</td>
-      <td style="text-align:right"><button class="gh topic-delete-btn" data-id="${t.id}" type="button">Delete</button></td>
+      <td style="text-align:right">
+        <button class="gh topic-present-btn" data-id="${t.id}" type="button">Present</button>
+        <button class="gh topic-delete-btn" data-id="${t.id}" type="button">Delete</button>
+      </td>
     </tr>
   `).join('') : '<tr><td colspan="4" class="dim">No topics yet.</td></tr>';
+  document.querySelectorAll('.topic-present-btn').forEach((btn) => {
+    btn.addEventListener('click', () => presentTopic(btn.dataset.id));
+  });
   document.querySelectorAll('.topic-delete-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
       if (!confirm('Delete this topic? Past sessions that used it are unaffected.')) return;
       try {
         await deleteDoc(doc(db, 'foreman_topics', btn.dataset.id));
+        document.getElementById('topic-present-panel').innerHTML = '';
         showToast('Topic deleted.');
         await loadTopics();
       } catch (err) {
@@ -288,6 +313,43 @@ function renderTopics() {
       }
     });
   });
+}
+
+// The presenter view for one topic — meant to be pulled up and shared on
+// screen during the live session itself. Same treatment Team training
+// gives its own video/reading sections: a YouTube link embeds as a
+// player, a Google Slides link embeds as the actual slides; anything
+// else falls back to an "Open" link.
+function presentTopic(topicId) {
+  const t = topics.find((x) => x.id === topicId);
+  if (!t) return;
+  const panel = document.getElementById('topic-present-panel');
+  const videoId = t.video_url ? youtubeEmbedId(t.video_url) : null;
+  const slidesEmbed = t.handout_url ? googleSlidesEmbedUrl(t.handout_url) : null;
+  panel.innerHTML = `
+    <div class="card">
+      <div class="card-h"><h3>${escapeHtml(t.title)}</h3><button class="gh" id="topic-present-close" type="button">Close</button></div>
+      <div class="card-body">
+        ${videoId ? `
+          <div style="position:relative;padding-top:56.25%;margin-bottom:14px">
+            <iframe src="https://www.youtube-nocookie.com/embed/${videoId}" title="${escapeHtml(t.title)}" style="position:absolute;inset:0;width:100%;height:100%;border:0" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+          </div>
+        ` : t.video_url ? `<p style="margin:0 0 14px"><a href="${escapeHtml(t.video_url)}" target="_blank" rel="noopener">Open video →</a></p>` : ''}
+        ${slidesEmbed ? `
+          <div style="position:relative;padding-top:60%;margin-bottom:14px">
+            <iframe src="${slidesEmbed}" title="${escapeHtml(t.title)} slides" style="position:absolute;inset:0;width:100%;height:100%;border:1px solid var(--line)" allowfullscreen></iframe>
+          </div>
+        ` : t.handout_url ? `<p style="margin:0 0 14px"><a href="${escapeHtml(t.handout_url)}" target="_blank" rel="noopener">Open handout →</a></p>` : ''}
+        ${t.discussion_notes ? `
+          <div class="dim" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Discussion questions (the 15-minute Q&amp;A half)</div>
+          <div style="white-space:pre-wrap;font-size:13px">${escapeHtml(t.discussion_notes)}</div>
+        ` : ''}
+        ${!videoId && !t.video_url && !slidesEmbed && !t.handout_url && !t.discussion_notes ? '<span class="dim">Nothing added to this topic yet.</span>' : ''}
+      </div>
+    </div>
+  `;
+  document.getElementById('topic-present-close').addEventListener('click', () => { panel.innerHTML = ''; });
+  panel.scrollIntoView({ behavior: 'smooth' });
 }
 
 document.getElementById('topic-form').addEventListener('submit', async (e) => {
