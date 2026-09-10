@@ -356,11 +356,14 @@
       </div>
 
       <div style="margin:16px 0 10px;padding-top:14px;border-top:1px solid var(--line);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)">Application pages</div>
-      <div class="dim" style="font-size:11.5px;margin-bottom:8px">Photograph the paper application, one page at a time — take a picture or pick one from your camera roll. Add as many pages as it takes.</div>
-      <div id="app-pages-list" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px"></div>
-      <input type="file" id="app-page-file" accept="image/*" capture="environment" hidden>
-      <button type="button" class="gh" id="app-page-add-btn">+ Add a page</button>
-      <span class="dim" id="app-page-status" style="font-size:11.5px;margin-left:8px"></span>
+      <div class="dim" style="font-size:11.5px;margin-bottom:8px">Photograph the paper application, one page at a time — take a picture, pick from your camera roll, or drag files in below. Add as many pages as it takes.</div>
+      <div id="app-pages-dropzone" style="border:1px dashed var(--line);padding:10px;margin-bottom:10px;transition:border-color .15s,background .15s">
+        <div id="app-pages-list" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px"></div>
+        <input type="file" id="app-page-file" accept="image/*" capture="environment" multiple hidden>
+        <button type="button" class="gh" id="app-page-add-btn">+ Add a page</button>
+        <span class="dim" style="font-size:11.5px;margin-left:8px">or drag photos in anywhere here</span>
+        <span class="dim" id="app-page-status" style="font-size:11.5px;margin-left:8px"></span>
+      </div>
 
       <div style="margin:16px 0 10px;padding-top:14px;border-top:1px solid var(--line);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)">Where they are</div>
       <div id="edit-app-progress-summary" style="margin-bottom:12px"></div>
@@ -1692,35 +1695,72 @@ function renderApplicationPages() {
   });
 }
 
+// Shared by the file picker/camera button and drag-and-drop — processes
+// each file in turn (so page numbers land in a sane order and the status
+// text can show progress on a multi-file drop) and reloads the list once
+// at the end rather than after every single page.
+async function saveApplicationPageFiles(files) {
+  const imageFiles = files.filter((f) => (f.type || '').startsWith('image/') || isHeicFile(f));
+  if (!imageFiles.length || !editTargetApplicantId) return;
+  const status = document.getElementById('app-page-status');
+  let nextNumber = applicationPages.length + 1;
+  let saved = 0;
+  for (const file of imageFiles) {
+    status.textContent = imageFiles.length > 1 ? `Processing ${saved + 1} of ${imageFiles.length}…` : 'Processing…';
+    try {
+      const dataUrl = await resizePageToDataUrl(file);
+      if (dataUrl.length > PAGE_MAX_CHARS) {
+        showToast(`"${file.name}" is still too large even after compressing — try retaking it with less zoom, or better lighting.`, 'error');
+        continue;
+      }
+      const pageRef = doc(collection(db, 'applicants', editTargetApplicantId, 'application_pages'));
+      await setDoc(pageRef, {
+        page_number: nextNumber++,
+        image_data_url: dataUrl,
+        entered_by: profile.uid,
+        entered_at: serverTimestamp(),
+      });
+      saved++;
+    } catch (err) {
+      console.error(err);
+      showToast(`Could not save "${file.name}" — ${err.message}`, 'error');
+    }
+  }
+  status.textContent = '';
+  if (saved) showToast(saved === 1 ? 'Page added.' : `${saved} pages added.`);
+  await loadApplicationPages(editTargetApplicantId);
+}
+
 document.getElementById('app-page-add-btn').addEventListener('click', () => document.getElementById('app-page-file').click());
 document.getElementById('app-page-file').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
+  const files = [...e.target.files];
   e.target.value = '';
-  if (!file || !editTargetApplicantId) return;
-  const status = document.getElementById('app-page-status');
-  status.textContent = 'Processing…';
-  try {
-    const dataUrl = await resizePageToDataUrl(file);
-    if (dataUrl.length > PAGE_MAX_CHARS) {
-      status.textContent = '';
-      showToast('That photo is still too large even after compressing — try retaking it with less zoom, or better lighting.', 'error');
-      return;
-    }
-    const pageRef = doc(collection(db, 'applicants', editTargetApplicantId, 'application_pages'));
-    await setDoc(pageRef, {
-      page_number: applicationPages.length + 1,
-      image_data_url: dataUrl,
-      entered_by: profile.uid,
-      entered_at: serverTimestamp(),
-    });
-    status.textContent = '';
-    showToast('Page added.');
-    await loadApplicationPages(editTargetApplicantId);
-  } catch (err) {
-    console.error(err);
-    status.textContent = '';
-    showToast('Could not save that page — ' + err.message, 'error');
-  }
+  await saveApplicationPageFiles(files);
+});
+
+const appPagesDropzone = document.getElementById('app-pages-dropzone');
+['dragenter', 'dragover'].forEach((evt) => {
+  appPagesDropzone.addEventListener(evt, (e) => {
+    e.preventDefault();
+    appPagesDropzone.style.borderColor = 'var(--accent)';
+    appPagesDropzone.style.background = 'var(--raise)';
+  });
+});
+['dragleave', 'dragend'].forEach((evt) => {
+  appPagesDropzone.addEventListener(evt, (e) => {
+    e.preventDefault();
+    appPagesDropzone.style.borderColor = '';
+    appPagesDropzone.style.background = '';
+  });
+});
+appPagesDropzone.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  appPagesDropzone.style.borderColor = '';
+  appPagesDropzone.style.background = '';
+  const files = [...(e.dataTransfer?.files || [])];
+  if (!files.length) return;
+  if (!editTargetApplicantId) { showToast('Open an applicant first.', 'error'); return; }
+  await saveApplicationPageFiles(files);
 });
 
 // ---- Zoom viewer — click a thumbnail, then zoom in/out and scroll/drag
