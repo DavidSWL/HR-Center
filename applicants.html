@@ -255,15 +255,17 @@
       </div>
     </section>
 
-    <!-- Resume pool export — a printable packet of everyone marked
-         "Resume on file" (worth a call the next time a role opens),
-         including whatever application pages are on file for each, to
-         hand to a manager. Print (the existing browser dialog, same as
-         every other generated document in this app) is the export —
-         there's no file storage here to attach a real PDF to an email. -->
+    <!-- Resume pool export — a spreadsheet-style list of everyone marked
+         "Resume on file" (worth a call the next time a role opens), with
+         a view link to whatever application pages are on file for each.
+         Download CSV opens straight in Excel for emailing to a manager;
+         Print is still here for a paper/PDF copy with the photos on it,
+         since a manager has no login to this app and can't open an
+         in-app link. -->
     <div class="form-doc" id="resume-pool-report" hidden>
       <div class="acts no-print" style="margin-bottom:16px">
         <button class="gh" id="resume-report-back-btn" type="button">&larr; Back to pipeline</button>
+        <button class="gh" id="resume-report-csv-btn" type="button">Download CSV</button>
         <button class="gh solid" id="resume-report-print-btn" type="button">Print</button>
       </div>
       <div id="resume-report-body"></div>
@@ -778,11 +780,13 @@ document.getElementById('resume-pool-toggle').addEventListener('click', () => {
   renderPipeline();
 });
 
-// ---- Resume pool export — a printable packet for a manager, covering
-// only the "Resume on file" candidates (not the whole pipeline). Each
-// candidate's application pages (the photographed paper application —
-// there's no separate "resume" file in this system) are pulled in
-// inline, since that's the only document actually on file for them. ----
+// ---- Resume pool export — a spreadsheet-style list for a manager,
+// covering only the "Resume on file" candidates (not the whole
+// pipeline). Each candidate's application pages (the photographed
+// paper application — there's no separate "resume" file in this
+// system) can be opened from a "View" link, since that's the only
+// document actually on file for them. ----
+let resumeReportRows = [];
 document.getElementById('resume-pool-export-btn').addEventListener('click', async (e) => {
   e.stopPropagation(); // this button sits inside the collapsible header row
   const btn = e.currentTarget;
@@ -791,52 +795,58 @@ document.getElementById('resume-pool-export-btn').addEventListener('click', asyn
   btn.disabled = true;
   btn.textContent = 'Building…';
   try {
-    const withPages = await Promise.all(resumePool.map(async (a) => {
+    resumeReportRows = await Promise.all(resumePool.map(async (a) => {
       const snap = await getDocs(collection(db, 'applicants', a.id, 'application_pages'));
       const pages = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((x, y) => (x.page_number || 0) - (y.page_number || 0));
       return { a, pages };
     }));
-    withPages.sort((x, y) => (x.a.applied_date || '').localeCompare(y.a.applied_date || ''));
+    resumeReportRows.sort((x, y) => (x.a.applied_date || '').localeCompare(y.a.applied_date || ''));
 
     const monthGroups = {};
-    withPages.forEach(({ a }) => {
+    resumeReportRows.forEach(({ a }) => {
       const key = a.applied_date ? a.applied_date.slice(0, 7) : 'unknown';
       monthGroups[key] = (monthGroups[key] || 0) + 1;
     });
     const monthKeys = Object.keys(monthGroups).sort((x, y) => (x === 'unknown' ? 1 : y === 'unknown' ? -1 : x.localeCompare(y)));
     const monthLabel = (key) => key === 'unknown' ? 'Applied date unknown' : new Date(key + '-01T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const openingLabel = (a) => a.applied_job_id ? (openJobs.find((j) => j.id === a.applied_job_id) ? jobLabel(openJobs.find((j) => j.id === a.applied_job_id)) : 'Opening no longer listed') : 'Not tied to a specific opening';
 
     document.getElementById('resume-report-body').innerHTML = `
       <div class="form-doc-inner">
         <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
         <h1 class="form-title">Resume Pool — Worth a Call Next Opening</h1>
-        <p class="dim" style="font-size:11.5px;margin:0 0 14px">Printed ${formatDate(new Date().toISOString().slice(0, 10))} — ${withPages.length} candidate${withPages.length === 1 ? '' : 's'}.</p>
+        <p class="dim" style="font-size:11.5px;margin:0 0 14px">Printed ${formatDate(new Date().toISOString().slice(0, 10))} — ${resumeReportRows.length} candidate${resumeReportRows.length === 1 ? '' : 's'}.</p>
         <div class="form-section">Applied Date Breakdown</div>
-        <table class="mini" style="width:100%;border-collapse:collapse;margin-bottom:14px">
-          <thead><tr><th style="text-align:left;padding:4px 8px;border-bottom:1px solid #ccc">Applied</th><th style="text-align:right;padding:4px 8px;border-bottom:1px solid #ccc">Candidates</th></tr></thead>
+        <table style="margin-bottom:18px">
+          <thead><tr><th>Applied</th><th style="text-align:right">Candidates</th></tr></thead>
           <tbody>
-            ${monthKeys.map((key) => `<tr><td style="padding:4px 8px;border-bottom:1px solid #eee">${monthLabel(key)}</td><td style="text-align:right;padding:4px 8px;border-bottom:1px solid #eee">${monthGroups[key]}</td></tr>`).join('')}
+            ${monthKeys.map((key) => `<tr><td>${monthLabel(key)}</td><td style="text-align:right">${monthGroups[key]}</td></tr>`).join('')}
+          </tbody>
+        </table>
+        <div class="form-section">Candidates</div>
+        <table>
+          <thead><tr><th>Applied</th><th>Name</th><th>Applied For</th><th>How They Applied</th><th>Which Opening</th><th>Application</th></tr></thead>
+          <tbody>
+            ${resumeReportRows.map(({ a, pages }, i) => `
+              <tr>
+                <td class="mono">${a.applied_date ? formatDate(a.applied_date) : 'Unknown'}</td>
+                <td>${escapeHtml(a.name)}</td>
+                <td>${escapeHtml(a.position_applied) || '—'}</td>
+                <td>${escapeHtml(SOURCE_LABELS[a.source] || a.source || '—')}</td>
+                <td>${escapeHtml(openingLabel(a))}</td>
+                <td>${pages.length ? `<button class="gh no-print resume-view-pages-btn" type="button" data-idx="${i}">View (${pages.length})</button><span class="print-only">${pages.length} page${pages.length === 1 ? '' : 's'} on file</span>` : '<span class="dim">None on file</span>'}</td>
+              </tr>
+            `).join('')}
           </tbody>
         </table>
       </div>
-      ${withPages.map(({ a, pages }) => `
+      ${resumeReportRows.filter(({ pages }) => pages.length).map(({ a, pages }) => `
         <div class="form-page-break">
           <div class="form-doc-inner">
-            <div class="form-section">${escapeHtml(a.name)}</div>
-            <div class="form-grid c2">
-              <div class="form-cell"><b>Applied For</b>${escapeHtml(a.position_applied) || '—'}</div>
-              <div class="form-cell"><b>How They Applied</b>${escapeHtml(SOURCE_LABELS[a.source] || a.source || '—')}</div>
-              <div class="form-cell"><b>Applied Date</b>${a.applied_date ? formatDate(a.applied_date) : 'Unknown'}</div>
-              <div class="form-cell"><b>Which Opening</b>${a.applied_job_id ? (openJobs.find((j) => j.id === a.applied_job_id) ? escapeHtml(jobLabel(openJobs.find((j) => j.id === a.applied_job_id))) : 'Opening no longer listed') : 'Not tied to a specific opening'}</div>
+            <div class="form-section">${escapeHtml(a.name)} — Application on File (${pages.length} page${pages.length === 1 ? '' : 's'})</div>
+            <div style="display:flex;flex-wrap:wrap;gap:10px">
+              ${pages.map((p, i) => `<img src="${p.image_data_url}" alt="Page ${i + 1}" style="width:31%;border:1px solid #999">`).join('')}
             </div>
-            ${pages.length ? `
-              <div class="form-section">Application on File (${pages.length} page${pages.length === 1 ? '' : 's'})</div>
-              <div style="display:flex;flex-wrap:wrap;gap:10px">
-                ${pages.map((p, i) => `<img src="${p.image_data_url}" alt="Page ${i + 1}" style="width:31%;border:1px solid #999">`).join('')}
-              </div>
-            ` : `
-              <div class="form-box dim">No application pages on file for this candidate.</div>
-            `}
           </div>
         </div>
       `).join('')}
@@ -857,6 +867,35 @@ document.getElementById('resume-report-back-btn').addEventListener('click', () =
   document.getElementById('pipeline-view').hidden = false;
 });
 document.getElementById('resume-report-print-btn').addEventListener('click', () => window.print());
+document.getElementById('resume-report-body').addEventListener('click', (e) => {
+  const btn = e.target.closest('.resume-view-pages-btn');
+  if (!btn) return;
+  const { a, pages } = resumeReportRows[Number(btn.dataset.idx)];
+  const win = window.open('', '_blank');
+  if (!win) { showToast('Your browser blocked the popup — allow popups for this site to view application pages.', 'error'); return; }
+  win.document.write(`<!DOCTYPE html><html><head><title>${escapeHtml(a.name)} — Application on file</title>
+    <style>body{font-family:sans-serif;background:#222;margin:0;padding:20px}h1{color:#fff;font-size:16px}img{max-width:100%;display:block;margin-bottom:16px;border:1px solid #555}</style>
+    </head><body><h1>${escapeHtml(a.name)} — Application on file</h1>
+    ${pages.map((p, i) => `<img src="${p.image_data_url}" alt="Page ${i + 1}">`).join('')}
+    </body></html>`);
+  win.document.close();
+});
+document.getElementById('resume-report-csv-btn').addEventListener('click', () => {
+  if (!resumeReportRows.length) { showToast('Build the report first.', 'error'); return; }
+  const openingLabel = (a) => a.applied_job_id ? (openJobs.find((j) => j.id === a.applied_job_id) ? jobLabel(openJobs.find((j) => j.id === a.applied_job_id)) : 'Opening no longer listed') : 'Not tied to a specific opening';
+  const rows = [['Applied Date', 'Name', 'Applied For', 'How They Applied', 'Which Opening', 'Application Pages on File']];
+  resumeReportRows.forEach(({ a, pages }) => {
+    rows.push([a.applied_date ? formatDate(a.applied_date) : 'Unknown', a.name, a.position_applied || '', SOURCE_LABELS[a.source] || a.source || '', openingLabel(a), pages.length]);
+  });
+  const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `resume-pool-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+});
 
 // ---- Top-level tabs -- Pipeline / Open roles / Tracker, replacing
 // what used to be one long scrolling page. ----
