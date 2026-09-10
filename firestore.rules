@@ -284,6 +284,23 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ---- foreman training ---------------------------------------------
+    // David runs these live (call or in person) and checks off who
+    // attended — foremen never log in themselves. Topics are reusable
+    // reference content (deletable, like SOPs); sessions are an
+    // attendance record and stay for good, like safety meetings.
+    match /foreman_topics/{topicId} {
+      allow read: if isHrUser();
+      allow create, update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if isHrUser();
+    }
+
+    match /foreman_training_sessions/{sessionId} {
+      allow read: if isHrUser();
+      allow create, update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+    }
+
     // ---- employee relations ------------------------------------------
     // Cases are David's alone — reading and filing, not just closing.
     // Per his explicit instruction, enforced here rather than just

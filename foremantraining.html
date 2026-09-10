@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foreman training — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1>Foreman training</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>Foremen &amp; groups</h3><span>Who's in which rotation group</span></div>
+        <div class="tools">
+          <input class="inp" id="fg-search" placeholder="Search name, position, division, location" style="min-width:260px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px">
+            <input type="checkbox" id="fg-show-all"> Show everyone, not just titles with "foreman"
+          </label>
+        </div>
+        <table>
+          <thead><tr><th>Name</th><th>Position</th><th>Division</th><th>Location</th><th>Group</th></tr></thead>
+          <tbody id="fg-rows"></tbody>
+        </table>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>Topics</h3><span>Video, handout link, and discussion questions per topic</span></div>
+        <div class="card-body">
+          <form id="topic-form">
+            <div class="field">
+              <label class="f-lab" for="tp-title">Title</label>
+              <input class="f-in" id="tp-title" required>
+            </div>
+            <div class="frow">
+              <div class="field">
+                <label class="f-lab" for="tp-video">Video link (optional)</label>
+                <input class="f-in" id="tp-video" placeholder="https://…">
+              </div>
+              <div class="field">
+                <label class="f-lab" for="tp-handout">Handout link (optional)</label>
+                <input class="f-in" id="tp-handout" placeholder="https://… (Drive/Dropbox link — files aren't stored in this app)">
+              </div>
+            </div>
+            <div class="field">
+              <label class="f-lab" for="tp-notes">Discussion questions / talking points (for the Q&amp;A half)</label>
+              <textarea class="f-in" id="tp-notes" rows="3" style="resize:vertical"></textarea>
+            </div>
+            <button type="submit" class="gh solid">Save topic</button>
+          </form>
+          <table style="margin-top:14px">
+            <thead><tr><th>Title</th><th>Video</th><th>Handout</th><th></th></tr></thead>
+            <tbody id="topic-rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>Log a session</h3><span>~30 min — 15 training, 15 questions</span></div>
+        <div class="card-body">
+          <form id="session-form">
+            <div class="frow">
+              <div class="field">
+                <label class="f-lab" for="sess-date">Date</label>
+                <input class="f-in" id="sess-date" type="date" required>
+              </div>
+              <div class="field">
+                <label class="f-lab" for="sess-group">Group</label>
+                <select class="f-in" id="sess-group" required>
+                  <option value="">Select…</option>
+                </select>
+              </div>
+            </div>
+            <div class="field" id="sess-group-other-field" hidden>
+              <label class="f-lab" for="sess-group-other">Group name</label>
+              <input class="f-in" id="sess-group-other">
+            </div>
+            <div class="frow">
+              <div class="field">
+                <label class="f-lab" for="sess-topic-select">Topic</label>
+                <select class="f-in" id="sess-topic-select"><option value="">Select a saved topic, or type below…</option></select>
+              </div>
+              <div class="field">
+                <label class="f-lab" for="sess-topic">Topic (if not listed above)</label>
+                <input class="f-in" id="sess-topic">
+              </div>
+            </div>
+            <div class="frow">
+              <div class="field">
+                <label class="f-lab" for="sess-presenter">Presenter</label>
+                <input class="f-in" id="sess-presenter">
+              </div>
+              <div class="field">
+                <label class="f-lab" for="sess-minutes">Minutes</label>
+                <input class="f-in" id="sess-minutes" type="number" min="0" value="30">
+              </div>
+            </div>
+            <div class="field">
+              <label class="f-lab">Attendance</label>
+              <div class="tools" style="margin:0 0 8px">
+                <input class="inp" id="sess-att-search" placeholder="Search to filter the list" style="min-width:220px">
+                <button class="gh" id="sess-select-group-btn" type="button">Select everyone in this group</button>
+                <button class="gh" id="sess-clear-btn" type="button">Clear selections</button>
+              </div>
+              <div id="attendance-list" style="max-height:220px;overflow-y:auto;border:1px solid var(--edge);padding:10px;background:var(--bg)"></div>
+            </div>
+            <div class="field">
+              <label class="f-lab" for="sess-notes">Notes — questions asked, follow-ups, concerns raised</label>
+              <textarea class="f-in" id="sess-notes" rows="3" style="resize:vertical"></textarea>
+            </div>
+            <button type="submit" class="gh solid">Log session</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="two" style="margin-bottom:20px">
+        <div class="card">
+          <div class="card-h"><h3>Coverage</h3><span>Hasn't attended this quarter</span></div>
+          <div class="tools">
+            <select class="inp" id="coverage-group"><option value="">All groups</option></select>
+            <select class="inp" id="coverage-topic"><option value="">Any topic</option></select>
+          </div>
+          <div id="coverage-body"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Cadence by group</h3><span>Sessions, last 90 days</span></div>
+          <div id="cadence-body"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>Session log</h3><span id="log-summary">—</span></div>
+        <table>
+          <thead><tr><th>Date</th><th>Group</th><th>Topic</th><th>Presenter</th><th>Attendance</th><th>Minutes</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, showToast, formatDate } from './app.js';
+import { db } from './firebaseconfig.js';
+import {
+  collection, doc, getDocs, addDoc, updateDoc, deleteDoc, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('foremantraining', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+document.getElementById('sess-date').value = new Date().toISOString().slice(0, 10);
+document.getElementById('sess-presenter').value = profile.name || '';
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+// The quarterly rotation groups — a fixed list rather than pulled from
+// employees.division/location, since the real groups mix both (OC/LA/IE
+// are locations, Landscape/Tree are divisions). "Other" reveals a free
+// text field for anything that doesn't fit, same pattern as the
+// termination reason dropdown elsewhere in this app.
+const FOREMAN_GROUPS = ['OC Foremen', 'LA Foremen', 'IE Foremen', 'Landscape Foremen', 'Tree Foremen'];
+
+let employees = [];
+let topics = [];
+let sessions = [];
+
+function empById(id) { return employees.find((e) => e.id === id); }
+
+async function loadEmployees() {
+  const snap = await getDocs(collection(db, 'employees'));
+  employees = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((e) => e.status !== 'terminated')
+    .sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''));
+  renderForemanGroups();
+  renderAttendanceList();
+}
+
+// ---- Foremen & groups — who's in which rotation group. Anyone whose
+// position mentions "foreman" shows by default; the checkbox reveals
+// everyone active in case a title reads differently (e.g. "Crew Lead"). ----
+function renderForemanGroups() {
+  const q = document.getElementById('fg-search').value.trim().toLowerCase();
+  const showAll = document.getElementById('fg-show-all').checked;
+  const visible = employees.filter((e) => {
+    if (!showAll && !/foreman/i.test(e.position || '') && !e.foreman_group) return false;
+    if (!q) return true;
+    return `${e.first_name} ${e.last_name} ${e.position || ''} ${e.division || ''} ${e.location || ''}`.toLowerCase().includes(q);
+  });
+  document.getElementById('fg-rows').innerHTML = visible.length ? visible.map((e) => `
+    <tr>
+      <td>${escapeHtml(e.first_name)} ${escapeHtml(e.last_name)}</td>
+      <td class="dim">${escapeHtml(e.position) || '—'}</td>
+      <td class="mono dim">${escapeHtml(e.division) || '—'}</td>
+      <td class="mono dim">${escapeHtml(e.location) || '—'}</td>
+      <td>
+        <select class="inp fg-group-select" data-id="${e.id}" style="height:32px;font-size:12.5px">
+          <option value="">Unassigned</option>
+          ${FOREMAN_GROUPS.map((g) => `<option value="${g}" ${e.foreman_group === g ? 'selected' : ''}>${g}</option>`).join('')}
+        </select>
+      </td>
+    </tr>
+  `).join('') : '<tr><td colspan="5" class="dim">No matches.</td></tr>';
+  document.querySelectorAll('.fg-group-select').forEach((sel) => {
+    sel.addEventListener('change', async () => {
+      const emp = empById(sel.dataset.id);
+      try {
+        await updateDoc(doc(db, 'employees', sel.dataset.id), {
+          foreman_group: sel.value || null, entered_by: profile.uid, updated_at: serverTimestamp(),
+        });
+        if (emp) emp.foreman_group = sel.value || null;
+        showToast('Group updated.');
+      } catch (err) {
+        console.error(err);
+        showToast('Could not save — ' + err.message, 'error');
+        renderForemanGroups();
+      }
+    });
+  });
+}
+document.getElementById('fg-search').addEventListener('input', renderForemanGroups);
+document.getElementById('fg-show-all').addEventListener('change', renderForemanGroups);
+
+// ---- Topics — a small reusable library. Handouts are a link, not an
+// upload: this app has no Storage (Spark plan, every attachment
+// elsewhere is a size-capped data URL), and a real PowerPoint or PDF
+// deck almost never fits under that cap, so linking to wherever the
+// file already lives (Drive, Dropbox) is the only realistic option. ----
+async function loadTopics() {
+  const snap = await getDocs(collection(db, 'foreman_topics'));
+  topics = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+  renderTopics();
+  const sel = document.getElementById('sess-topic-select');
+  sel.innerHTML = '<option value="">Select a saved topic, or type below…</option>' +
+    topics.map((t) => `<option value="${escapeHtml(t.title)}">${escapeHtml(t.title)}</option>`).join('');
+  const coverageSel = document.getElementById('coverage-topic');
+  coverageSel.innerHTML = '<option value="">Any topic</option>' +
+    topics.map((t) => `<option value="${escapeHtml(t.title)}">${escapeHtml(t.title)}</option>`).join('');
+}
+
+function renderTopics() {
+  document.getElementById('topic-rows').innerHTML = topics.length ? topics.map((t) => `
+    <tr>
+      <td>${escapeHtml(t.title)}</td>
+      <td>${t.video_url ? `<a href="${escapeHtml(t.video_url)}" target="_blank" rel="noopener">Open</a>` : '<span class="dim">—</span>'}</td>
+      <td>${t.handout_url ? `<a href="${escapeHtml(t.handout_url)}" target="_blank" rel="noopener">Open</a>` : '<span class="dim">—</span>'}</td>
+      <td style="text-align:right"><button class="gh topic-delete-btn" data-id="${t.id}" type="button">Delete</button></td>
+    </tr>
+  `).join('') : '<tr><td colspan="4" class="dim">No topics yet.</td></tr>';
+  document.querySelectorAll('.topic-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this topic? Past sessions that used it are unaffected.')) return;
+      try {
+        await deleteDoc(doc(db, 'foreman_topics', btn.dataset.id));
+        showToast('Topic deleted.');
+        await loadTopics();
+      } catch (err) {
+        console.error(err);
+        showToast('Could not delete — ' + err.message, 'error');
+      }
+    });
+  });
+}
+
+document.getElementById('topic-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const title = document.getElementById('tp-title').value.trim();
+  if (!title) return;
+  try {
+    await addDoc(collection(db, 'foreman_topics'), {
+      title,
+      video_url: document.getElementById('tp-video').value.trim(),
+      handout_url: document.getElementById('tp-handout').value.trim(),
+      discussion_notes: document.getElementById('tp-notes').value.trim(),
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    document.getElementById('topic-form').reset();
+    showToast('Topic saved.');
+    await loadTopics();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+});
+
+// ---- Session log — David runs these live (conference call or in
+// person); nobody outside HR has a login, so this is attendance HR
+// checks off, not something foremen mark for themselves. ----
+document.getElementById('sess-group').innerHTML = '<option value="">Select…</option>' +
+  FOREMAN_GROUPS.map((g) => `<option value="${g}">${g}</option>`).join('') +
+  '<option value="Other">Other</option>';
+document.getElementById('sess-group').addEventListener('change', (e) => {
+  document.getElementById('sess-group-other-field').hidden = e.target.value !== 'Other';
+});
+document.getElementById('sess-topic-select').addEventListener('change', (e) => {
+  if (e.target.value) document.getElementById('sess-topic').value = e.target.value;
+});
+
+function renderAttendanceList() {
+  const q = document.getElementById('sess-att-search').value.trim().toLowerCase();
+  const visible = employees.filter((e) => !q ||
+    `${e.first_name} ${e.last_name} ${e.position || ''} ${e.division || ''} ${e.location || ''} ${e.foreman_group || ''}`.toLowerCase().includes(q));
+  document.getElementById('attendance-list').innerHTML = visible.map((e) => `
+    <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0">
+      <input type="checkbox" class="attendee-cb" value="${e.id}"> ${escapeHtml(e.first_name)} ${escapeHtml(e.last_name)}
+      <span class="mono dim">${escapeHtml(e.foreman_group) || escapeHtml(e.position) || ''}</span>
+    </label>
+  `).join('');
+}
+document.getElementById('sess-att-search').addEventListener('input', renderAttendanceList);
+
+document.getElementById('sess-select-group-btn').addEventListener('click', () => {
+  const group = document.getElementById('sess-group').value;
+  const groupName = group === 'Other' ? document.getElementById('sess-group-other').value.trim() : group;
+  if (!groupName) { showToast('Pick a group first.', 'error'); return; }
+  let matched = 0;
+  document.querySelectorAll('.attendee-cb').forEach((cb) => {
+    const emp = empById(cb.value);
+    if (emp && emp.foreman_group === groupName) { cb.checked = true; matched++; }
+  });
+  showToast(matched ? `Selected ${matched} in ${groupName}.` : `Nobody is tagged with "${groupName}" yet — assign them above first.`, matched ? undefined : 'error');
+});
+document.getElementById('sess-clear-btn').addEventListener('click', () => {
+  document.querySelectorAll('.attendee-cb:checked').forEach((cb) => { cb.checked = false; });
+});
+
+async function loadSessions() {
+  const snap = await getDocs(collection(db, 'foreman_training_sessions'));
+  sessions = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const groups = [...new Set(sessions.map((s) => s.group).filter(Boolean))].sort();
+  document.getElementById('coverage-group').innerHTML = '<option value="">All groups</option>' +
+    groups.map((g) => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
+  render();
+  renderCadence();
+  renderCoverage();
+}
+
+function render() {
+  document.getElementById('log-summary').textContent = `${sessions.length} logged`;
+  document.getElementById('rows').innerHTML = sessions.length ? sessions.map((s) => `
+    <tr>
+      <td class="mono">${formatDate(s.date)}</td>
+      <td class="mono dim">${escapeHtml(s.group) || '—'}</td>
+      <td>${escapeHtml(s.topic) || '—'}</td>
+      <td class="dim">${escapeHtml(s.presenter) || '—'}</td>
+      <td class="mono">${(s.attendee_emp_ids || []).length}</td>
+      <td class="mono dim">${s.minutes || ''}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="6" class="dim">No sessions logged yet.</td></tr>';
+}
+
+function quarterStart(d) {
+  const q = Math.floor(d.getMonth() / 3);
+  return new Date(d.getFullYear(), q * 3, 1);
+}
+
+function renderCoverage() {
+  const group = document.getElementById('coverage-group').value;
+  const topic = document.getElementById('coverage-topic').value;
+  const body = document.getElementById('coverage-body');
+
+  const qStart = quarterStart(new Date());
+  const attendedIds = new Set();
+  sessions
+    .filter((s) => s.date && new Date(s.date + 'T00:00:00') >= qStart)
+    .filter((s) => !group || s.group === group)
+    .filter((s) => !topic || s.topic === topic)
+    .forEach((s) => (s.attendee_emp_ids || []).forEach((id) => attendedIds.add(id)));
+
+  // Scoped to that group's tagged members when a group is picked —
+  // otherwise this would list the whole 100+-person roster as
+  // "missing" instead of just the handful who actually belong to it.
+  const pool = group ? employees.filter((e) => e.foreman_group === group) : employees.filter((e) => e.foreman_group);
+  const missing = pool.filter((e) => !attendedIds.has(e.id));
+
+  if (!pool.length) { body.innerHTML = '<div class="card-body dim">No one is tagged with a group yet — assign foremen to groups above.</div>'; return; }
+  body.innerHTML = missing.length ? `
+    <table>
+      <tbody>
+        ${missing.map((e) => `<tr><td>${escapeHtml(e.first_name)} ${escapeHtml(e.last_name)}</td><td class="mono dim">${escapeHtml(e.foreman_group) || '—'}</td></tr>`).join('')}
+      </tbody>
+    </table>
+  ` : '<div class="card-body dim">Everyone in scope has attended this quarter.</div>';
+}
+document.getElementById('coverage-group').addEventListener('change', renderCoverage);
+document.getElementById('coverage-topic').addEventListener('change', renderCoverage);
+
+function renderCadence() {
+  const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
+  const counts = {};
+  sessions.filter((s) => s.date && new Date(s.date).getTime() >= cutoff).forEach((s) => {
+    const g = s.group || 'Ungrouped';
+    counts[g] = (counts[g] || 0) + 1;
+  });
+  const pairs = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const max = pairs[0]?.[1] || 1;
+  document.getElementById('cadence-body').innerHTML = pairs.length ? pairs.map(([g, c]) => `
+    <div class="rowbar">
+      <div class="l">${escapeHtml(g)}</div>
+      <div class="trk"><i style="width:${(c / max) * 100}%"></i></div>
+      <div class="mono" style="text-align:right">${c}</div>
+    </div>
+  `).join('') : '<div class="card-body dim">No sessions in the last 90 days.</div>';
+}
+
+document.getElementById('session-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const groupSel = document.getElementById('sess-group').value;
+  const group = groupSel === 'Other' ? document.getElementById('sess-group-other').value.trim() : groupSel;
+  if (!group) { showToast('Pick or name a group.', 'error'); return; }
+  const attendeeIds = [...document.querySelectorAll('.attendee-cb:checked')].map((cb) => cb.value);
+  try {
+    await addDoc(collection(db, 'foreman_training_sessions'), {
+      date: document.getElementById('sess-date').value,
+      group,
+      topic: document.getElementById('sess-topic').value.trim(),
+      presenter: document.getElementById('sess-presenter').value.trim(),
+      minutes: parseInt(document.getElementById('sess-minutes').value || '0', 10),
+      attendee_emp_ids: attendeeIds,
+      notes: document.getElementById('sess-notes').value.trim(),
+      entered_by: profile.uid,
+      entered_at: serverTimestamp(),
+    });
+    await addDoc(collection(db, 'activity'), {
+      module: 'foreman_training',
+      item: `Foreman training — ${group}${document.getElementById('sess-topic').value.trim() ? ' — ' + document.getElementById('sess-topic').value.trim() : ''}`,
+      entered_by: profile.uid,
+      entered_at: serverTimestamp(),
+    });
+    document.getElementById('session-form').reset();
+    document.getElementById('sess-date').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('sess-presenter').value = profile.name || '';
+    document.getElementById('sess-minutes').value = 30;
+    document.getElementById('sess-group-other-field').hidden = true;
+    document.querySelectorAll('.attendee-cb').forEach((cb) => { cb.checked = false; });
+    showToast('Session logged.');
+    await loadSessions();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+});
+
+await loadEmployees();
+await loadTopics();
+await loadSessions();
+</script>
+</body>
+</html>
