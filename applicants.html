@@ -349,6 +349,13 @@
         </select>
       </div>
 
+      <div style="margin:16px 0 10px;padding-top:14px;border-top:1px solid var(--line);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)">Application pages</div>
+      <div class="dim" style="font-size:11.5px;margin-bottom:8px">Photograph the paper application, one page at a time — take a picture or pick one from your camera roll. Add as many pages as it takes.</div>
+      <div id="app-pages-list" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px"></div>
+      <input type="file" id="app-page-file" accept="image/*" capture="environment" hidden>
+      <button type="button" class="gh" id="app-page-add-btn">+ Add a page</button>
+      <span class="dim" id="app-page-status" style="font-size:11.5px;margin-left:8px"></span>
+
       <div style="margin:16px 0 10px;padding-top:14px;border-top:1px solid var(--line);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)">Where they are</div>
       <div id="edit-app-progress-summary" style="margin-bottom:12px"></div>
       <div id="edit-app-progress-fields"></div>
@@ -356,6 +363,26 @@
     <div class="modal-actions">
       <button type="button" class="gh" id="edit-app-cancel-btn">Cancel</button>
       <button type="button" class="gh solid" id="edit-app-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Application page zoom viewer — click-to-zoom/drag, since a phone
+     photo of a handwritten page is often only readable zoomed in. -->
+<div class="modal-overlay" id="page-zoom-overlay" hidden style="z-index:200">
+  <div style="width:min(94vw,900px);height:min(92vh,1100px);display:flex;flex-direction:column">
+    <div class="modal-h" style="background:var(--panel)">
+      <h3 id="page-zoom-title">Page</h3>
+      <button class="modal-close" id="page-zoom-close" type="button">&times;</button>
+    </div>
+    <div style="flex:1;overflow:auto;background:#111;display:flex;align-items:flex-start;justify-content:center;touch-action:pan-x pan-y" id="page-zoom-scroll">
+      <img id="page-zoom-img" alt="Application page" style="max-width:none;transition:width .15s;cursor:zoom-in">
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;justify-content:center;padding:10px;background:var(--panel)">
+      <button type="button" class="gh" id="page-zoom-out">− Zoom out</button>
+      <span class="dim mono" id="page-zoom-pct" style="min-width:48px;text-align:center">100%</span>
+      <button type="button" class="gh" id="page-zoom-in">+ Zoom in</button>
+      <button type="button" class="gh" id="page-zoom-reset">Reset</button>
     </div>
   </div>
 </div>
@@ -1549,11 +1576,13 @@ function openEditApplicant(applicantId) {
   }
   jobSel.value = a.applied_job_id || '';
   renderEditAppProgress(applicantId);
+  loadApplicationPages(applicantId);
   document.getElementById('edit-app-overlay').hidden = false;
 }
 function closeEditApplicant() {
   document.getElementById('edit-app-overlay').hidden = true;
   editTargetApplicantId = null;
+  applicationPages = [];
 }
 document.getElementById('edit-app-close').addEventListener('click', closeEditApplicant);
 document.getElementById('edit-app-cancel-btn').addEventListener('click', closeEditApplicant);
@@ -1561,6 +1590,140 @@ document.getElementById('edit-app-source').addEventListener('change', (e) => {
   document.getElementById('edit-app-referrer-field').hidden = e.target.value !== 'referral';
 });
 wirePositionToggle('edit-app-position', 'edit-app-position-other');
+
+// ---- Application pages — photographed paper application, one Firestore
+// document per page (applicants/{id}/application_pages) rather than one
+// array on the applicant record, so each page gets its own 1MiB budget
+// instead of 3+ pages competing for a single document's limit. Every
+// page is resized and re-encoded client-side first — a phone photo at
+// full resolution can be several MB; PAGE_MAX_DIMENSION/PAGE_JPEG_QUALITY
+// keep each page comfortably under the ~900KB every other attachment in
+// this app is held to, while staying sharp enough to actually read
+// handwriting back (much higher resolution than the small headshot
+// photos on Roster use, since this has to render a full 8.5x11 page).
+const PAGE_MAX_DIMENSION = 1800;
+const PAGE_JPEG_QUALITY = 0.72;
+const PAGE_MAX_CHARS = 1200000; // matches the firestore.rules backstop
+
+let applicationPages = [];
+
+function resizePageToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const scale = Math.min(1, PAGE_MAX_DIMENSION / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', PAGE_JPEG_QUALITY));
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Could not read that photo.')); };
+    img.src = objectUrl;
+  });
+}
+
+async function loadApplicationPages(applicantId) {
+  applicationPages = [];
+  document.getElementById('app-pages-list').innerHTML = '<span class="dim" style="font-size:12px">Loading…</span>';
+  const snap = await getDocs(collection(db, 'applicants', applicantId, 'application_pages'));
+  applicationPages = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.page_number || 0) - (b.page_number || 0));
+  renderApplicationPages();
+}
+
+function renderApplicationPages() {
+  const list = document.getElementById('app-pages-list');
+  list.innerHTML = applicationPages.length ? applicationPages.map((p, i) => `
+    <div style="position:relative;width:100px">
+      <img src="${p.image_data_url}" alt="Page ${i + 1}" class="app-page-thumb" data-idx="${i}"
+        style="width:100px;height:130px;object-fit:cover;border:1px solid var(--line);cursor:zoom-in;display:block">
+      <div class="dim" style="text-align:center;font-size:11px;margin-top:2px">Page ${i + 1}</div>
+      <button type="button" class="gh app-page-delete-btn" data-id="${p.id}"
+        style="position:absolute;top:2px;right:2px;padding:1px 6px;font-size:11px;line-height:1.4">&times;</button>
+    </div>
+  `).join('') : '<span class="dim" style="font-size:12px">No pages uploaded yet.</span>';
+
+  document.querySelectorAll('.app-page-thumb').forEach((img) => {
+    img.addEventListener('click', () => openPageZoom(Number(img.dataset.idx)));
+  });
+  document.querySelectorAll('.app-page-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('Delete this page?')) return;
+      try {
+        await deleteDoc(doc(db, 'applicants', editTargetApplicantId, 'application_pages', btn.dataset.id));
+        applicationPages = applicationPages.filter((p) => p.id !== btn.dataset.id);
+        renderApplicationPages();
+        showToast('Page deleted.');
+      } catch (err) {
+        console.error(err);
+        showToast('Could not delete — ' + err.message, 'error');
+      }
+    });
+  });
+}
+
+document.getElementById('app-page-add-btn').addEventListener('click', () => document.getElementById('app-page-file').click());
+document.getElementById('app-page-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file || !editTargetApplicantId) return;
+  const status = document.getElementById('app-page-status');
+  status.textContent = 'Processing…';
+  try {
+    const dataUrl = await resizePageToDataUrl(file);
+    if (dataUrl.length > PAGE_MAX_CHARS) {
+      status.textContent = '';
+      showToast('That photo is still too large even after compressing — try retaking it with less zoom, or better lighting.', 'error');
+      return;
+    }
+    const pageRef = doc(collection(db, 'applicants', editTargetApplicantId, 'application_pages'));
+    await setDoc(pageRef, {
+      page_number: applicationPages.length + 1,
+      image_data_url: dataUrl,
+      entered_by: profile.uid,
+      entered_at: serverTimestamp(),
+    });
+    status.textContent = '';
+    showToast('Page added.');
+    await loadApplicationPages(editTargetApplicantId);
+  } catch (err) {
+    console.error(err);
+    status.textContent = '';
+    showToast('Could not save that page — ' + err.message, 'error');
+  }
+});
+
+// ---- Zoom viewer — click a thumbnail, then zoom in/out and scroll/drag
+// to pan. A phone photo of handwriting is often unreadable until you're
+// zoomed well past 100%.
+let zoomPct = 100;
+function openPageZoom(idx) {
+  const p = applicationPages[idx];
+  if (!p) return;
+  document.getElementById('page-zoom-title').textContent = `Page ${idx + 1} of ${applicationPages.length}`;
+  document.getElementById('page-zoom-img').src = p.image_data_url;
+  zoomPct = 100;
+  applyZoom();
+  document.getElementById('page-zoom-overlay').hidden = false;
+}
+function applyZoom() {
+  document.getElementById('page-zoom-img').style.width = zoomPct + '%';
+  document.getElementById('page-zoom-pct').textContent = zoomPct + '%';
+}
+document.getElementById('page-zoom-img').addEventListener('click', () => {
+  zoomPct = zoomPct < 200 ? zoomPct + 50 : 100;
+  applyZoom();
+});
+document.getElementById('page-zoom-in').addEventListener('click', () => { zoomPct = Math.min(400, zoomPct + 25); applyZoom(); });
+document.getElementById('page-zoom-out').addEventListener('click', () => { zoomPct = Math.max(25, zoomPct - 25); applyZoom(); });
+document.getElementById('page-zoom-reset').addEventListener('click', () => { zoomPct = 100; applyZoom(); });
+document.getElementById('page-zoom-close').addEventListener('click', () => { document.getElementById('page-zoom-overlay').hidden = true; });
 
 document.getElementById('edit-app-save-btn').addEventListener('click', async () => {
   const applicantId = editTargetApplicantId;

@@ -95,6 +95,15 @@ service cloud.firestore {
         || data.photo_data_url.size() < 700000;
     }
 
+    // Same reasoning as photoSizeOk above, sized for a resized/compressed
+    // photo of a full application page rather than a small headshot —
+    // applicants.html resizes and compresses client-side before this is
+    // ever reached; this is just the backstop.
+    function applicationPageSizeOk(data) {
+      return !('image_data_url' in data) || data.image_data_url == null
+        || data.image_data_url.size() < 1300000;
+    }
+
     // ---- users ------------------------------------------------------------
     // Role assignment is how every other rule below decides who can do
     // what, so it is not something the app itself is allowed to change.
@@ -193,6 +202,18 @@ service cloud.firestore {
         allow read: if isDavid();
         allow create, update: if isDavid() && isClean(request.resource.data);
         allow delete: if false;
+      }
+
+      // Photographed application pages — one document per page (not one
+      // big array on the applicant itself) so each page gets its own
+      // 1MiB budget instead of all pages competing for a single
+      // document's limit. photoSizeOk reuses the same headroom already
+      // used for employee photos, just checked against image_data_url.
+      match /application_pages/{pageId} {
+        allow read: if isHrUser();
+        allow create, update: if isHrUser() && isClean(request.resource.data)
+          && stamped(request.resource.data) && applicationPageSizeOk(request.resource.data);
+        allow delete: if isHrUser();
       }
     }
 
