@@ -9,6 +9,12 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
+<!-- iPhones save camera photos as HEIC by default, which no browser can
+     decode through a plain <img>/canvas — this converts HEIC to JPEG
+     client-side before the application-page uploader tries to read it.
+     Deferred so it never blocks page render; resizePageToDataUrl() below
+     only touches it if a HEIC file actually shows up. -->
+<script defer src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 <style>
 .app-row.grayed{opacity:.5}
 .app-row.grayed td{color:var(--faint)}
@@ -1607,10 +1613,28 @@ const PAGE_MAX_CHARS = 1200000; // matches the firestore.rules backstop
 
 let applicationPages = [];
 
-function resizePageToDataUrl(file) {
+function isHeicFile(file) {
+  const type = (file.type || '').toLowerCase();
+  return type === 'image/heic' || type === 'image/heif' || /\.(heic|heif)$/i.test(file.name || '');
+}
+
+async function resizePageToDataUrl(file) {
+  let sourceBlob = file;
+  if (isHeicFile(file)) {
+    if (typeof window.heic2any !== 'function') {
+      throw new Error('This looks like an iPhone HEIC photo, and the converter for it is still loading — wait a couple seconds and try again.');
+    }
+    try {
+      const converted = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+      sourceBlob = Array.isArray(converted) ? converted[0] : converted;
+    } catch (err) {
+      console.error(err);
+      throw new Error("Could not convert that HEIC photo. On the iPhone, go to Settings > Camera > Formats and switch to \"Most Compatible\" so new photos save as JPEG, then retake it.");
+    }
+  }
   return new Promise((resolve, reject) => {
     const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
+    const objectUrl = URL.createObjectURL(sourceBlob);
     img.onload = () => {
       URL.revokeObjectURL(objectUrl);
       const scale = Math.min(1, PAGE_MAX_DIMENSION / Math.max(img.width, img.height));
@@ -1621,7 +1645,7 @@ function resizePageToDataUrl(file) {
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       resolve(canvas.toDataURL('image/jpeg', PAGE_JPEG_QUALITY));
     };
-    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Could not read that photo.')); };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Could not read that photo — try a different one, or a screenshot of it.')); };
     img.src = objectUrl;
   });
 }
