@@ -801,10 +801,14 @@ async function renderReport(key) {
 
     // Same definitions the Applicants tab itself uses (outcome is the
     // real signal now — hired/orientation_completed used to stand in
-    // for it before the outcome field existed).
-    const CLOSED_OUT = ['rejected', 'not_selected', 'resume_on_file', 'not_interested'];
+    // for it before the outcome field existed). "rejected" is a legacy
+    // value from before rejections said who rejected them (HR or VP) --
+    // old records may still carry it, so it's folded into Rejected here.
+    const REJECTED_OUTCOMES = ['rejected', 'hr_rejected', 'vp_rejected'];
+    const CLOSED_OUT = [...REJECTED_OUTCOMES, 'not_selected', 'resume_on_file', 'not_interested', 'no_experience'];
     const hired = apps.filter((a) => a.outcome === 'hired').length;
-    const rejected = apps.filter((a) => a.outcome === 'rejected' || a.interview_status === 'not_passed').length;
+    const rejected = apps.filter((a) => REJECTED_OUTCOMES.includes(a.outcome) || a.interview_status === 'not_passed').length;
+    const noExperience = apps.filter((a) => a.outcome === 'no_experience').length;
     const notSelected = apps.filter((a) => a.outcome === 'not_selected').length;
     const resumeOnFile = apps.filter((a) => a.outcome === 'resume_on_file').length;
     const notInterested = apps.filter((a) => a.outcome === 'not_interested').length;
@@ -833,10 +837,11 @@ async function renderReport(key) {
     const outcomePairs = [
       ['Still active', stillActive],
       ['Hired', hired],
-      ['Rejected', rejected],
+      ['Rejected (HR or VP)', rejected],
+      ['No experience', noExperience],
       ['Not selected to move forward', notSelected],
       ['Resume on file', resumeOnFile],
-      [`Manager wasn't interested`, notInterested],
+      [`Hiring manager wasn't interested`, notInterested],
     ];
 
     body.innerHTML = statLine(range, `denominator: ${apps.length} applicants added in range`) + `

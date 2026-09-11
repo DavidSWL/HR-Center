@@ -208,12 +208,13 @@
           <select class="inp" id="status-filter">
             <option value="active" selected>Active pipeline</option>
             <option value="">Everyone</option>
-            <option value="hired">Started</option>
+            <option value="hired">Hired / Started</option>
             <option value="not_passed">Did not pass interview</option>
-            <option value="rejected">Rejected</option>
+            <option value="rejected_any">Rejected (HR or VP)</option>
+            <option value="no_experience">No experience</option>
             <option value="not_selected">Not selected to move forward</option>
             <option value="resume_on_file">Resume on file</option>
-            <option value="not_interested">Manager wasn't interested</option>
+            <option value="not_interested">Hiring manager wasn't interested</option>
             <option value="oriented">Orientation completed</option>
             <option value="bonus_due">Referral bonus due</option>
           </select>
@@ -459,6 +460,20 @@
   </div>
 </div>
 
+<!-- Flag -- a quick way to set an applicant's outcome without opening
+     the full edit form, from either the tracker table or a Kanban card. -->
+<div class="modal-overlay" id="flag-overlay" hidden>
+  <div class="modal">
+    <div class="modal-h">
+      <h3>Flag <span id="flag-app-name"></span></h3>
+      <button class="modal-close" id="flag-close" type="button">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="flag-options" style="display:flex;flex-direction:column;gap:6px"></div>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
@@ -477,6 +492,24 @@ document.getElementById('header-date').textContent =
   new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
 
 const SOURCE_LABELS = { walk_in: 'Walk-in', referral: 'Referral', past_employee: 'Past employee', indeed: 'Indeed' };
+// "rejected" is legacy -- old records may still carry it, but it's no
+// longer offered as a choice now that rejections say who rejected them
+// (HR or VP). Anywhere that needs "this person was rejected, however
+// worded" checks REJECTED_OUTCOMES rather than a single value.
+const OUTCOME_OPTIONS = [
+  { value: '', label: '— Active —' },
+  { value: 'hired', label: 'Hired / Started' },
+  { value: 'resume_on_file', label: 'Resume on file' },
+  { value: 'not_interested', label: "Hiring manager wasn't interested" },
+  { value: 'no_experience', label: 'No experience' },
+  { value: 'hr_rejected', label: 'HR rejected' },
+  { value: 'vp_rejected', label: 'VP rejected' },
+  { value: 'not_selected', label: 'Not selected to move forward' },
+];
+const REJECTED_OUTCOMES = ['rejected', 'hr_rejected', 'vp_rejected'];
+function outcomeOptionsHtml(current) {
+  return OUTCOME_OPTIONS.map((o) => `<option value="${o.value}" ${current === o.value ? 'selected' : ''}>${o.label}</option>`).join('');
+}
 const REFERRAL_BONUS_DAYS = 90;
 const todayStr = new Date().toISOString().slice(0, 10);
 document.getElementById('new-app-applied-date').value = todayStr;
@@ -756,14 +789,15 @@ let resumePoolOpen = false;
 
 function renderPipeline() {
   const stillMoving = applicants.filter((a) => a.interview_status !== 'not_passed'
-    && !['rejected', 'not_selected', 'resume_on_file', 'not_interested', 'hired'].includes(a.outcome));
+    && ![...REJECTED_OUTCOMES, 'not_selected', 'resume_on_file', 'not_interested', 'no_experience', 'hired'].includes(a.outcome));
   const hiredCount = applicants.filter((a) => a.outcome === 'hired').length;
-  const rejectedCount = applicants.filter((a) => a.outcome === 'rejected' || a.interview_status === 'not_passed').length;
+  const rejectedCount = applicants.filter((a) => REJECTED_OUTCOMES.includes(a.outcome) || a.interview_status === 'not_passed').length;
+  const noExperienceCount = applicants.filter((a) => a.outcome === 'no_experience').length;
   const notSelectedCount = applicants.filter((a) => a.outcome === 'not_selected').length;
   const resumePool = applicants.filter((a) => a.outcome === 'resume_on_file');
   const notInterestedCount = applicants.filter((a) => a.outcome === 'not_interested').length;
   document.getElementById('pipeline-summary').textContent =
-    `${stillMoving.length} still moving — ${hiredCount} hired, ${rejectedCount} rejected, ${notSelectedCount} not selected to move forward, ${resumePool.length} resume on file, ${notInterestedCount} not interested`;
+    `${stillMoving.length} still moving — ${hiredCount} hired, ${rejectedCount} rejected (HR/VP), ${noExperienceCount} no experience, ${notSelectedCount} not selected to move forward, ${resumePool.length} resume on file, ${notInterestedCount} manager wasn't interested`;
 
   // Resume on file isn't a dead end like Rejected -- it's a bench of
   // people worth a call the next time a role opens up, so it gets its
@@ -1042,7 +1076,7 @@ function pipelineStepperHtml() {
 
 function renderKanban() {
   const active = applicants.filter((a) => a.interview_status !== 'not_passed'
-    && !['rejected', 'not_selected', 'resume_on_file', 'not_interested'].includes(a.outcome));
+    && ![...REJECTED_OUTCOMES, 'not_selected', 'resume_on_file', 'not_interested', 'no_experience'].includes(a.outcome));
   const byCol = KANBAN_COLUMNS.map(() => []);
   active.forEach((a) => { byCol[kanbanColumnIndex(a)].push(a); });
 
@@ -1059,6 +1093,7 @@ function renderKanban() {
                 <div class="meta">${escapeHtml(a.position_applied) || '—'}</div>
                 ${cardGateLinesHtml(a, i)}
                 ${a.source === 'referral' ? '<span class="pill" style="margin-top:4px;display:inline-block">Referral</span>' : ''}
+                <button type="button" class="gh kanban-flag-btn" data-id="${a.id}" style="margin-top:6px;font-size:11px;padding:2px 8px">Flag…</button>
               </div>
             `).join('') || '<div class="kanban-empty dim">—</div>'}
           </div>
@@ -1072,6 +1107,12 @@ function renderKanban() {
     card.addEventListener('dragstart', (e) => {
       e.dataTransfer.setData('text/plain', card.dataset.id);
       e.dataTransfer.effectAllowed = 'move';
+    });
+  });
+  document.querySelectorAll('.kanban-flag-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation(); // don't also trigger the card's own click-to-edit
+      openFlagMenu(btn.dataset.id);
     });
   });
   document.querySelectorAll('.kanban-col').forEach((col) => {
@@ -1162,7 +1203,7 @@ function render() {
   const appliedFrom = document.getElementById('applied-from').value;
   const appliedTo = document.getElementById('applied-to').value;
 
-  const CLOSED_OUT_OUTCOMES = ['rejected', 'not_selected', 'resume_on_file', 'not_interested'];
+  const CLOSED_OUT_OUTCOMES = [...REJECTED_OUTCOMES, 'not_selected', 'resume_on_file', 'not_interested', 'no_experience'];
   const visible = applicants.filter((a) => {
     if (q && !(a.name || '').toLowerCase().includes(q)) return false;
     // Active pipeline: once someone's Hired, they've graduated to the
@@ -1173,7 +1214,8 @@ function render() {
     if (statusFilter === 'active' && (a.interview_status === 'not_passed' || a.outcome === 'hired')) return false;
     if (statusFilter === 'hired' && a.outcome !== 'hired') return false;
     if (statusFilter === 'not_passed' && a.interview_status !== 'not_passed') return false;
-    if (statusFilter === 'rejected' && a.outcome !== 'rejected') return false;
+    if (statusFilter === 'rejected_any' && !REJECTED_OUTCOMES.includes(a.outcome)) return false;
+    if (statusFilter === 'no_experience' && a.outcome !== 'no_experience') return false;
     if (statusFilter === 'not_selected' && a.outcome !== 'not_selected') return false;
     if (statusFilter === 'resume_on_file' && a.outcome !== 'resume_on_file') return false;
     if (statusFilter === 'not_interested' && a.outcome !== 'not_interested') return false;
@@ -1245,14 +1287,10 @@ function render() {
         <td class="dim">${isReferral ? (a.referred_by_emp_id ? escapeHtml(empName(a.referred_by_emp_id) || 'Former employee') : '—') : '—'}</td>
         <td>
           <select class="inp outcome-select" data-id="${a.id}" style="height:32px;font-size:12.5px">
-            <option value="" ${!a.outcome ? 'selected' : ''}>— Active —</option>
-            <option value="hired" ${a.outcome === 'hired' ? 'selected' : ''}>Started</option>
-            <option value="rejected" ${a.outcome === 'rejected' ? 'selected' : ''}>Rejected</option>
-            <option value="not_selected" ${a.outcome === 'not_selected' ? 'selected' : ''}>Not selected to move forward</option>
-            <option value="resume_on_file" ${a.outcome === 'resume_on_file' ? 'selected' : ''}>Resume on file</option>
-            <option value="not_interested" ${a.outcome === 'not_interested' ? 'selected' : ''}>Manager wasn't interested</option>
+            ${outcomeOptionsHtml(a.outcome)}
           </select>
-          ${a.outcome === 'rejected' && profile.role === 'david'
+          <button type="button" class="gh flag-btn" data-id="${a.id}" style="margin-top:4px;font-size:11px;padding:2px 8px">Flag…</button>
+          ${REJECTED_OUTCOMES.includes(a.outcome) && profile.role === 'david'
             ? `<button type="button" class="gh reject-reason-btn" data-id="${a.id}" style="margin-top:4px;font-size:11px;padding:2px 8px">Reason (private)</button>`
             : ''}
         </td>
@@ -1297,6 +1335,9 @@ function render() {
   });
   document.querySelectorAll('.reject-reason-btn').forEach((btn) => {
     btn.addEventListener('click', () => openRejectReason(btn.dataset.id));
+  });
+  document.querySelectorAll('.flag-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openFlagMenu(btn.dataset.id));
   });
   document.querySelectorAll('.unlink-roster-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -1677,14 +1718,9 @@ function progressFieldsHtml(a) {
     <div class="field">
       <label class="f-lab" for="edit-app-outcome">Outcome</label>
       <select class="f-in" id="edit-app-outcome">
-        <option value="" ${!a.outcome ? 'selected' : ''}>— Active —</option>
-        <option value="hired" ${a.outcome === 'hired' ? 'selected' : ''}>Started</option>
-        <option value="rejected" ${a.outcome === 'rejected' ? 'selected' : ''}>Rejected</option>
-        <option value="not_selected" ${a.outcome === 'not_selected' ? 'selected' : ''}>Not selected to move forward</option>
-        <option value="resume_on_file" ${a.outcome === 'resume_on_file' ? 'selected' : ''}>Resume on file</option>
-        <option value="not_interested" ${a.outcome === 'not_interested' ? 'selected' : ''}>Manager wasn't interested</option>
+        ${outcomeOptionsHtml(a.outcome)}
       </select>
-      ${a.outcome === 'rejected' && profile.role === 'david'
+      ${REJECTED_OUTCOMES.includes(a.outcome) && profile.role === 'david'
         ? `<button type="button" class="gh" id="edit-app-reason-btn" style="margin-top:6px;font-size:11px;padding:2px 8px">Reason (private)</button>`
         : ''}
     </div>
@@ -2029,6 +2065,36 @@ document.getElementById('reject-reason-save-btn').addEventListener('click', asyn
     console.error(err);
     showToast('Could not save — ' + err.message, 'error');
   }
+});
+
+// ---- Flag -- a one-click way to set an applicant's outcome from the
+// tracker table or a Kanban card, without opening the full edit form.
+// Same OUTCOME_OPTIONS list and the same updateApplicant() path the
+// dropdowns already use, just a faster door into it. ----
+let flagTargetApplicantId = null;
+function openFlagMenu(applicantId) {
+  const a = applicants.find((x) => x.id === applicantId);
+  if (!a) return;
+  flagTargetApplicantId = applicantId;
+  document.getElementById('flag-app-name').textContent = a.name;
+  document.getElementById('flag-options').innerHTML = OUTCOME_OPTIONS.map((o) => `
+    <button type="button" class="gh${a.outcome === o.value ? ' solid' : ''} flag-option-btn" data-value="${o.value}" style="text-align:left">${o.label}${a.outcome === o.value ? ' (current)' : ''}</button>
+  `).join('');
+  document.getElementById('flag-overlay').hidden = false;
+}
+function closeFlagMenu() {
+  document.getElementById('flag-overlay').hidden = true;
+  flagTargetApplicantId = null;
+}
+document.getElementById('flag-close').addEventListener('click', closeFlagMenu);
+document.getElementById('flag-options').addEventListener('click', (e) => {
+  const btn = e.target.closest('.flag-option-btn');
+  if (!btn || !flagTargetApplicantId) return;
+  const value = btn.dataset.value;
+  const patch = { outcome: value };
+  if (value === 'hired') { patch.hired = true; patch.hired_at = new Date().toISOString().slice(0, 10); }
+  updateApplicant(flagTargetApplicantId, patch);
+  closeFlagMenu();
 });
 
 wireEmpSearch('new-app-referrer');
