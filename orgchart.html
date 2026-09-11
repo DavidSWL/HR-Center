@@ -14,14 +14,12 @@
 .tabs .tab{padding:9px 20px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;color:var(--faint);border-right:1px solid var(--line)}
 .tabs .tab:last-child{border-right:none}
 .tabs .tab.active{background:var(--accent);color:#fff}
-.org-tree{padding:16px 16px 30px;overflow-x:auto;display:flex;justify-content:center}
-.org-forest{display:flex;justify-content:center;gap:16px;flex-wrap:wrap}
-.org-node{display:flex;flex-direction:column;align-items:center}
-.org-children{display:flex;flex-direction:row;justify-content:center;position:relative;padding-top:20px}
-.org-branch{position:relative;padding:0 6px;display:flex;flex-direction:column;align-items:center}
-.org-branch::before{content:'';position:absolute;top:-20px;left:50%;width:2px;height:20px;background:var(--edge)}
-.org-hline{position:absolute;top:0;height:2px;background:var(--edge)}
-.org-card{background:var(--raise);border:1px solid var(--edge);box-shadow:0 1px 3px rgba(0,0,0,.08);padding:5px 8px;cursor:pointer;font-size:11px;min-width:108px;text-align:center}
+.org-tree{position:relative;padding:16px 16px 30px;overflow-x:auto}
+.org-connectors{position:absolute;inset:0;pointer-events:none}
+.org-connectors line{stroke:var(--edge);stroke-width:1.5px}
+.org-rows{display:flex;flex-direction:column;gap:34px;align-items:center;width:fit-content;margin:0 auto}
+.org-row{display:flex;flex-direction:row;justify-content:center;gap:14px;flex-wrap:wrap;width:100%}
+.org-card{position:relative;z-index:1;background:var(--raise);border:1px solid var(--edge);box-shadow:0 1px 3px rgba(0,0,0,.08);padding:5px 8px;cursor:pointer;font-size:11px;min-width:108px;text-align:center}
 .org-card.drag-over{background:var(--hover);border-color:var(--accentTx)}
 .org-card.selected{border-color:var(--accentTx);box-shadow:0 0 0 2px var(--accentTx)}
 .org-card .nm{font-weight:600}
@@ -55,13 +53,13 @@
       </div>
 
       <div id="org-board-view">
-        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Managers and office staff only — field employees don't clutter this view. <b>Click a card to select it</b> (it'll highlight), then click the card you want them to report to. Click the same card again to cancel.</p>
+        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Managers and office staff only — field employees don't clutter this view. Rows are set by <b>Rank</b> (row 1 = rank 1, and so on — set it in the Assign tab); the lines show who actually reports to whom, even across rows. <b>Click a card to select it</b> (it'll highlight), then click the card you want them to report to. Click the same card again to cancel.</p>
         <div class="org-root-drop" id="org-root-drop">After clicking someone, click here to remove their manager (top level)</div>
         <div id="org-kanban"></div>
       </div>
 
       <div id="org-assign-view" hidden>
-        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Same Manager/Office list as the Board, just as a plain list — pick who each person reports to from the dropdown. Rank controls left-to-right order on the Board (lower number = more senior = shows first) — leave it blank and they'll sort alphabetically after everyone ranked.</p>
+        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Same Manager/Office list as the Board, just as a plain list — pick who each person reports to from the dropdown. Rank controls which ROW someone sits in on the Board (rank 1 = top row, rank 2 = the next row down, and so on) — leave it blank and they'll show in their own row at the bottom.</p>
         <div class="card">
           <table>
             <thead><tr><th>Employee</th><th>Job title</th><th>Division</th><th>Rank</th><th>Reports to</th></tr></thead>
@@ -109,17 +107,6 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str ?? '';
   return div.innerHTML;
-}
-
-// Left-to-right order for siblings in the Board (and the top-level
-// group) -- lower rank number = more senior = shows first. Unranked
-// people (org_rank not set) sort after everyone ranked, alphabetically
-// among themselves, so nobody without a rank yet looks randomly placed.
-function orgSortCompare(a, b) {
-  const ra = a.org_rank ?? Infinity;
-  const rb = b.org_rank ?? Infinity;
-  if (ra !== rb) return ra - rb;
-  return `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`);
 }
 
 // Shared between the List view's tables and the Board's Kanban --
@@ -271,62 +258,80 @@ function renderOrgAssign() {
   });
 }
 
-// ---- Board (Kanban) -- one column per manager, cards for everyone
-// Manager- or Office-flagged (Field employees never show up here).
-// Dragging a card into a column sets that employee's manager_emp_id to
-// the column's manager, i.e. this IS the org chart edit UI -- there's
+// ---- Board -- rows are strict rank tiers (row 1 = org_rank 1, row 2 =
+// org_rank 2, and so on) for everyone Manager- or Office-flagged (Field
+// employees never show up here). This is deliberately NOT the reporting
+// tree: two people can share a row without either one managing the
+// other. Lines are drawn separately, from each person to their actual
+// manager wherever that manager's card sits, so the reporting line stays
+// visible even when it crosses rows. Dragging (or tapping) a card onto
+// another sets manager_emp_id -- this IS the org chart edit UI, there's
 // no separate "reassign manager" form anywhere else. ----
 function renderOrgBoard() {
   const eligible = active.filter((e) => orgManagerIds.has(e.id) || orgOfficeIds.has(e.id));
   const eligibleIds = new Set(eligible.map((e) => e.id));
 
-  // Parent -> children, keyed by employee id (null = top level / no
-  // manager, or a manager who isn't itself Manager/Office-flagged so
-  // has no place in this tree).
-  const childrenOf = new Map();
+  // Group by rank tier. Unranked people (org_rank not set) get their own
+  // trailing row so nobody just disappears from the Board.
+  const byRank = new Map();
   eligible.forEach((e) => {
-    const parentId = e.manager_emp_id && eligibleIds.has(e.manager_emp_id) ? e.manager_emp_id : null;
-    if (!childrenOf.has(parentId)) childrenOf.set(parentId, []);
-    childrenOf.get(parentId).push(e);
+    const rank = e.org_rank ?? Infinity;
+    if (!byRank.has(rank)) byRank.set(rank, []);
+    byRank.get(rank).push(e);
   });
-  childrenOf.forEach((list) => list.sort(orgSortCompare));
+  const ranks = [...byRank.keys()].sort((a, b) => a - b);
 
-  function nodeHtml(e) {
-    const kids = childrenOf.get(e.id) || [];
-    const kidsHtml = kids.length
-      ? `<div class="org-children">${kids.map((k) => `<div class="org-branch">${nodeHtml(k)}</div>`).join('')}</div>`
-      : '';
+  function cardHtml(e) {
     return `
-      <div class="org-node">
-        <div class="org-card" draggable="true" data-id="${e.id}">
-          <div class="nm">${escapeHtml(`${e.first_name} ${e.last_name}`)}${orgManagerIds.has(e.id) ? ' <span class="pill">Manager</span>' : ''}</div>
-          <div class="meta">${escapeHtml(e.position) || '—'}${e.division ? ` · ${escapeHtml(e.division)}` : ''}</div>
-        </div>
-        ${kidsHtml}
+      <div class="org-card" draggable="true" data-id="${e.id}">
+        <div class="nm">${escapeHtml(`${e.first_name} ${e.last_name}`)}${orgManagerIds.has(e.id) ? ' <span class="pill">Manager</span>' : ''}</div>
+        <div class="meta">${escapeHtml(e.position) || '—'}${e.division ? ` · ${escapeHtml(e.division)}` : ''}</div>
       </div>
     `;
   }
 
-  const roots = childrenOf.get(null) || [];
   document.getElementById('org-kanban').innerHTML = eligible.length
-    ? `<div class="org-tree"><div class="org-forest">${roots.map(nodeHtml).join('')}</div></div>`
+    ? `
+      <div class="org-tree" id="org-tree">
+        <svg class="org-connectors" id="org-connectors"></svg>
+        <div class="org-rows">
+          ${ranks.map((r) => `
+            <div class="org-row">
+              ${byRank.get(r)
+                .sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`))
+                .map(cardHtml).join('')}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `
     : '<div class="card"><div class="card-body dim">Nobody is flagged Manager or Office yet — set that in Settings first.</div></div>';
 
-  // Horizontal connector lines can't be centered between an arbitrary
-  // first/last sibling with CSS alone, so measure actual card positions
-  // after layout and draw one line per row of siblings.
-  document.querySelectorAll('#org-kanban .org-children').forEach((row) => {
-    const branches = [...row.children];
-    if (branches.length < 2) return;
-    const rowRect = row.getBoundingClientRect();
-    const firstCard = branches[0].querySelector('.org-card').getBoundingClientRect();
-    const lastCard = branches[branches.length - 1].querySelector('.org-card').getBoundingClientRect();
-    const line = document.createElement('div');
-    line.className = 'org-hline';
-    line.style.left = ((firstCard.left + firstCard.right) / 2 - rowRect.left) + 'px';
-    line.style.width = (((lastCard.left + lastCard.right) / 2) - ((firstCard.left + firstCard.right) / 2)) + 'px';
-    row.appendChild(line);
-  });
+  // Draw a line from each person to their actual manager's card,
+  // wherever that manager sits -- rows are fixed rank tiers now, not the
+  // reporting tree itself, so a line can (and often will) cross rows.
+  const treeEl = document.getElementById('org-tree');
+  if (treeEl) {
+    const svg = document.getElementById('org-connectors');
+    const treeRect = treeEl.getBoundingClientRect();
+    svg.setAttribute('width', treeRect.width);
+    svg.setAttribute('height', treeRect.height);
+    eligible.forEach((e) => {
+      const mgrId = e.manager_emp_id;
+      if (!mgrId || !eligibleIds.has(mgrId)) return;
+      const childEl = treeEl.querySelector(`.org-card[data-id="${e.id}"]`);
+      const mgrEl = treeEl.querySelector(`.org-card[data-id="${mgrId}"]`);
+      if (!childEl || !mgrEl) return;
+      const c = childEl.getBoundingClientRect();
+      const m = mgrEl.getBoundingClientRect();
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', m.left + m.width / 2 - treeRect.left);
+      line.setAttribute('y1', m.bottom - treeRect.top);
+      line.setAttribute('x2', c.left + c.width / 2 - treeRect.left);
+      line.setAttribute('y2', c.top - treeRect.top);
+      svg.appendChild(line);
+    });
+  }
 
   if (selectedEmpId && !byId.has(selectedEmpId)) selectedEmpId = null;
   document.querySelectorAll('#org-kanban .org-card').forEach((card) => {
