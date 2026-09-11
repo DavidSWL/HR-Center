@@ -16,6 +16,15 @@
      only touches it if a HEIC file actually shows up. -->
 <script defer src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 <style>
+.print-only { display:none; }
+@media print {
+  .side, .bar, .no-print { display:none !important; }
+  .print-only { display:inline !important; }
+  .app { display:block; }
+  .view { padding:0; }
+  .form-doc { border:none !important; box-shadow:none !important; }
+  @page { size:letter; margin:0; }
+}
 .app-row.grayed{opacity:.5}
 .app-row.grayed td{color:var(--faint)}
 .app-row td{vertical-align:middle}
@@ -71,7 +80,7 @@
       </div>
     </header>
 
-    <section class="view">
+    <section class="view" id="pipeline-view">
 
       <div class="tabs" id="ats-tab-strip">
         <div class="tab active" data-tab="pipeline">Pipeline</div>
@@ -85,7 +94,11 @@
         <div class="card-body" id="pipeline-board"></div>
         <div class="card-h clickable" id="resume-pool-toggle" style="border-top:1px solid var(--line)">
           <h3>Resume on file pool</h3>
-          <span style="display:flex;align-items:center;gap:10px"><span id="resume-pool-summary" class="dim">Worth a call the next time a role opens</span><span class="chevron" id="resume-pool-chevron">▼</span></span>
+          <span style="display:flex;align-items:center;gap:10px">
+            <span id="resume-pool-summary" class="dim">Worth a call the next time a role opens</span>
+            <button class="gh" id="resume-pool-export-btn" type="button">Export for manager</button>
+            <span class="chevron" id="resume-pool-chevron">▼</span>
+          </span>
         </div>
         <div class="card-body" id="pipeline-resume-pool" hidden></div>
       </div>
@@ -241,6 +254,22 @@
       </div>
       </div>
     </section>
+
+    <!-- Resume pool export — a browsable list of everyone marked "Resume
+         on file" (worth a call the next time a role opens), covering only
+         that bucket. Print gives the whole packet (a summary page, then
+         every candidate's application at full page size); each row also
+         has its own "Print" so you can send just one person without the
+         rest of the pool. It's a plain PDF either way -- a manager has no
+         login to this app and can't open an in-app link, so this is the
+         only thing that actually reaches them. -->
+    <div class="form-doc" id="resume-pool-report" hidden>
+      <div class="acts no-print" style="margin-bottom:16px">
+        <button class="gh" id="resume-report-back-btn" type="button">&larr; Back to pipeline</button>
+        <button class="gh solid" id="resume-report-print-btn" type="button">Print whole packet</button>
+      </div>
+      <div id="resume-report-body"></div>
+    </div>
   </div>
 </div>
 
@@ -423,7 +452,7 @@
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
 import { db } from './firebaseconfig.js';
-import { ONBOARDING_CHECKLIST } from './letterhead-assets.js';
+import { ONBOARDING_CHECKLIST, LOGO_DATA_URL } from './letterhead-assets.js';
 import { JOB_DESCRIPTIONS } from './jobdescriptionsdata.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp,
@@ -749,6 +778,128 @@ function renderPipeline() {
 document.getElementById('resume-pool-toggle').addEventListener('click', () => {
   resumePoolOpen = !resumePoolOpen;
   renderPipeline();
+});
+
+// ---- Resume pool export — a browsable list for a manager, covering
+// only the "Resume on file" candidates (not the whole pipeline). Each
+// candidate's application pages (the photographed paper application —
+// there's no separate "resume" file in this system) print at full
+// page size, one photo per page, either as part of the whole packet
+// or on their own via the row's "Print" button. Printing (this is a
+// plain PDF once saved) is the only way to actually get this in front
+// of a manager, since managers have no login to this app. ----
+let resumeReportRows = [];
+document.getElementById('resume-pool-export-btn').addEventListener('click', async (e) => {
+  e.stopPropagation(); // this button sits inside the collapsible header row
+  const btn = e.currentTarget;
+  const resumePool = applicants.filter((a) => a.outcome === 'resume_on_file');
+  if (!resumePool.length) { showToast('Nobody is in the resume pool right now.', 'error'); return; }
+  btn.disabled = true;
+  btn.textContent = 'Building…';
+  try {
+    resumeReportRows = await Promise.all(resumePool.map(async (a) => {
+      const snap = await getDocs(collection(db, 'applicants', a.id, 'application_pages'));
+      const pages = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((x, y) => (x.page_number || 0) - (y.page_number || 0));
+      return { a, pages };
+    }));
+    resumeReportRows.sort((x, y) => (x.a.applied_date || '').localeCompare(y.a.applied_date || ''));
+
+    const monthGroups = {};
+    resumeReportRows.forEach(({ a }) => {
+      const key = a.applied_date ? a.applied_date.slice(0, 7) : 'unknown';
+      monthGroups[key] = (monthGroups[key] || 0) + 1;
+    });
+    const monthKeys = Object.keys(monthGroups).sort((x, y) => (x === 'unknown' ? 1 : y === 'unknown' ? -1 : x.localeCompare(y)));
+    const monthLabel = (key) => key === 'unknown' ? 'Applied date unknown' : new Date(key + '-01T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const openingLabel = (a) => a.applied_job_id ? (openJobs.find((j) => j.id === a.applied_job_id) ? jobLabel(openJobs.find((j) => j.id === a.applied_job_id)) : 'Opening no longer listed') : 'Not tied to a specific opening';
+
+    document.getElementById('resume-report-body').innerHTML = `
+      <div class="resume-report-summary">
+        <div class="form-doc-inner">
+          <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+          <h1 class="form-title">Resume Pool — Worth a Call Next Opening</h1>
+          <p class="dim" style="font-size:11.5px;margin:0 0 14px">Printed ${formatDate(new Date().toISOString().slice(0, 10))} — ${resumeReportRows.length} candidate${resumeReportRows.length === 1 ? '' : 's'}.</p>
+          <div class="form-section">Applied Date Breakdown</div>
+          <table style="margin-bottom:18px">
+            <thead><tr><th>Applied</th><th style="text-align:right">Candidates</th></tr></thead>
+            <tbody>
+              ${monthKeys.map((key) => `<tr><td>${monthLabel(key)}</td><td style="text-align:right">${monthGroups[key]}</td></tr>`).join('')}
+            </tbody>
+          </table>
+          <div class="form-section">Candidates</div>
+          <table>
+            <thead><tr><th>Applied</th><th>Name</th><th>Applied For</th><th>How They Applied</th><th>Which Opening</th><th>Application</th></tr></thead>
+            <tbody>
+              ${resumeReportRows.map(({ a, pages }) => `
+                <tr>
+                  <td class="mono">${a.applied_date ? formatDate(a.applied_date) : 'Unknown'}</td>
+                  <td>${escapeHtml(a.name)}</td>
+                  <td>${escapeHtml(a.position_applied) || '—'}</td>
+                  <td>${escapeHtml(SOURCE_LABELS[a.source] || a.source || '—')}</td>
+                  <td>${escapeHtml(openingLabel(a))}</td>
+                  <td>${pages.length ? `<button class="gh no-print resume-print-one-btn" type="button" data-cid="${a.id}">Print (${pages.length})</button>` : '<span class="dim">None on file</span>'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      ${resumeReportRows.filter(({ pages }) => pages.length).map(({ a, pages }) => `
+        <div class="resume-candidate-block" data-cid="${a.id}">
+          <div class="form-page-break">
+            <div class="form-doc-inner">
+              <div class="form-section">${escapeHtml(a.name)}</div>
+              <div class="form-grid c2">
+                <div class="form-cell"><b>Applied For</b>${escapeHtml(a.position_applied) || '—'}</div>
+                <div class="form-cell"><b>How They Applied</b>${escapeHtml(SOURCE_LABELS[a.source] || a.source || '—')}</div>
+                <div class="form-cell"><b>Applied Date</b>${a.applied_date ? formatDate(a.applied_date) : 'Unknown'}</div>
+                <div class="form-cell"><b>Which Opening</b>${escapeHtml(openingLabel(a))}</div>
+              </div>
+              <div class="form-section">Application on File (${pages.length} page${pages.length === 1 ? '' : 's'})</div>
+            </div>
+          </div>
+          ${pages.map((p, i) => `
+            <div class="form-page-break" style="padding:20px 0">
+              <img src="${p.image_data_url}" alt="${escapeHtml(a.name)} — page ${i + 1}" style="width:100%;border:1px solid #999">
+            </div>
+          `).join('')}
+        </div>
+      `).join('')}
+    `;
+    document.getElementById('pipeline-view').hidden = true;
+    document.getElementById('resume-pool-report').hidden = false;
+    window.scrollTo(0, 0);
+  } catch (err) {
+    console.error(err);
+    showToast('Could not build the report — ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Export for manager';
+  }
+});
+document.getElementById('resume-report-back-btn').addEventListener('click', () => {
+  document.getElementById('resume-pool-report').hidden = true;
+  document.getElementById('pipeline-view').hidden = false;
+});
+document.getElementById('resume-report-print-btn').addEventListener('click', () => window.print());
+
+// Printing just one candidate's application out of the full packet --
+// hides everyone else and the summary for the print only, then puts
+// them back once the print dialog closes (works whether the user
+// actually printed or hit cancel).
+document.getElementById('resume-report-body').addEventListener('click', (e) => {
+  const btn = e.target.closest('.resume-print-one-btn');
+  if (!btn) return;
+  const summary = document.querySelector('.resume-report-summary');
+  const blocks = document.querySelectorAll('.resume-candidate-block');
+  if (summary) summary.style.display = 'none';
+  blocks.forEach((block) => { block.style.display = block.dataset.cid === btn.dataset.cid ? '' : 'none'; });
+  window.print();
+});
+window.addEventListener('afterprint', () => {
+  const summary = document.querySelector('.resume-report-summary');
+  if (summary) summary.style.display = '';
+  document.querySelectorAll('.resume-candidate-block').forEach((block) => { block.style.display = ''; });
 });
 
 // ---- Top-level tabs -- Pipeline / Open roles / Tracker, replacing
