@@ -14,16 +14,20 @@
 .tabs .tab{padding:9px 20px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;color:var(--faint);border-right:1px solid var(--line)}
 .tabs .tab:last-child{border-right:none}
 .tabs .tab.active{background:var(--accent);color:#fff}
-.kanban{display:grid;grid-auto-flow:column;grid-auto-columns:200px;gap:10px;overflow-x:auto;padding-bottom:10px}
-.kanban-col{background:var(--panel);border:1px solid var(--edge);min-width:200px;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(0,0,0,.05)}
-.kanban-col-h{padding:8px 10px;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--edge);display:flex;justify-content:space-between;gap:6px;background:var(--raise)}
-.kanban-col-body{padding:8px;display:flex;flex-direction:column;gap:8px;min-height:60px}
-.kanban-col.drag-over{background:var(--hover)}
-.kanban-card{background:var(--raise);border:1px solid var(--edge);box-shadow:0 1px 3px rgba(0,0,0,.08);padding:8px 10px;cursor:grab;font-size:12.5px}
-.kanban-card:active{cursor:grabbing}
-.kanban-card .nm{font-weight:600}
-.kanban-card .meta{color:var(--faint);font-size:11px;margin-top:2px}
-.kanban-empty{font-size:11px;padding:6px 0;text-align:center}
+.org-tree{padding:20px 20px 40px;overflow-x:auto;display:flex;justify-content:center}
+.org-forest{display:flex;justify-content:center;gap:40px;flex-wrap:wrap}
+.org-node{display:flex;flex-direction:column;align-items:center}
+.org-children{display:flex;flex-direction:row;justify-content:center;position:relative;padding-top:28px}
+.org-branch{position:relative;padding:0 14px;display:flex;flex-direction:column;align-items:center}
+.org-branch::before{content:'';position:absolute;top:-28px;left:50%;width:2px;height:28px;background:var(--edge)}
+.org-hline{position:absolute;top:0;height:2px;background:var(--edge)}
+.org-card{background:var(--raise);border:1px solid var(--edge);box-shadow:0 1px 3px rgba(0,0,0,.08);padding:8px 12px;cursor:grab;font-size:12.5px;min-width:150px;text-align:center}
+.org-card:active{cursor:grabbing}
+.org-card.drag-over{background:var(--hover);border-color:var(--accentTx)}
+.org-card .nm{font-weight:600}
+.org-card .meta{color:var(--faint);font-size:11px;margin-top:2px}
+.org-root-drop{border:1px dashed var(--edge);padding:10px;text-align:center;font-size:11.5px;color:var(--faint);margin:0 auto 16px;max-width:420px}
+.org-root-drop.drag-over{background:var(--hover);border-color:var(--accentTx);color:var(--muted)}
 </style>
 </head>
 <body>
@@ -50,7 +54,8 @@
       </div>
 
       <div id="org-board-view">
-        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Managers and office staff only — field employees don't clutter this view. Drag a card into a column to change who they report to.</p>
+        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Managers and office staff only — field employees don't clutter this view. Drag a card onto another card to make them report to that person.</p>
+        <div class="org-root-drop" id="org-root-drop">Drop here to remove a manager (top level)</div>
         <div id="org-kanban"></div>
       </div>
 
@@ -196,70 +201,106 @@ async function loadAndRender() {
 // no separate "reassign manager" form anywhere else. ----
 function renderOrgBoard() {
   const eligible = active.filter((e) => orgManagerIds.has(e.id) || orgOfficeIds.has(e.id));
-  const columns = [...orgManagerIds]
-    .filter((id) => byId.has(id))
-    .map((id) => byId.get(id))
-    .sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`));
-  const columnIds = new Set(columns.map((m) => m.id));
+  const eligibleIds = new Set(eligible.map((e) => e.id));
 
-  const byCol = new Map(columns.map((m) => [m.id, []]));
-  byCol.set(null, []); // "No manager set"
+  // Parent -> children, keyed by employee id (null = top level / no
+  // manager, or a manager who isn't itself Manager/Office-flagged so
+  // has no place in this tree).
+  const childrenOf = new Map();
   eligible.forEach((e) => {
-    const colId = e.manager_emp_id && columnIds.has(e.manager_emp_id) ? e.manager_emp_id : null;
-    byCol.get(colId).push(e);
+    const parentId = e.manager_emp_id && eligibleIds.has(e.manager_emp_id) ? e.manager_emp_id : null;
+    if (!childrenOf.has(parentId)) childrenOf.set(parentId, []);
+    childrenOf.get(parentId).push(e);
   });
-  byCol.forEach((cards) => cards.sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`)));
+  childrenOf.forEach((list) => list.sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`)));
 
-  const allCols = [{ id: null, label: 'No manager set' }, ...columns.map((m) => ({ id: m.id, label: `${m.first_name} ${m.last_name}` }))];
-
-  document.getElementById('org-kanban').innerHTML = `
-    <div class="kanban">
-      ${allCols.map((c) => `
-        <div class="kanban-col" data-col="${c.id ?? ''}">
-          <div class="kanban-col-h"><span>${escapeHtml(c.label)}</span><span>${byCol.get(c.id).length}</span></div>
-          <div class="kanban-col-body">
-            ${byCol.get(c.id).map((e) => `
-              <div class="kanban-card" draggable="true" data-id="${e.id}">
-                <div class="nm">${escapeHtml(`${e.first_name} ${e.last_name}`)}${orgManagerIds.has(e.id) ? ' <span class="pill">Manager</span>' : ''}</div>
-                <div class="meta">${escapeHtml(e.position) || '—'}${e.division ? ` · ${escapeHtml(e.division)}` : ''}</div>
-              </div>
-            `).join('') || '<div class="kanban-empty dim">—</div>'}
-          </div>
+  function nodeHtml(e) {
+    const kids = childrenOf.get(e.id) || [];
+    const kidsHtml = kids.length
+      ? `<div class="org-children">${kids.map((k) => `<div class="org-branch">${nodeHtml(k)}</div>`).join('')}</div>`
+      : '';
+    return `
+      <div class="org-node">
+        <div class="org-card" draggable="true" data-id="${e.id}">
+          <div class="nm">${escapeHtml(`${e.first_name} ${e.last_name}`)}${orgManagerIds.has(e.id) ? ' <span class="pill">Manager</span>' : ''}</div>
+          <div class="meta">${escapeHtml(e.position) || '—'}${e.division ? ` · ${escapeHtml(e.division)}` : ''}</div>
         </div>
-      `).join('')}
-    </div>
-  `;
+        ${kidsHtml}
+      </div>
+    `;
+  }
 
-  document.querySelectorAll('#org-kanban .kanban-card').forEach((card) => {
+  const roots = childrenOf.get(null) || [];
+  document.getElementById('org-kanban').innerHTML = eligible.length
+    ? `<div class="org-tree"><div class="org-forest">${roots.map(nodeHtml).join('')}</div></div>`
+    : '<div class="card"><div class="card-body dim">Nobody is flagged Manager or Office yet — set that in Settings first.</div></div>';
+
+  // Horizontal connector lines can't be centered between an arbitrary
+  // first/last sibling with CSS alone, so measure actual card positions
+  // after layout and draw one line per row of siblings.
+  document.querySelectorAll('#org-kanban .org-children').forEach((row) => {
+    const branches = [...row.children];
+    if (branches.length < 2) return;
+    const rowRect = row.getBoundingClientRect();
+    const firstCard = branches[0].querySelector('.org-card').getBoundingClientRect();
+    const lastCard = branches[branches.length - 1].querySelector('.org-card').getBoundingClientRect();
+    const line = document.createElement('div');
+    line.className = 'org-hline';
+    line.style.left = ((firstCard.left + firstCard.right) / 2 - rowRect.left) + 'px';
+    line.style.width = (((lastCard.left + lastCard.right) / 2) - ((firstCard.left + firstCard.right) / 2)) + 'px';
+    row.appendChild(line);
+  });
+
+  document.querySelectorAll('#org-kanban .org-card').forEach((card) => {
     card.addEventListener('dragstart', (e) => {
       e.dataTransfer.setData('text/plain', card.dataset.id);
       e.dataTransfer.effectAllowed = 'move';
     });
-  });
-  document.querySelectorAll('#org-kanban .kanban-col').forEach((col) => {
-    col.addEventListener('dragover', (e) => { e.preventDefault(); col.classList.add('drag-over'); });
-    col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
-    col.addEventListener('drop', (e) => {
+    card.addEventListener('dragover', (e) => { e.preventDefault(); card.classList.add('drag-over'); });
+    card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+    card.addEventListener('drop', (e) => {
       e.preventDefault();
-      col.classList.remove('drag-over');
+      card.classList.remove('drag-over');
       const empId = e.dataTransfer.getData('text/plain');
-      const newMgrId = col.dataset.col || null;
-      if (empId) reassignManager(empId, newMgrId);
+      if (empId) reassignManager(empId, card.dataset.id);
     });
   });
+
+  // Persists across re-renders, so assign handlers directly rather than
+  // addEventListener -- that would stack a new listener on every render.
+  const rootDrop = document.getElementById('org-root-drop');
+  rootDrop.ondragover = (e) => { e.preventDefault(); rootDrop.classList.add('drag-over'); };
+  rootDrop.ondragleave = () => rootDrop.classList.remove('drag-over');
+  rootDrop.ondrop = (e) => {
+    e.preventDefault();
+    rootDrop.classList.remove('drag-over');
+    const empId = e.dataTransfer.getData('text/plain');
+    if (empId) reassignManager(empId, null);
+  };
+}
+
+// Walks up from the proposed new manager through the manager_emp_id
+// chain -- if it ever reaches the employee being moved, dropping them
+// there would put them above themselves in the chart.
+function wouldCreateCycle(empId, newMgrId) {
+  let cur = newMgrId;
+  const seen = new Set();
+  while (cur) {
+    if (cur === empId) return true;
+    if (seen.has(cur)) return false; // an existing loop elsewhere in the data, not this move's doing
+    seen.add(cur);
+    cur = byId.get(cur)?.manager_emp_id || null;
+  }
+  return false;
 }
 
 async function reassignManager(empId, newMgrId) {
   const emp = byId.get(empId);
   if (!emp) return;
-  if ((emp.manager_emp_id || null) === newMgrId) return; // dropped back in the same column
+  if ((emp.manager_emp_id || null) === newMgrId) return; // dropped back where they already were
   if (newMgrId === empId) { showToast("Someone can't be their own manager.", 'error'); return; }
-  // Cheapest, most common loop to catch: dragging someone directly into
-  // the column of a person who currently reports to them. Deeper cycles
-  // (three or more levels) aren't checked -- this is a small team and a
-  // human is doing the dragging, not worth the complexity here.
-  if (newMgrId && byId.get(newMgrId)?.manager_emp_id === empId) {
-    showToast("That would make them report to their own direct report.", 'error');
+  if (newMgrId && wouldCreateCycle(empId, newMgrId)) {
+    showToast('That would put them above themselves in the chart — drop them somewhere else.', 'error');
     return;
   }
   try {
