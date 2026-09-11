@@ -383,6 +383,17 @@
           <option value="">— Not tied to a specific opening —</option>
         </select>
       </div>
+      <div class="frow">
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600">
+            <input type="checkbox" id="edit-app-has-experience"> Has landscape/industry experience
+          </label>
+        </div>
+        <div class="field" id="edit-app-years-field" hidden>
+          <label class="f-lab" for="edit-app-years-experience">Years of experience</label>
+          <input class="f-in" id="edit-app-years-experience" type="number" min="0" step="1" style="max-width:120px">
+        </div>
+      </div>
 
       <div style="margin:16px 0 10px;padding-top:14px;border-top:1px solid var(--line);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)">Application pages</div>
       <div class="dim" style="font-size:11.5px;margin-bottom:8px">Photograph the paper application, one page at a time — take a picture, pick from your camera roll, or drag files in below. Add as many pages as it takes.</div>
@@ -812,6 +823,7 @@ document.getElementById('resume-pool-export-btn').addEventListener('click', asyn
     const monthKeys = Object.keys(monthGroups).sort((x, y) => (x === 'unknown' ? 1 : y === 'unknown' ? -1 : x.localeCompare(y)));
     const monthLabel = (key) => key === 'unknown' ? 'Applied date unknown' : new Date(key + '-01T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     const openingLabel = (a) => a.applied_job_id ? (openJobs.find((j) => j.id === a.applied_job_id) ? jobLabel(openJobs.find((j) => j.id === a.applied_job_id)) : 'Opening no longer listed') : 'Not tied to a specific opening';
+    const experienceLabel = (a) => a.has_landscape_experience ? `Yes${a.years_experience ? ` — ${a.years_experience} yr${a.years_experience === 1 ? '' : 's'}` : ''}` : 'Not indicated';
 
     document.getElementById('resume-report-body').innerHTML = `
       <div class="resume-report-summary">
@@ -828,7 +840,7 @@ document.getElementById('resume-pool-export-btn').addEventListener('click', asyn
           </table>
           <div class="form-section">Candidates</div>
           <table>
-            <thead><tr><th>Applied</th><th>Name</th><th>Applied For</th><th>How They Applied</th><th>Which Opening</th><th>Application</th></tr></thead>
+            <thead><tr><th>Applied</th><th>Name</th><th>Applied For</th><th>How They Applied</th><th>Which Opening</th><th>Experience</th><th>Application</th></tr></thead>
             <tbody>
               ${resumeReportRows.map(({ a, pages }) => `
                 <tr>
@@ -837,6 +849,7 @@ document.getElementById('resume-pool-export-btn').addEventListener('click', asyn
                   <td>${escapeHtml(a.position_applied) || '—'}</td>
                   <td>${escapeHtml(SOURCE_LABELS[a.source] || a.source || '—')}</td>
                   <td>${escapeHtml(openingLabel(a))}</td>
+                  <td>${escapeHtml(experienceLabel(a))}</td>
                   <td>${pages.length ? `<button class="gh no-print resume-print-one-btn" type="button" data-cid="${a.id}">Print (${pages.length})</button>` : '<span class="dim">None on file</span>'}</td>
                 </tr>
               `).join('')}
@@ -854,6 +867,7 @@ document.getElementById('resume-pool-export-btn').addEventListener('click', asyn
                 <div class="form-cell"><b>How They Applied</b>${escapeHtml(SOURCE_LABELS[a.source] || a.source || '—')}</div>
                 <div class="form-cell"><b>Applied Date</b>${a.applied_date ? formatDate(a.applied_date) : 'Unknown'}</div>
                 <div class="form-cell"><b>Which Opening</b>${escapeHtml(openingLabel(a))}</div>
+                <div class="form-cell"><b>Experience</b>${escapeHtml(experienceLabel(a))}</div>
               </div>
               <div class="form-section">Application on File (${pages.length} page${pages.length === 1 ? '' : 's'})</div>
             </div>
@@ -1735,6 +1749,9 @@ function openEditApplicant(applicantId) {
     jobSel.appendChild(opt);
   }
   jobSel.value = a.applied_job_id || '';
+  document.getElementById('edit-app-has-experience').checked = !!a.has_landscape_experience;
+  document.getElementById('edit-app-years-field').hidden = !a.has_landscape_experience;
+  document.getElementById('edit-app-years-experience').value = a.years_experience ?? '';
   renderEditAppProgress(applicantId);
   loadApplicationPages(applicantId);
   document.getElementById('edit-app-overlay').hidden = false;
@@ -1750,6 +1767,10 @@ document.getElementById('edit-app-source').addEventListener('change', (e) => {
   document.getElementById('edit-app-referrer-field').hidden = e.target.value !== 'referral';
 });
 wirePositionToggle('edit-app-position', 'edit-app-position-other');
+document.getElementById('edit-app-has-experience').addEventListener('change', (e) => {
+  document.getElementById('edit-app-years-field').hidden = !e.target.checked;
+  if (!e.target.checked) document.getElementById('edit-app-years-experience').value = '';
+});
 
 // ---- Application pages — photographed paper application, one Firestore
 // document per page (applicants/{id}/application_pages) rather than one
@@ -1950,11 +1971,15 @@ document.getElementById('edit-app-save-btn').addEventListener('click', async () 
   if (!appliedDate) { showToast('Enter an applied date, or check N/A.', 'error'); return; }
   const referredByEmpId = document.getElementById('edit-app-referrer').value;
   if (source === 'referral' && !referredByEmpId) { showToast('Pick who referred them from the list.', 'error'); return; }
+  const hasExperience = document.getElementById('edit-app-has-experience').checked;
+  const yearsExperience = document.getElementById('edit-app-years-experience').value;
   await updateApplicant(applicantId, {
     name, source, applied_date: appliedDate,
     referred_by_emp_id: source === 'referral' ? referredByEmpId : '',
     position_applied: readPositionField('edit-app-position', 'edit-app-position-other'),
     applied_job_id: document.getElementById('edit-app-job').value || null,
+    has_landscape_experience: hasExperience,
+    years_experience: hasExperience && yearsExperience !== '' ? Number(yearsExperience) : null,
   });
   showToast('Applicant updated.');
   closeEditApplicant();
