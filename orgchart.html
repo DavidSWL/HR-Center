@@ -9,6 +9,22 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
+<style>
+.tabs{display:flex;gap:0;border:1px solid var(--line);width:fit-content;margin-bottom:16px}
+.tabs .tab{padding:9px 20px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;color:var(--faint);border-right:1px solid var(--line)}
+.tabs .tab:last-child{border-right:none}
+.tabs .tab.active{background:var(--accent);color:#fff}
+.kanban{display:grid;grid-auto-flow:column;grid-auto-columns:200px;gap:10px;overflow-x:auto;padding-bottom:10px}
+.kanban-col{background:var(--panel);border:1px solid var(--edge);min-width:200px;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.kanban-col-h{padding:8px 10px;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--edge);display:flex;justify-content:space-between;gap:6px;background:var(--raise)}
+.kanban-col-body{padding:8px;display:flex;flex-direction:column;gap:8px;min-height:60px}
+.kanban-col.drag-over{background:var(--hover)}
+.kanban-card{background:var(--raise);border:1px solid var(--edge);box-shadow:0 1px 3px rgba(0,0,0,.08);padding:8px 10px;cursor:grab;font-size:12.5px}
+.kanban-card:active{cursor:grabbing}
+.kanban-card .nm{font-weight:600}
+.kanban-card .meta{color:var(--faint);font-size:11px;margin-top:2px}
+.kanban-empty{font-size:11px;padding:6px 0;text-align:center}
+</style>
 </head>
 <body>
 
@@ -28,31 +44,43 @@
     </header>
 
     <section class="view">
-      <div class="big" style="margin-bottom:16px">
-        <div><div class="v n" id="stat-total">—</div><div class="k">Active employees</div></div>
-        <div><div class="v n" id="stat-managers">—</div><div class="k">People with direct reports</div></div>
-        <div><div class="v n" id="stat-largest">—</div><div class="k">Largest team</div></div>
-        <div><div class="v hot" id="stat-gap">—</div><div class="k">No manager, manages no one</div></div>
+      <div class="tabs" id="org-tab-strip">
+        <div class="tab active" data-tab="board">Board</div>
+        <div class="tab" data-tab="list">List</div>
       </div>
 
-      <div class="card" id="gap-card" style="margin-bottom:16px" hidden>
-        <div class="card-h"><h3>Worth checking</h3><span>No manager set, and nobody reports to them</span></div>
-        <table>
-          <thead><tr><th>Employee</th><th>Job title</th><th>Division</th><th>Location</th></tr></thead>
-          <tbody id="gap-rows"></tbody>
-        </table>
+      <div id="org-board-view">
+        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Managers and office staff only — field employees don't clutter this view. Drag a card into a column to change who they report to.</p>
+        <div id="org-kanban"></div>
       </div>
 
-      <div id="teams"></div>
+      <div id="org-list-view" hidden>
+        <div class="big" style="margin-bottom:16px">
+          <div><div class="v n" id="stat-total">—</div><div class="k">Active employees</div></div>
+          <div><div class="v n" id="stat-managers">—</div><div class="k">People with direct reports</div></div>
+          <div><div class="v n" id="stat-largest">—</div><div class="k">Largest team</div></div>
+          <div><div class="v hot" id="stat-gap">—</div><div class="k">No manager, manages no one</div></div>
+        </div>
+
+        <div class="card" id="gap-card" style="margin-bottom:16px" hidden>
+          <div class="card-h"><h3>Worth checking</h3><span>No manager set, and nobody reports to them</span></div>
+          <table>
+            <thead><tr><th>Employee</th><th>Job title</th><th>Division</th><th>Location</th></tr></thead>
+            <tbody id="gap-rows"></tbody>
+          </table>
+        </div>
+
+        <div id="teams"></div>
+      </div>
     </section>
   </div>
 </div>
 
 <script type="module">
 import { requireAuth } from './auth.js';
-import { initShell } from './app.js';
+import { initShell, showToast } from './app.js';
 import { db } from './firebaseconfig.js';
-import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { collection, doc, getDoc, getDocs, updateDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
@@ -67,11 +95,30 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// Shared between the List view's tables and the Board's Kanban --
+// reloaded fresh from Firestore after every drag-and-drop reassignment
+// rather than patched in place, since the roster at this level is
+// small and correctness matters more than shaving one read.
+let active = [];
+let byId = new Map();
+// Who counts as "upper level" or "mid level" for the Board -- the same
+// Manager / Office lists Settings already keeps for Harassment Training
+// grouping, reused here rather than inventing a separate "level" field.
+// Anyone in neither is Field and doesn't get a card.
+let orgManagerIds = new Set();
+let orgOfficeIds = new Set();
+
 async function loadAndRender() {
-  const snap = await getDocs(collection(db, 'employees'));
-  const all = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => !e.is_test);
-  const active = all.filter((e) => e.status !== 'terminated');
-  const byId = new Map(active.map((e) => [e.id, e]));
+  const [empSnap, mgrSnap, officeSnap] = await Promise.all([
+    getDocs(collection(db, 'employees')),
+    getDoc(doc(db, 'settings', 'managers')),
+    getDoc(doc(db, 'settings', 'office_employees')),
+  ]);
+  const all = empSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => !e.is_test);
+  active = all.filter((e) => e.status !== 'terminated');
+  byId = new Map(active.map((e) => [e.id, e]));
+  orgManagerIds = new Set(mgrSnap.exists() ? (mgrSnap.data().employee_ids || []) : []);
+  orgOfficeIds = new Set(officeSnap.exists() ? (officeSnap.data().employee_ids || []) : []);
 
   // Direct reports per manager -- computed from manager_emp_id every
   // load, never stored, same as anniversary/tenure elsewhere in this app.
@@ -138,7 +185,102 @@ async function loadAndRender() {
       </div>
     `;
   }).join('') || '<div class="card"><div class="card-body dim">Nobody in the active roster has a manager or direct reports set yet.</div></div>';
+
+  renderOrgBoard();
 }
+
+// ---- Board (Kanban) -- one column per manager, cards for everyone
+// Manager- or Office-flagged (Field employees never show up here).
+// Dragging a card into a column sets that employee's manager_emp_id to
+// the column's manager, i.e. this IS the org chart edit UI -- there's
+// no separate "reassign manager" form anywhere else. ----
+function renderOrgBoard() {
+  const eligible = active.filter((e) => orgManagerIds.has(e.id) || orgOfficeIds.has(e.id));
+  const columns = [...orgManagerIds]
+    .filter((id) => byId.has(id))
+    .map((id) => byId.get(id))
+    .sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`));
+  const columnIds = new Set(columns.map((m) => m.id));
+
+  const byCol = new Map(columns.map((m) => [m.id, []]));
+  byCol.set(null, []); // "No manager set"
+  eligible.forEach((e) => {
+    const colId = e.manager_emp_id && columnIds.has(e.manager_emp_id) ? e.manager_emp_id : null;
+    byCol.get(colId).push(e);
+  });
+  byCol.forEach((cards) => cards.sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`)));
+
+  const allCols = [{ id: null, label: 'No manager set' }, ...columns.map((m) => ({ id: m.id, label: `${m.first_name} ${m.last_name}` }))];
+
+  document.getElementById('org-kanban').innerHTML = `
+    <div class="kanban">
+      ${allCols.map((c) => `
+        <div class="kanban-col" data-col="${c.id ?? ''}">
+          <div class="kanban-col-h"><span>${escapeHtml(c.label)}</span><span>${byCol.get(c.id).length}</span></div>
+          <div class="kanban-col-body">
+            ${byCol.get(c.id).map((e) => `
+              <div class="kanban-card" draggable="true" data-id="${e.id}">
+                <div class="nm">${escapeHtml(`${e.first_name} ${e.last_name}`)}${orgManagerIds.has(e.id) ? ' <span class="pill">Manager</span>' : ''}</div>
+                <div class="meta">${escapeHtml(e.position) || '—'}${e.division ? ` · ${escapeHtml(e.division)}` : ''}</div>
+              </div>
+            `).join('') || '<div class="kanban-empty dim">—</div>'}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  document.querySelectorAll('#org-kanban .kanban-card').forEach((card) => {
+    card.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', card.dataset.id);
+      e.dataTransfer.effectAllowed = 'move';
+    });
+  });
+  document.querySelectorAll('#org-kanban .kanban-col').forEach((col) => {
+    col.addEventListener('dragover', (e) => { e.preventDefault(); col.classList.add('drag-over'); });
+    col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+    col.addEventListener('drop', (e) => {
+      e.preventDefault();
+      col.classList.remove('drag-over');
+      const empId = e.dataTransfer.getData('text/plain');
+      const newMgrId = col.dataset.col || null;
+      if (empId) reassignManager(empId, newMgrId);
+    });
+  });
+}
+
+async function reassignManager(empId, newMgrId) {
+  const emp = byId.get(empId);
+  if (!emp) return;
+  if ((emp.manager_emp_id || null) === newMgrId) return; // dropped back in the same column
+  if (newMgrId === empId) { showToast("Someone can't be their own manager.", 'error'); return; }
+  // Cheapest, most common loop to catch: dragging someone directly into
+  // the column of a person who currently reports to them. Deeper cycles
+  // (three or more levels) aren't checked -- this is a small team and a
+  // human is doing the dragging, not worth the complexity here.
+  if (newMgrId && byId.get(newMgrId)?.manager_emp_id === empId) {
+    showToast("That would make them report to their own direct report.", 'error');
+    return;
+  }
+  try {
+    await updateDoc(doc(db, 'employees', empId), { manager_emp_id: newMgrId, entered_by: profile.uid });
+    showToast('Updated.');
+    await loadAndRender();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not update — ' + err.message, 'error');
+  }
+}
+
+document.querySelectorAll('#org-tab-strip .tab').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#org-tab-strip .tab').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    const isBoard = btn.dataset.tab === 'board';
+    document.getElementById('org-board-view').hidden = !isBoard;
+    document.getElementById('org-list-view').hidden = isBoard;
+  });
+});
 
 await loadAndRender();
 </script>
