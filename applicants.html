@@ -215,6 +215,7 @@
               <tr><td>Resume on file</td><td>Worth a call the next time a role opens — not currently being pursued for anything active.</td></tr>
               <tr><td>Hiring manager wasn't interested</td><td>The hiring manager reviewed the application and passed.</td></tr>
               <tr><td>No experience</td><td>The applicant has no experience in landscaping or the role applied for.</td></tr>
+              <tr><td>Needs additional review</td><td>Not ready to decide yet — set this aside for another look before flagging anything final.</td></tr>
               <tr><td>HR rejected</td><td>Rejected on the HR side.</td></tr>
               <tr><td>VP rejected</td><td>Rejected on the VP review.</td></tr>
               <tr><td>Not selected to move forward</td><td>Didn't move forward, for a reason not covered above.</td></tr>
@@ -231,6 +232,7 @@
             <option value="not_passed">Did not pass interview</option>
             <option value="rejected_any">Rejected (HR or VP)</option>
             <option value="no_experience">No experience</option>
+            <option value="needs_review">Needs additional review</option>
             <option value="not_selected">Not selected to move forward</option>
             <option value="resume_on_file">Resume on file</option>
             <option value="not_interested">Hiring manager wasn't interested</option>
@@ -521,6 +523,7 @@ const OUTCOME_OPTIONS = [
   { value: 'resume_on_file', label: 'Resume on file' },
   { value: 'not_interested', label: "Hiring manager wasn't interested" },
   { value: 'no_experience', label: 'No experience' },
+  { value: 'needs_review', label: 'Needs additional review' },
   { value: 'hr_rejected', label: 'HR rejected' },
   { value: 'vp_rejected', label: 'VP rejected' },
   { value: 'not_selected', label: 'Not selected to move forward' },
@@ -808,15 +811,16 @@ let resumePoolOpen = false;
 
 function renderPipeline() {
   const stillMoving = applicants.filter((a) => a.interview_status !== 'not_passed'
-    && ![...REJECTED_OUTCOMES, 'not_selected', 'resume_on_file', 'not_interested', 'no_experience', 'hired'].includes(a.outcome));
+    && ![...REJECTED_OUTCOMES, 'not_selected', 'resume_on_file', 'not_interested', 'no_experience', 'needs_review', 'hired'].includes(a.outcome));
   const hiredCount = applicants.filter((a) => a.outcome === 'hired').length;
   const rejectedCount = applicants.filter((a) => REJECTED_OUTCOMES.includes(a.outcome) || a.interview_status === 'not_passed').length;
   const noExperienceCount = applicants.filter((a) => a.outcome === 'no_experience').length;
+  const needsReviewCount = applicants.filter((a) => a.outcome === 'needs_review').length;
   const notSelectedCount = applicants.filter((a) => a.outcome === 'not_selected').length;
   const resumePool = applicants.filter((a) => a.outcome === 'resume_on_file');
   const notInterestedCount = applicants.filter((a) => a.outcome === 'not_interested').length;
   document.getElementById('pipeline-summary').textContent =
-    `${stillMoving.length} still moving — ${hiredCount} hired, ${rejectedCount} rejected (HR/VP), ${noExperienceCount} no experience, ${notSelectedCount} not selected to move forward, ${resumePool.length} resume on file, ${notInterestedCount} manager wasn't interested`;
+    `${stillMoving.length} still moving — ${hiredCount} hired, ${rejectedCount} rejected (HR/VP), ${noExperienceCount} no experience, ${needsReviewCount} need additional review, ${notSelectedCount} not selected to move forward, ${resumePool.length} resume on file, ${notInterestedCount} manager wasn't interested`;
 
   // Resume on file isn't a dead end like Rejected -- it's a bench of
   // people worth a call the next time a role opens up, so it gets its
@@ -1109,7 +1113,7 @@ function pipelineStepperHtml() {
 
 function renderKanban() {
   const active = applicants.filter((a) => a.interview_status !== 'not_passed'
-    && ![...REJECTED_OUTCOMES, 'not_selected', 'resume_on_file', 'not_interested', 'no_experience'].includes(a.outcome));
+    && ![...REJECTED_OUTCOMES, 'not_selected', 'resume_on_file', 'not_interested', 'no_experience', 'needs_review'].includes(a.outcome));
   const byCol = KANBAN_COLUMNS.map(() => []);
   active.forEach((a) => { byCol[kanbanColumnIndex(a)].push(a); });
 
@@ -1236,7 +1240,7 @@ function render() {
   const appliedFrom = document.getElementById('applied-from').value;
   const appliedTo = document.getElementById('applied-to').value;
 
-  const CLOSED_OUT_OUTCOMES = [...REJECTED_OUTCOMES, 'not_selected', 'resume_on_file', 'not_interested', 'no_experience'];
+  const CLOSED_OUT_OUTCOMES = [...REJECTED_OUTCOMES, 'not_selected', 'resume_on_file', 'not_interested', 'no_experience', 'needs_review'];
   const visible = applicants.filter((a) => {
     if (q && !(a.name || '').toLowerCase().includes(q)) return false;
     // Active pipeline: still waiting on a decision -- no outcome flagged
@@ -1248,6 +1252,7 @@ function render() {
     if (statusFilter === 'not_passed' && a.interview_status !== 'not_passed') return false;
     if (statusFilter === 'rejected_any' && !REJECTED_OUTCOMES.includes(a.outcome)) return false;
     if (statusFilter === 'no_experience' && a.outcome !== 'no_experience') return false;
+    if (statusFilter === 'needs_review' && a.outcome !== 'needs_review') return false;
     if (statusFilter === 'not_selected' && a.outcome !== 'not_selected') return false;
     if (statusFilter === 'resume_on_file' && a.outcome !== 'resume_on_file') return false;
     if (statusFilter === 'not_interested' && a.outcome !== 'not_interested') return false;
