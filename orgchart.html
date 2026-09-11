@@ -50,6 +50,7 @@
     <section class="view">
       <div class="tabs" id="org-tab-strip">
         <div class="tab active" data-tab="board">Board</div>
+        <div class="tab" data-tab="assign">Assign</div>
         <div class="tab" data-tab="list">List</div>
       </div>
 
@@ -57,6 +58,16 @@
         <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Managers and office staff only — field employees don't clutter this view. <b>Click a card to select it</b> (it'll highlight), then click the card you want them to report to. Click the same card again to cancel.</p>
         <div class="org-root-drop" id="org-root-drop">After clicking someone, click here to remove their manager (top level)</div>
         <div id="org-kanban"></div>
+      </div>
+
+      <div id="org-assign-view" hidden>
+        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Same Manager/Office list as the Board, just as a plain list — pick who each person reports to from the dropdown.</p>
+        <div class="card">
+          <table>
+            <thead><tr><th>Employee</th><th>Job title</th><th>Division</th><th>Reports to</th></tr></thead>
+            <tbody id="assign-rows"></tbody>
+          </table>
+        </div>
       </div>
 
       <div id="org-list-view" hidden>
@@ -196,6 +207,39 @@ async function loadAndRender() {
   }).join('') || '<div class="card"><div class="card-body dim">Nobody in the active roster has a manager or direct reports set yet.</div></div>';
 
   renderOrgBoard();
+  renderOrgAssign();
+}
+
+// ---- Assign -- the same Manager/Office people as the Board, as a
+// plain table with a "Reports to" dropdown per row. Exactly the same
+// reassignManager() the Board's click-to-move uses; this is just a
+// more reliable way to get there than clicking cards.
+function renderOrgAssign() {
+  const eligible = active.filter((e) => orgManagerIds.has(e.id) || orgOfficeIds.has(e.id))
+    .sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`));
+
+  document.getElementById('assign-rows').innerHTML = eligible.length ? eligible.map((e) => `
+    <tr>
+      <td><b>${escapeHtml(`${e.first_name} ${e.last_name}`)}</b>${orgManagerIds.has(e.id) ? ' <span class="pill">Manager</span>' : ''}</td>
+      <td class="dim">${escapeHtml(e.position) || '—'}</td>
+      <td class="dim">${escapeHtml(e.division) || '—'}</td>
+      <td>
+        <select class="inp assign-mgr-select" data-id="${e.id}" style="height:32px;font-size:12.5px;min-width:200px">
+          <option value="">— No manager (top level) —</option>
+          ${eligible.filter((m) => m.id !== e.id).map((m) => `
+            <option value="${m.id}" ${e.manager_emp_id === m.id ? 'selected' : ''}>${escapeHtml(`${m.first_name} ${m.last_name}`)}${m.position ? ` — ${escapeHtml(m.position)}` : ''}</option>
+          `).join('')}
+        </select>
+      </td>
+    </tr>
+  `).join('') : '<tr><td colspan="4" class="dim">Nobody is flagged Manager or Office yet — set that in Settings first.</td></tr>';
+
+  document.querySelectorAll('.assign-mgr-select').forEach((sel) => {
+    sel.addEventListener('change', async () => {
+      await reassignManager(sel.dataset.id, sel.value || null);
+      renderOrgAssign(); // resets the dropdown to the real value if the change was rejected
+    });
+  });
 }
 
 // ---- Board (Kanban) -- one column per manager, cards for everyone
@@ -346,9 +390,10 @@ document.querySelectorAll('#org-tab-strip .tab').forEach((btn) => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('#org-tab-strip .tab').forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
-    const isBoard = btn.dataset.tab === 'board';
-    document.getElementById('org-board-view').hidden = !isBoard;
-    document.getElementById('org-list-view').hidden = isBoard;
+    const tab = btn.dataset.tab;
+    document.getElementById('org-board-view').hidden = tab !== 'board';
+    document.getElementById('org-assign-view').hidden = tab !== 'assign';
+    document.getElementById('org-list-view').hidden = tab !== 'list';
   });
 });
 
