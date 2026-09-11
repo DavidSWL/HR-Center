@@ -805,10 +805,11 @@ async function renderReport(key) {
     // value from before rejections said who rejected them (HR or VP) --
     // old records may still carry it, so it's folded into Rejected here.
     const REJECTED_OUTCOMES = ['rejected', 'hr_rejected', 'vp_rejected'];
-    const CLOSED_OUT = [...REJECTED_OUTCOMES, 'not_selected', 'resume_on_file', 'not_interested', 'no_experience'];
+    const CLOSED_OUT = [...REJECTED_OUTCOMES, 'not_selected', 'resume_on_file', 'not_interested', 'no_experience', 'needs_review'];
     const hired = apps.filter((a) => a.outcome === 'hired').length;
     const rejected = apps.filter((a) => REJECTED_OUTCOMES.includes(a.outcome) || a.interview_status === 'not_passed').length;
     const noExperience = apps.filter((a) => a.outcome === 'no_experience').length;
+    const needsReview = apps.filter((a) => a.outcome === 'needs_review').length;
     const notSelected = apps.filter((a) => a.outcome === 'not_selected').length;
     const resumeOnFile = apps.filter((a) => a.outcome === 'resume_on_file').length;
     const notInterested = apps.filter((a) => a.outcome === 'not_interested').length;
@@ -839,6 +840,7 @@ async function renderReport(key) {
       ['Hired', hired],
       ['Rejected (HR or VP)', rejected],
       ['No experience', noExperience],
+      ['Needs additional review', needsReview],
       ['Not selected to move forward', notSelected],
       ['Resume on file', resumeOnFile],
       [`Hiring manager wasn't interested`, notInterested],
