@@ -24,6 +24,9 @@
 .org-card.selected{border-color:var(--accentTx);box-shadow:0 0 0 2px var(--accentTx)}
 .org-card .nm{font-weight:600}
 .org-card .meta{color:var(--faint);font-size:9.5px;margin-top:1px}
+.org-move{display:flex;justify-content:center;gap:2px;margin-bottom:3px}
+.org-move-btn{width:16px;height:14px;line-height:12px;padding:0;border:1px solid var(--edge);background:var(--bg);color:var(--faint);font-size:8px;cursor:pointer}
+.org-move-btn:hover{background:var(--hover);color:var(--muted)}
 .org-root-drop{border:1px dashed var(--edge);padding:10px;text-align:center;font-size:11.5px;color:var(--faint);margin:0 auto 16px;max-width:420px}
 .org-root-drop.drag-over{background:var(--hover);border-color:var(--accentTx);color:var(--muted)}
 </style>
@@ -53,7 +56,7 @@
       </div>
 
       <div id="org-board-view">
-        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Managers and office staff only — field employees don't clutter this view. Rows are set by <b>Rank</b> (row 1 = rank 1, and so on — set it in the Assign tab); the lines show who actually reports to whom, even across rows. <b>Click a card to select it</b> (it'll highlight), then click the card you want them to report to. Click the same card again to cancel.</p>
+        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Managers and office staff only — field employees don't clutter this view. Use the <b>◀ ▲ ▼ ▶</b> arrows on each card to move that person up/down a row or left/right within it. To change who someone reports to (the line), <b>click a card to select it</b> (it'll highlight), then click the card you want them to report to. Click the same card again to cancel.</p>
         <div class="org-root-drop" id="org-root-drop">After clicking someone, click here to remove their manager (top level)</div>
         <div id="org-kanban"></div>
       </div>
@@ -284,10 +287,25 @@ function renderOrgBoard() {
   function cardHtml(e) {
     return `
       <div class="org-card" draggable="true" data-id="${e.id}">
+        <div class="org-move">
+          <button type="button" class="org-move-btn" data-id="${e.id}" data-dir="left" title="Move left">◀</button>
+          <button type="button" class="org-move-btn" data-id="${e.id}" data-dir="up" title="Move up a row">▲</button>
+          <button type="button" class="org-move-btn" data-id="${e.id}" data-dir="down" title="Move down a row">▼</button>
+          <button type="button" class="org-move-btn" data-id="${e.id}" data-dir="right" title="Move right">▶</button>
+        </div>
         <div class="nm">${escapeHtml(`${e.first_name} ${e.last_name}`)}${orgManagerIds.has(e.id) ? ' <span class="pill">Manager</span>' : ''}</div>
         <div class="meta">${escapeHtml(e.position) || '—'}${e.division ? ` · ${escapeHtml(e.division)}` : ''}</div>
       </div>
     `;
+  }
+
+  // Left-to-right position within a row -- org_order, ascending, with
+  // alphabetical as the fallback for anyone who hasn't been moved yet.
+  function rowSort(a, b) {
+    const oa = a.org_order ?? Infinity;
+    const ob = b.org_order ?? Infinity;
+    if (oa !== ob) return oa - ob;
+    return `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`);
   }
 
   document.getElementById('org-kanban').innerHTML = eligible.length
@@ -297,9 +315,7 @@ function renderOrgBoard() {
         <div class="org-rows">
           ${ranks.map((r) => `
             <div class="org-row">
-              ${byRank.get(r)
-                .sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`))
-                .map(cardHtml).join('')}
+              ${byRank.get(r).sort(rowSort).map(cardHtml).join('')}
             </div>
           `).join('')}
         </div>
@@ -332,6 +348,19 @@ function renderOrgBoard() {
       svg.appendChild(line);
     });
   }
+
+  // Arrow-button move -- the reliable way to reposition someone, since
+  // native drag-and-drop doesn't work on this user's iPad OR laptop.
+  // Up/down steps org_rank (the row); left/right steps org_order (the
+  // position within that row).
+  document.querySelectorAll('#org-kanban .org-move-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const dir = btn.dataset.dir;
+      if (dir === 'up' || dir === 'down') moveRank(btn.dataset.id, dir);
+      else moveOrder(btn.dataset.id, dir);
+    });
+  });
 
   if (selectedEmpId && !byId.has(selectedEmpId)) selectedEmpId = null;
   document.querySelectorAll('#org-kanban .org-card').forEach((card) => {
@@ -384,6 +413,78 @@ function renderOrgBoard() {
     selectedEmpId = null;
     reassignManager(toMove, null);
   };
+}
+
+function eligibleList() {
+  return active.filter((e) => orgManagerIds.has(e.id) || orgOfficeIds.has(e.id));
+}
+
+// Up/down: step org_rank by 1 -- since rank number IS the row, moving a
+// row is just changing that number. Someone with no rank set yet joins
+// the bottom real row on their first "up" (there's no row to compare
+// "down" from, so that's a no-op until they have a rank).
+async function moveRank(empId, dir) {
+  const emp = byId.get(empId);
+  if (!emp) return;
+  const cur = emp.org_rank ?? null;
+  let newRank;
+  if (dir === 'up') {
+    if (cur === null) {
+      const ranks = eligibleList().map((e) => e.org_rank).filter((r) => r != null);
+      newRank = ranks.length ? Math.max(...ranks) : 1;
+    } else {
+      newRank = cur - 1;
+      if (newRank < 1) { showToast('Already at the top row.', 'error'); return; }
+    }
+  } else {
+    if (cur === null) { showToast("They don't have a row yet — move them up first.", 'error'); return; }
+    newRank = cur + 1;
+  }
+  try {
+    await updateDoc(doc(db, 'employees', empId), { org_rank: newRank, entered_by: profile.uid });
+    emp.org_rank = newRank;
+    renderOrgBoard();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not update — ' + err.message, 'error');
+  }
+}
+
+// Left/right: swap this person with their neighbor within the same row.
+// Whenever a swap happens, the whole row's org_order is made explicit
+// (0..n-1) so the new arrangement actually sticks -- two people who
+// never had an order set would otherwise both fall back to alphabetical
+// and the swap wouldn't visibly do anything.
+async function moveOrder(empId, dir) {
+  const emp = byId.get(empId);
+  if (!emp) return;
+  const rank = emp.org_rank ?? Infinity;
+  const row = eligibleList()
+    .filter((e) => (e.org_rank ?? Infinity) === rank)
+    .sort((a, b) => {
+      const oa = a.org_order ?? Infinity;
+      const ob = b.org_order ?? Infinity;
+      if (oa !== ob) return oa - ob;
+      return `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`);
+    });
+  const idx = row.findIndex((e) => e.id === empId);
+  const swapIdx = dir === 'left' ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= row.length) {
+    showToast(dir === 'left' ? 'Already first in this row.' : 'Already last in this row.', 'error');
+    return;
+  }
+  const reordered = [...row];
+  [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
+  try {
+    await Promise.all(reordered.map((e, i) => (e.org_order ?? null) === i
+      ? null
+      : updateDoc(doc(db, 'employees', e.id), { org_order: i, entered_by: profile.uid })));
+    reordered.forEach((e, i) => { e.org_order = i; });
+    renderOrgBoard();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not update — ' + err.message, 'error');
+  }
 }
 
 // Walks up from the proposed new manager through the manager_emp_id
