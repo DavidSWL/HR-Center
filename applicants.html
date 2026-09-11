@@ -203,6 +203,25 @@
 
       <div class="card">
         <div class="card-h"><h3>Applicant tracker</h3><span id="tracker-summary">—</span></div>
+        <div class="card-h clickable" id="outcome-cheatsheet-toggle" style="border-top:1px solid var(--line)">
+          <span class="dim" style="font-size:12.5px">Outcome cheat sheet — what each flag means</span>
+          <span class="chevron" id="outcome-cheatsheet-chevron">▼</span>
+        </div>
+        <div class="card-body" id="outcome-cheatsheet-body" hidden>
+          <table>
+            <thead><tr><th>Flag</th><th>Means</th></tr></thead>
+            <tbody>
+              <tr><td>Hired / Started</td><td>They got the role.</td></tr>
+              <tr><td>Resume on file</td><td>Worth a call the next time a role opens — not currently being pursued for anything active.</td></tr>
+              <tr><td>Hiring manager wasn't interested</td><td>The hiring manager reviewed the application and passed.</td></tr>
+              <tr><td>No experience</td><td>The applicant has no experience in landscaping or the role applied for.</td></tr>
+              <tr><td>HR rejected</td><td>Rejected on the HR side.</td></tr>
+              <tr><td>VP rejected</td><td>Rejected on the VP review.</td></tr>
+              <tr><td>Not selected to move forward</td><td>Didn't move forward, for a reason not covered above.</td></tr>
+              <tr><td>— Active —</td><td>Still moving through the pipeline — no flag set yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
         <div class="tools">
           <input class="inp" id="search" placeholder="Search name" style="min-width:190px">
           <select class="inp" id="status-filter">
@@ -823,6 +842,11 @@ function renderPipeline() {
 document.getElementById('resume-pool-toggle').addEventListener('click', () => {
   resumePoolOpen = !resumePoolOpen;
   renderPipeline();
+});
+document.getElementById('outcome-cheatsheet-toggle').addEventListener('click', () => {
+  const body = document.getElementById('outcome-cheatsheet-body');
+  body.hidden = !body.hidden;
+  document.getElementById('outcome-cheatsheet-chevron').textContent = body.hidden ? '▼' : '▲';
 });
 
 // ---- Resume pool export — a browsable list for a manager, covering
