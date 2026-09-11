@@ -458,13 +458,14 @@
   </div>
 </div>
 
-<!-- Rejection reason modal — David only, enforced in firestore.rules
-     (a separate /private subcollection only his account can read or
-     write), not just hidden from other staff here. -->
+<!-- Reason modal (HR/VP rejected, or hiring manager wasn't interested)
+     — David only, enforced in firestore.rules (a separate /private
+     subcollection only his account can read or write), not just
+     hidden from other staff here. -->
 <div class="modal-overlay" id="reject-reason-overlay" hidden>
   <div class="modal">
     <div class="modal-h">
-      <h3>Reason for rejection</h3>
+      <h3>Reason (private)</h3>
       <button class="modal-close" id="reject-reason-close" type="button">&times;</button>
     </div>
     <div class="modal-body">
@@ -529,6 +530,9 @@ const OUTCOME_OPTIONS = [
   { value: 'not_selected', label: 'Not selected to move forward' },
 ];
 const REJECTED_OUTCOMES = ['rejected', 'hr_rejected', 'vp_rejected'];
+// Outcomes where David can leave himself a private note on why --
+// HR/VP rejections, plus a hiring manager passing on someone.
+const HAS_REASON_OUTCOMES = [...REJECTED_OUTCOMES, 'not_interested'];
 function outcomeOptionsHtml(current) {
   return OUTCOME_OPTIONS.map((o) => `<option value="${o.value}" ${current === o.value ? 'selected' : ''}>${o.label}</option>`).join('');
 }
@@ -1327,7 +1331,7 @@ function render() {
             ${outcomeOptionsHtml(a.outcome)}
           </select>
           <button type="button" class="gh flag-btn" data-id="${a.id}" style="margin-top:4px;font-size:11px;padding:2px 8px">Flag…</button>
-          ${REJECTED_OUTCOMES.includes(a.outcome) && profile.role === 'david'
+          ${HAS_REASON_OUTCOMES.includes(a.outcome) && profile.role === 'david'
             ? `<button type="button" class="gh reject-reason-btn" data-id="${a.id}" style="margin-top:4px;font-size:11px;padding:2px 8px">Reason (private)</button>`
             : ''}
         </td>
@@ -1757,7 +1761,7 @@ function progressFieldsHtml(a) {
       <select class="f-in" id="edit-app-outcome">
         ${outcomeOptionsHtml(a.outcome)}
       </select>
-      ${REJECTED_OUTCOMES.includes(a.outcome) && profile.role === 'david'
+      ${HAS_REASON_OUTCOMES.includes(a.outcome) && profile.role === 'david'
         ? `<button type="button" class="gh" id="edit-app-reason-btn" style="margin-top:6px;font-size:11px;padding:2px 8px">Reason (private)</button>`
         : ''}
     </div>
