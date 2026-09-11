@@ -1239,12 +1239,11 @@ function render() {
   const CLOSED_OUT_OUTCOMES = [...REJECTED_OUTCOMES, 'not_selected', 'resume_on_file', 'not_interested', 'no_experience'];
   const visible = applicants.filter((a) => {
     if (q && !(a.name || '').toLowerCase().includes(q)) return false;
-    // Active pipeline: once someone's Hired, they've graduated to the
-    // roster and no longer need to clutter this list -- everyone else,
-    // rejected/resume-on-file/not-interested included, still shows here
-    // (faded) so a recent decision stays visible. A true interview
-    // failure works the same way as those three.
-    if (statusFilter === 'active' && (a.interview_status === 'not_passed' || a.outcome === 'hired')) return false;
+    // Active pipeline: still waiting on a decision -- no outcome flagged
+    // yet and hasn't failed interview. Anyone with any outcome set
+    // (Hired, Rejected, Resume on file, whatever) has already been
+    // decided and belongs in "Everyone" or a specific filter, not here.
+    if (statusFilter === 'active' && (a.interview_status === 'not_passed' || a.outcome)) return false;
     if (statusFilter === 'hired' && a.outcome !== 'hired') return false;
     if (statusFilter === 'not_passed' && a.interview_status !== 'not_passed') return false;
     if (statusFilter === 'rejected_any' && !REJECTED_OUTCOMES.includes(a.outcome)) return false;
