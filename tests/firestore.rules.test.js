@@ -359,3 +359,32 @@ test('activity log entries cannot be edited once written', async () => {
     as(TANYA).collection('activity').doc('AC1').update({ module: 'edited' })
   );
 });
+
+// ---- an employee's private concern note is David-only ---------------------
+
+test('Tanya cannot read or write an employee private concern note', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection('employees').doc('E100').collection('private').doc('concern').set({
+      flagged: true,
+      note: 'Something only David should see.',
+      entered_by: DAVID,
+    });
+  });
+  await assertFails(
+    as(TANYA).collection('employees').doc('E100').collection('private').doc('concern').get()
+  );
+  await assertFails(
+    as(TANYA).collection('employees').doc('E100').collection('private').doc('concern')
+      .set({ flagged: true, note: 'Tanya trying to write this.', entered_by: TANYA })
+  );
+});
+
+test('David can flag and read an employee private concern note', async () => {
+  await assertSucceeds(
+    as(DAVID).collection('employees').doc('E100').collection('private').doc('concern')
+      .set({ flagged: true, note: 'Keeping an eye on this one.', entered_by: DAVID })
+  );
+  await assertSucceeds(
+    as(DAVID).collection('employees').doc('E100').collection('private').doc('concern').get()
+  );
+});

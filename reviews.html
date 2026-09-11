@@ -97,18 +97,44 @@
   </div>
 </div>
 
+<!-- A concern David has about a new hire during onboarding -- private
+     to his account only, same as the applicant rejection reason. -->
+<div class="modal-overlay" id="concern-overlay" hidden>
+  <div class="modal">
+    <div class="modal-h">
+      <h3>Concern — <span id="concern-emp-name"></span></h3>
+      <button class="modal-close" id="concern-close" type="button">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="dim" style="margin-bottom:10px">Only your account can see or edit this — nobody else on staff has access to it.</p>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:12px">
+        <input type="checkbox" id="concern-flagged"> Flagged for concern
+      </label>
+      <div class="field">
+        <label class="f-lab" for="concern-note">Note</label>
+        <textarea class="f-in" id="concern-note" rows="4" style="resize:vertical" placeholder="What's the concern…"></textarea>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="gh" id="concern-cancel-btn">Cancel</button>
+      <button type="button" class="gh solid" id="concern-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
 import { db } from './firebaseconfig.js';
 import { ONBOARDING_CHECKLIST } from './letterhead-assets.js';
 import {
-  collection, collectionGroup, doc, getDocs, updateDoc, addDoc, writeBatch, serverTimestamp,
+  collection, collectionGroup, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
 initShell('reviews', profile);
+const isDavid = profile.role === 'david';
 
 document.getElementById('header-date').textContent =
   new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
@@ -178,6 +204,21 @@ async function loadPaperwork() {
   await Promise.all(onboarding.map(async (e) => {
     const snap = await getDocs(collection(db, 'employees', e.id, 'onboarding_docs'));
     paperworkCountByEmp[e.id] = snap.docs.filter((d) => d.data().on_file).length;
+  }));
+}
+
+// David-only -- a concern he's flagged about a new hire during
+// onboarding, separate from the formal 30/60/90 reviews. Not loaded at
+// all for Tanya/the admin assistant since firestore.rules would deny
+// the read anyway.
+let concernByEmp = {};
+async function loadConcerns() {
+  if (!isDavid) return;
+  const onboarding = employees.filter((e) => e.status === 'onboarding');
+  concernByEmp = {};
+  await Promise.all(onboarding.map(async (e) => {
+    const snap = await getDoc(doc(db, 'employees', e.id, 'private', 'concern'));
+    if (snap.exists()) concernByEmp[e.id] = snap.data();
   }));
 }
 
@@ -257,9 +298,13 @@ function renderBoard() {
     const sickCell = sick.next
       ? `<b>${sick.available} hrs</b><br><span class="dim" style="font-size:11px">+${sick.next.hours} hrs on ${formatDate(sick.nextUnlockDate.toISOString().slice(0, 10))}</span>`
       : `<b>${sick.available} hrs</b><br><span class="dim" style="font-size:11px">Fully vested</span>`;
+    const concern = concernByEmp[emp.id];
+    const concernCell = isDavid
+      ? `${concern?.flagged ? ' <span class="pill bad">Concern</span>' : ''} <button type="button" class="gh concern-btn" data-emp="${emp.id}" style="margin-left:4px;font-size:11px;padding:2px 8px">Concern (private)</button>`
+      : '';
     return `
     <tr>
-      <td><b>${emp.first_name} ${emp.last_name}</b> <span class="mono dim">${emp.id}</span></td>
+      <td><b>${emp.first_name} ${emp.last_name}</b> <span class="mono dim">${emp.id}</span>${concernCell}</td>
       <td class="mono">${emp.division || '—'}</td>
       <td class="mono">${day}${day > 90 ? ' <span class="pill bad">Past 90</span>' : ''}</td>
       <td>${milestoneCell}</td>
@@ -284,6 +329,9 @@ function renderBoard() {
   });
   document.querySelectorAll('#board-rows .assignee-select').forEach((sel) => {
     sel.addEventListener('change', () => reassignAllReviews(sel.dataset.emp, sel.value));
+  });
+  document.querySelectorAll('#board-rows .concern-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openConcern(btn.dataset.emp));
   });
 
   renderKanbanBoard(onboarding);
@@ -316,9 +364,10 @@ function renderKanbanBoard(onboarding) {
           <div class="kanban-col-body">
             ${byCol[i].map(({ emp, day, next }) => `
               <div class="kanban-card${day > 90 && next ? ' gate-blocked' : ''}" data-emp="${emp.id}">
-                <div class="nm">${emp.first_name} ${emp.last_name}</div>
+                <div class="nm">${emp.first_name} ${emp.last_name}${isDavid && concernByEmp[emp.id]?.flagged ? ' <span class="pill bad">Concern</span>' : ''}</div>
                 <div class="meta">${emp.division || '—'} · Day ${day}${day > 90 && next ? ' <span class="pill bad">Past 90</span>' : ''}</div>
                 ${next ? `<div class="meta">Due ${formatDate(next.due_date)}</div>` : ''}
+                ${isDavid ? `<button type="button" class="gh concern-btn" data-emp="${emp.id}" style="margin-top:6px;font-size:11px;padding:2px 8px">Concern (private)</button>` : ''}
               </div>
             `).join('') || '<div class="kanban-empty dim">—</div>'}
           </div>
@@ -328,6 +377,12 @@ function renderKanbanBoard(onboarding) {
   `;
   document.querySelectorAll('#board-kanban .kanban-card').forEach((card) => {
     card.addEventListener('click', () => openHireDetail(card.dataset.emp));
+  });
+  document.querySelectorAll('#board-kanban .concern-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation(); // don't also trigger the card's own click-to-open
+      openConcern(btn.dataset.emp);
+    });
   });
 }
 
@@ -361,6 +416,59 @@ document.querySelectorAll('#board-tab-strip .tab').forEach((btn) => {
     document.getElementById('board-kanban-view').hidden = !isBoard;
     document.getElementById('board-list-view').hidden = isBoard;
   });
+});
+
+// ---- Concern -- David-only note on a new hire he's keeping an eye on
+// during onboarding, separate from the formal reviews. ----
+let concernTargetId = null;
+function openConcern(empId) {
+  const emp = empById(empId);
+  if (!emp) return;
+  concernTargetId = empId;
+  document.getElementById('concern-emp-name').textContent = `${emp.first_name} ${emp.last_name}`;
+  const flaggedCb = document.getElementById('concern-flagged');
+  const noteInput = document.getElementById('concern-note');
+  flaggedCb.checked = false;
+  noteInput.value = '';
+  flaggedCb.disabled = true;
+  noteInput.disabled = true;
+  document.getElementById('concern-overlay').hidden = false;
+  getDoc(doc(db, 'employees', empId, 'private', 'concern')).then((snap) => {
+    if (concernTargetId !== empId) return; // closed before this resolved
+    const data = snap.exists() ? snap.data() : {};
+    flaggedCb.checked = !!data.flagged;
+    noteInput.value = data.note || '';
+    flaggedCb.disabled = false;
+    noteInput.disabled = false;
+  }).catch((err) => {
+    console.error(err);
+    showToast('Could not load — ' + err.message, 'error');
+    closeConcern();
+  });
+}
+function closeConcern() {
+  document.getElementById('concern-overlay').hidden = true;
+  concernTargetId = null;
+}
+document.getElementById('concern-close').addEventListener('click', closeConcern);
+document.getElementById('concern-cancel-btn').addEventListener('click', closeConcern);
+document.getElementById('concern-save-btn').addEventListener('click', async () => {
+  const empId = concernTargetId;
+  if (!empId) return;
+  try {
+    const flagged = document.getElementById('concern-flagged').checked;
+    const note = document.getElementById('concern-note').value.trim();
+    await setDoc(doc(db, 'employees', empId, 'private', 'concern'), {
+      flagged, note, entered_by: profile.uid, updated_at: serverTimestamp(),
+    });
+    concernByEmp[empId] = { flagged, note };
+    showToast('Concern saved.');
+    closeConcern();
+    renderBoard();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
 });
 
 function renderQueue() {
@@ -507,6 +615,7 @@ try {
   await loadStaff();
   await loadReviews();
   await loadPaperwork();
+  await loadConcerns();
   renderBoard();
   renderQueue();
   renderEscalation();
