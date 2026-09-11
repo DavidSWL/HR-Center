@@ -9,6 +9,21 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
+<style>
+.tabs{display:flex;gap:0;border:1px solid var(--line);width:fit-content;margin-bottom:16px}
+.tabs .tab{padding:9px 20px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;color:var(--faint);border-right:1px solid var(--line)}
+.tabs .tab:last-child{border-right:none}
+.tabs .tab.active{background:var(--accent);color:#fff}
+.kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;overflow-x:auto;padding-bottom:2px}
+.kanban-col{background:var(--panel);border:1px solid var(--edge);min-width:144px;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.kanban-col-h{padding:8px 10px;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--edge);display:flex;justify-content:space-between;gap:6px;background:var(--raise)}
+.kanban-col-body{padding:8px;display:flex;flex-direction:column;gap:8px;min-height:60px}
+.kanban-card{background:var(--raise);border:1px solid var(--edge);box-shadow:0 1px 3px rgba(0,0,0,.08);padding:8px 10px;cursor:pointer;font-size:12.5px}
+.kanban-card.gate-blocked{border-left:3px solid var(--alertTx)}
+.kanban-card .nm{font-weight:600}
+.kanban-card .meta{color:var(--faint);font-size:11px;margin-top:2px}
+.kanban-empty{font-size:11px;padding:6px 0;text-align:center}
+</style>
 </head>
 <body>
 
@@ -31,11 +46,20 @@
 
       <div class="card" style="margin-bottom:16px">
         <div class="card-h"><h3>New hire board</h3><span id="board-summary">—</span></div>
-        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Click a milestone to check off the review and paperwork for that employee.</p>
-        <table>
-          <thead><tr><th>Employee</th><th>Division</th><th>Day</th><th>Next milestone</th><th>Paperwork</th><th>Sick time</th></tr></thead>
-          <tbody id="board-rows"></tbody>
-        </table>
+        <div class="tabs" id="board-tab-strip">
+          <div class="tab active" data-tab="board">Board</div>
+          <div class="tab" data-tab="list">List</div>
+        </div>
+        <div id="board-kanban-view">
+          <div id="board-kanban"></div>
+        </div>
+        <div id="board-list-view" hidden>
+          <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Click a milestone to check off the review and paperwork for that employee.</p>
+          <table>
+            <thead><tr><th>Employee</th><th>Division</th><th>Day</th><th>Next milestone</th><th>Paperwork</th><th>Sick time</th></tr></thead>
+            <tbody id="board-rows"></tbody>
+          </table>
+        </div>
       </div>
 
       <div class="card" style="margin-bottom:16px">
@@ -61,18 +85,56 @@
   </div>
 </div>
 
+<!-- New hire board card, opened from the Kanban view (the List view
+     expands the same info inline in the table instead). -->
+<div class="modal-overlay" id="hire-detail-overlay" hidden>
+  <div class="modal">
+    <div class="modal-h">
+      <h3 id="hire-detail-name">Employee</h3>
+      <button class="modal-close" id="hire-detail-close" type="button">&times;</button>
+    </div>
+    <div class="modal-body" id="hire-detail-body"></div>
+  </div>
+</div>
+
+<!-- A concern David has about a new hire during onboarding -- private
+     to his account only, same as the applicant rejection reason. -->
+<div class="modal-overlay" id="concern-overlay" hidden>
+  <div class="modal">
+    <div class="modal-h">
+      <h3>Concern — <span id="concern-emp-name"></span></h3>
+      <button class="modal-close" id="concern-close" type="button">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="dim" style="margin-bottom:10px">Only your account can see or edit this — nobody else on staff has access to it.</p>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:12px">
+        <input type="checkbox" id="concern-flagged"> Flagged for concern
+      </label>
+      <div class="field">
+        <label class="f-lab" for="concern-note">Note</label>
+        <textarea class="f-in" id="concern-note" rows="4" style="resize:vertical" placeholder="What's the concern…"></textarea>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="gh" id="concern-cancel-btn">Cancel</button>
+      <button type="button" class="gh solid" id="concern-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
 import { db } from './firebaseconfig.js';
 import { ONBOARDING_CHECKLIST } from './letterhead-assets.js';
 import {
-  collection, collectionGroup, doc, getDocs, updateDoc, addDoc, writeBatch, serverTimestamp,
+  collection, collectionGroup, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
 initShell('reviews', profile);
+const isDavid = profile.role === 'david';
 
 document.getElementById('header-date').textContent =
   new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
@@ -145,6 +207,21 @@ async function loadPaperwork() {
   }));
 }
 
+// David-only -- a concern he's flagged about a new hire during
+// onboarding, separate from the formal 30/60/90 reviews. Not loaded at
+// all for Tanya/the admin assistant since firestore.rules would deny
+// the read anyway.
+let concernByEmp = {};
+async function loadConcerns() {
+  if (!isDavid) return;
+  const onboarding = employees.filter((e) => e.status === 'onboarding');
+  concernByEmp = {};
+  await Promise.all(onboarding.map(async (e) => {
+    const snap = await getDoc(doc(db, 'employees', e.id, 'private', 'concern'));
+    if (snap.exists()) concernByEmp[e.id] = snap.data();
+  }));
+}
+
 async function loadReviews() {
   const snap = await getDocs(collectionGroup(db, 'reviews'));
   reviews = snap.docs.map((d) => ({
@@ -155,6 +232,36 @@ async function loadReviews() {
 }
 
 let expandedBoardEmpId = null;
+
+// Shared between the List view's inline expand row and the Board
+// (Kanban) view's detail modal -- same assignee picker + milestone
+// table either way, just wrapped differently.
+function milestoneDetailHtml(emp, empReviews) {
+  const currentAssignee = empReviews[0]?.assigned_to || '';
+  return `
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:10px">
+      <span class="dim" style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase">All 3 reviews assigned to</span>
+      <select class="inp assignee-select" data-emp="${emp.id}" style="max-width:220px">
+        <option value="">Unassigned</option>
+        ${staff.map((s) => `<option value="${s.id}" ${currentAssignee === s.id ? 'selected' : ''}>${s.name}</option>`).join('')}
+      </select>
+    </label>
+    <table style="margin:0">
+      <thead><tr><th style="font-size:10.5px">Milestone</th><th style="font-size:10.5px">Due</th><th style="font-size:10.5px">Review done</th><th style="font-size:10.5px">Form received</th><th></th></tr></thead>
+      <tbody>
+        ${empReviews.map((r) => `
+          <tr>
+            <td class="mono">${r.milestone}-day</td>
+            <td class="mono dim">${formatDate(r.due_date)}</td>
+            <td><input type="checkbox" class="review-toggle" data-emp="${emp.id}" data-milestone="${r.milestone}" ${r.review_completed ? 'checked' : ''}></td>
+            <td><input type="checkbox" class="form-toggle" data-emp="${emp.id}" data-milestone="${r.milestone}" ${r.form_received ? 'checked' : ''}></td>
+            <td><a class="gh" href="docgen.html?open=review&${r.review_completed ? `doc=${emp.id}:${r.milestone}` : `emp=${emp.id}&milestone=${r.milestone}`}" style="font-size:12px;padding:4px 10px;display:inline-block;text-decoration:none">${r.review_completed ? 'Open →' : 'Submit →'}</a></td>
+          </tr>
+        `).join('') || '<tr><td colspan="5" class="dim">No 30/60/90 records yet.</td></tr>'}
+      </tbody>
+    </table>
+  `;
+}
 
 function renderBoard() {
   const onboarding = employees
@@ -179,31 +286,10 @@ function renderBoard() {
     const milestoneCell = next
       ? `<button type="button" class="gh milestone-toggle" data-emp="${emp.id}" style="font-size:12px;padding:4px 10px">${next.milestone}-day, due ${formatDate(next.due_date)}${expanded ? ' ▲' : ' ▼'}</button>`
       : `<button type="button" class="gh milestone-toggle" data-emp="${emp.id}" style="font-size:12px;padding:4px 10px"><span class="pill ok">All done</span>${expanded ? ' ▲' : ' ▼'}</button>`;
-    const currentAssignee = empReviews[0]?.assigned_to || '';
     const expandRow = expanded ? `
       <tr>
         <td colspan="6" style="background:var(--hover);padding:10px 14px">
-          <label style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:10px">
-            <span class="dim" style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase">All 3 reviews assigned to</span>
-            <select class="inp assignee-select" data-emp="${emp.id}" style="max-width:220px">
-              <option value="">Unassigned</option>
-              ${staff.map((s) => `<option value="${s.id}" ${currentAssignee === s.id ? 'selected' : ''}>${s.name}</option>`).join('')}
-            </select>
-          </label>
-          <table style="margin:0">
-            <thead><tr><th style="font-size:10.5px">Milestone</th><th style="font-size:10.5px">Due</th><th style="font-size:10.5px">Review done</th><th style="font-size:10.5px">Form received</th><th></th></tr></thead>
-            <tbody>
-              ${empReviews.map((r) => `
-                <tr>
-                  <td class="mono">${r.milestone}-day</td>
-                  <td class="mono dim">${formatDate(r.due_date)}</td>
-                  <td><input type="checkbox" class="review-toggle" data-emp="${emp.id}" data-milestone="${r.milestone}" ${r.review_completed ? 'checked' : ''}></td>
-                  <td><input type="checkbox" class="form-toggle" data-emp="${emp.id}" data-milestone="${r.milestone}" ${r.form_received ? 'checked' : ''}></td>
-                  <td><a class="gh" href="docgen.html?open=review&${r.review_completed ? `doc=${emp.id}:${r.milestone}` : `emp=${emp.id}&milestone=${r.milestone}`}" style="font-size:12px;padding:4px 10px;display:inline-block;text-decoration:none">${r.review_completed ? 'Open →' : 'Submit →'}</a></td>
-                </tr>
-              `).join('') || '<tr><td colspan="5" class="dim">No 30/60/90 records yet.</td></tr>'}
-            </tbody>
-          </table>
+          ${milestoneDetailHtml(emp, empReviews)}
         </td>
       </tr>
     ` : '';
@@ -212,9 +298,13 @@ function renderBoard() {
     const sickCell = sick.next
       ? `<b>${sick.available} hrs</b><br><span class="dim" style="font-size:11px">+${sick.next.hours} hrs on ${formatDate(sick.nextUnlockDate.toISOString().slice(0, 10))}</span>`
       : `<b>${sick.available} hrs</b><br><span class="dim" style="font-size:11px">Fully vested</span>`;
+    const concern = concernByEmp[emp.id];
+    const concernCell = isDavid
+      ? `${concern?.flagged ? ' <span class="pill bad">Concern</span>' : ''} <button type="button" class="gh concern-btn" data-emp="${emp.id}" style="margin-left:4px;font-size:11px;padding:2px 8px">Concern (private)</button>`
+      : '';
     return `
     <tr>
-      <td><b>${emp.first_name} ${emp.last_name}</b> <span class="mono dim">${emp.id}</span></td>
+      <td><b>${emp.first_name} ${emp.last_name}</b> <span class="mono dim">${emp.id}</span>${concernCell}</td>
       <td class="mono">${emp.division || '—'}</td>
       <td class="mono">${day}${day > 90 ? ' <span class="pill bad">Past 90</span>' : ''}</td>
       <td>${milestoneCell}</td>
@@ -237,10 +327,149 @@ function renderBoard() {
   document.querySelectorAll('#board-rows .form-toggle').forEach((cb) => {
     cb.addEventListener('change', () => toggleField(cb.dataset.emp, cb.dataset.milestone, 'form_received', cb.checked));
   });
-  document.querySelectorAll('.assignee-select').forEach((sel) => {
+  document.querySelectorAll('#board-rows .assignee-select').forEach((sel) => {
     sel.addEventListener('change', () => reassignAllReviews(sel.dataset.emp, sel.value));
   });
+  document.querySelectorAll('#board-rows .concern-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openConcern(btn.dataset.emp));
+  });
+
+  renderKanbanBoard(onboarding);
 }
+
+// ---- Board (Kanban) view -- same onboarding data as the List view's
+// table, grouped into columns by whichever review is next due. Click a
+// card to open the same milestone detail as the List view's inline
+// expand row, just in a modal instead. ----
+const HIRE_KANBAN_COLUMNS = [
+  { label: '30-Day Review', milestone: 30 },
+  { label: '60-Day Review', milestone: 60 },
+  { label: '90-Day Review', milestone: 90 },
+  { label: 'All Reviews Complete', milestone: null },
+];
+function hireKanbanColumnIndex(next) {
+  if (!next) return HIRE_KANBAN_COLUMNS.length - 1;
+  const idx = HIRE_KANBAN_COLUMNS.findIndex((c) => c.milestone === next.milestone);
+  return idx === -1 ? 0 : idx;
+}
+function renderKanbanBoard(onboarding) {
+  const byCol = HIRE_KANBAN_COLUMNS.map(() => []);
+  onboarding.forEach((r) => { byCol[hireKanbanColumnIndex(r.next)].push(r); });
+
+  document.getElementById('board-kanban').innerHTML = `
+    <div class="kanban">
+      ${HIRE_KANBAN_COLUMNS.map((c, i) => `
+        <div class="kanban-col">
+          <div class="kanban-col-h"><span>${c.label}</span><span>${byCol[i].length}</span></div>
+          <div class="kanban-col-body">
+            ${byCol[i].map(({ emp, day, next }) => `
+              <div class="kanban-card${day > 90 && next ? ' gate-blocked' : ''}" data-emp="${emp.id}">
+                <div class="nm">${emp.first_name} ${emp.last_name}${isDavid && concernByEmp[emp.id]?.flagged ? ' <span class="pill bad">Concern</span>' : ''}</div>
+                <div class="meta">${emp.division || '—'} · Day ${day}${day > 90 && next ? ' <span class="pill bad">Past 90</span>' : ''}</div>
+                ${next ? `<div class="meta">Due ${formatDate(next.due_date)}</div>` : ''}
+                ${isDavid ? `<button type="button" class="gh concern-btn" data-emp="${emp.id}" style="margin-top:6px;font-size:11px;padding:2px 8px">Concern (private)</button>` : ''}
+              </div>
+            `).join('') || '<div class="kanban-empty dim">—</div>'}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  document.querySelectorAll('#board-kanban .kanban-card').forEach((card) => {
+    card.addEventListener('click', () => openHireDetail(card.dataset.emp));
+  });
+  document.querySelectorAll('#board-kanban .concern-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation(); // don't also trigger the card's own click-to-open
+      openConcern(btn.dataset.emp);
+    });
+  });
+}
+
+function openHireDetail(empId) {
+  const emp = empById(empId);
+  if (!emp) return;
+  const empReviews = reviews.filter((r) => r.empId === empId).sort((a, b) => a.milestone - b.milestone);
+  document.getElementById('hire-detail-name').textContent = `${emp.first_name} ${emp.last_name}`;
+  document.getElementById('hire-detail-body').innerHTML = milestoneDetailHtml(emp, empReviews);
+  document.querySelectorAll('#hire-detail-body .review-toggle').forEach((cb) => {
+    cb.addEventListener('change', () => toggleField(cb.dataset.emp, cb.dataset.milestone, 'review_completed', cb.checked));
+  });
+  document.querySelectorAll('#hire-detail-body .form-toggle').forEach((cb) => {
+    cb.addEventListener('change', () => toggleField(cb.dataset.emp, cb.dataset.milestone, 'form_received', cb.checked));
+  });
+  document.querySelectorAll('#hire-detail-body .assignee-select').forEach((sel) => {
+    sel.addEventListener('change', () => reassignAllReviews(sel.dataset.emp, sel.value));
+  });
+  document.getElementById('hire-detail-overlay').hidden = false;
+}
+function closeHireDetail() {
+  document.getElementById('hire-detail-overlay').hidden = true;
+}
+document.getElementById('hire-detail-close').addEventListener('click', closeHireDetail);
+
+document.querySelectorAll('#board-tab-strip .tab').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#board-tab-strip .tab').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    const isBoard = btn.dataset.tab === 'board';
+    document.getElementById('board-kanban-view').hidden = !isBoard;
+    document.getElementById('board-list-view').hidden = isBoard;
+  });
+});
+
+// ---- Concern -- David-only note on a new hire he's keeping an eye on
+// during onboarding, separate from the formal reviews. ----
+let concernTargetId = null;
+function openConcern(empId) {
+  const emp = empById(empId);
+  if (!emp) return;
+  concernTargetId = empId;
+  document.getElementById('concern-emp-name').textContent = `${emp.first_name} ${emp.last_name}`;
+  const flaggedCb = document.getElementById('concern-flagged');
+  const noteInput = document.getElementById('concern-note');
+  flaggedCb.checked = false;
+  noteInput.value = '';
+  flaggedCb.disabled = true;
+  noteInput.disabled = true;
+  document.getElementById('concern-overlay').hidden = false;
+  getDoc(doc(db, 'employees', empId, 'private', 'concern')).then((snap) => {
+    if (concernTargetId !== empId) return; // closed before this resolved
+    const data = snap.exists() ? snap.data() : {};
+    flaggedCb.checked = !!data.flagged;
+    noteInput.value = data.note || '';
+    flaggedCb.disabled = false;
+    noteInput.disabled = false;
+  }).catch((err) => {
+    console.error(err);
+    showToast('Could not load — ' + err.message, 'error');
+    closeConcern();
+  });
+}
+function closeConcern() {
+  document.getElementById('concern-overlay').hidden = true;
+  concernTargetId = null;
+}
+document.getElementById('concern-close').addEventListener('click', closeConcern);
+document.getElementById('concern-cancel-btn').addEventListener('click', closeConcern);
+document.getElementById('concern-save-btn').addEventListener('click', async () => {
+  const empId = concernTargetId;
+  if (!empId) return;
+  try {
+    const flagged = document.getElementById('concern-flagged').checked;
+    const note = document.getElementById('concern-note').value.trim();
+    await setDoc(doc(db, 'employees', empId, 'private', 'concern'), {
+      flagged, note, entered_by: profile.uid, updated_at: serverTimestamp(),
+    });
+    concernByEmp[empId] = { flagged, note };
+    showToast('Concern saved.');
+    closeConcern();
+    renderBoard();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+});
 
 function renderQueue() {
   const statusFilter = document.getElementById('status-filter').value;
@@ -386,6 +615,7 @@ try {
   await loadStaff();
   await loadReviews();
   await loadPaperwork();
+  await loadConcerns();
   renderBoard();
   renderQueue();
   renderEscalation();

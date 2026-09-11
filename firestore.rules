@@ -141,6 +141,15 @@ service cloud.firestore {
         allow create, update: if isHrUser() && isClean(request.resource.data);
         allow delete: if false;
       }
+
+      // A concern David has about a new hire during onboarding -- not
+      // visible to (or writable by) anyone else, same as the applicant
+      // rejection reason, enforced here rather than just hidden in the UI.
+      match /private/{docId} {
+        allow read: if isDavid();
+        allow create, update: if isDavid() && isClean(request.resource.data);
+        allow delete: if false;
+      }
     }
 
     // The New Hire board and Review queue run a collection-group query
