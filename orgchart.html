@@ -14,18 +14,18 @@
 .tabs .tab{padding:9px 20px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;color:var(--faint);border-right:1px solid var(--line)}
 .tabs .tab:last-child{border-right:none}
 .tabs .tab.active{background:var(--accent);color:#fff}
-.org-tree{padding:20px 20px 40px;overflow-x:auto;display:flex;justify-content:center}
-.org-forest{display:flex;justify-content:center;gap:40px;flex-wrap:wrap}
+.org-tree{padding:16px 16px 30px;overflow-x:auto;display:flex;justify-content:center}
+.org-forest{display:flex;justify-content:center;gap:16px;flex-wrap:wrap}
 .org-node{display:flex;flex-direction:column;align-items:center}
-.org-children{display:flex;flex-direction:row;justify-content:center;position:relative;padding-top:28px}
-.org-branch{position:relative;padding:0 14px;display:flex;flex-direction:column;align-items:center}
-.org-branch::before{content:'';position:absolute;top:-28px;left:50%;width:2px;height:28px;background:var(--edge)}
+.org-children{display:flex;flex-direction:row;justify-content:center;position:relative;padding-top:20px}
+.org-branch{position:relative;padding:0 6px;display:flex;flex-direction:column;align-items:center}
+.org-branch::before{content:'';position:absolute;top:-20px;left:50%;width:2px;height:20px;background:var(--edge)}
 .org-hline{position:absolute;top:0;height:2px;background:var(--edge)}
-.org-card{background:var(--raise);border:1px solid var(--edge);box-shadow:0 1px 3px rgba(0,0,0,.08);padding:8px 12px;cursor:pointer;font-size:12.5px;min-width:150px;text-align:center}
+.org-card{background:var(--raise);border:1px solid var(--edge);box-shadow:0 1px 3px rgba(0,0,0,.08);padding:5px 8px;cursor:pointer;font-size:11px;min-width:108px;text-align:center}
 .org-card.drag-over{background:var(--hover);border-color:var(--accentTx)}
 .org-card.selected{border-color:var(--accentTx);box-shadow:0 0 0 2px var(--accentTx)}
 .org-card .nm{font-weight:600}
-.org-card .meta{color:var(--faint);font-size:11px;margin-top:2px}
+.org-card .meta{color:var(--faint);font-size:9.5px;margin-top:1px}
 .org-root-drop{border:1px dashed var(--edge);padding:10px;text-align:center;font-size:11.5px;color:var(--faint);margin:0 auto 16px;max-width:420px}
 .org-root-drop.drag-over{background:var(--hover);border-color:var(--accentTx);color:var(--muted)}
 </style>
@@ -61,10 +61,10 @@
       </div>
 
       <div id="org-assign-view" hidden>
-        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Same Manager/Office list as the Board, just as a plain list — pick who each person reports to from the dropdown.</p>
+        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Same Manager/Office list as the Board, just as a plain list — pick who each person reports to from the dropdown. Rank controls left-to-right order on the Board (lower number = more senior = shows first) — leave it blank and they'll sort alphabetically after everyone ranked.</p>
         <div class="card">
           <table>
-            <thead><tr><th>Employee</th><th>Job title</th><th>Division</th><th>Reports to</th></tr></thead>
+            <thead><tr><th>Employee</th><th>Job title</th><th>Division</th><th>Rank</th><th>Reports to</th></tr></thead>
             <tbody id="assign-rows"></tbody>
           </table>
         </div>
@@ -109,6 +109,17 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str ?? '';
   return div.innerHTML;
+}
+
+// Left-to-right order for siblings in the Board (and the top-level
+// group) -- lower rank number = more senior = shows first. Unranked
+// people (org_rank not set) sort after everyone ranked, alphabetically
+// among themselves, so nobody without a rank yet looks randomly placed.
+function orgSortCompare(a, b) {
+  const ra = a.org_rank ?? Infinity;
+  const rb = b.org_rank ?? Infinity;
+  if (ra !== rb) return ra - rb;
+  return `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`);
 }
 
 // Shared between the List view's tables and the Board's Kanban --
@@ -223,6 +234,7 @@ function renderOrgAssign() {
       <td><b>${escapeHtml(`${e.first_name} ${e.last_name}`)}</b>${orgManagerIds.has(e.id) ? ' <span class="pill">Manager</span>' : ''}</td>
       <td class="dim">${escapeHtml(e.position) || '—'}</td>
       <td class="dim">${escapeHtml(e.division) || '—'}</td>
+      <td><input type="number" class="inp assign-rank-in" data-id="${e.id}" value="${e.org_rank ?? ''}" placeholder="—" style="height:32px;font-size:12.5px;width:70px"></td>
       <td>
         <select class="inp assign-mgr-select" data-id="${e.id}" style="height:32px;font-size:12.5px;min-width:200px">
           <option value="">— No manager (top level) —</option>
@@ -232,12 +244,29 @@ function renderOrgAssign() {
         </select>
       </td>
     </tr>
-  `).join('') : '<tr><td colspan="4" class="dim">Nobody is flagged Manager or Office yet — set that in Settings first.</td></tr>';
+  `).join('') : '<tr><td colspan="5" class="dim">Nobody is flagged Manager or Office yet — set that in Settings first.</td></tr>';
 
   document.querySelectorAll('.assign-mgr-select').forEach((sel) => {
     sel.addEventListener('change', async () => {
       await reassignManager(sel.dataset.id, sel.value || null);
       renderOrgAssign(); // resets the dropdown to the real value if the change was rejected
+    });
+  });
+  document.querySelectorAll('.assign-rank-in').forEach((input) => {
+    input.addEventListener('change', async () => {
+      const empId = input.dataset.id;
+      const value = input.value.trim();
+      try {
+        const rank = value === '' ? null : Number(value);
+        await updateDoc(doc(db, 'employees', empId), { org_rank: rank, entered_by: profile.uid });
+        const emp = byId.get(empId);
+        if (emp) emp.org_rank = rank;
+        showToast('Rank updated.');
+        renderOrgBoard();
+      } catch (err) {
+        console.error(err);
+        showToast('Could not update — ' + err.message, 'error');
+      }
     });
   });
 }
@@ -260,7 +289,7 @@ function renderOrgBoard() {
     if (!childrenOf.has(parentId)) childrenOf.set(parentId, []);
     childrenOf.get(parentId).push(e);
   });
-  childrenOf.forEach((list) => list.sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`)));
+  childrenOf.forEach((list) => list.sort(orgSortCompare));
 
   function nodeHtml(e) {
     const kids = childrenOf.get(e.id) || [];
