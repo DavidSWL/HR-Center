@@ -355,6 +355,10 @@ function hireKanbanColumnIndex(next) {
 function renderKanbanBoard(onboarding) {
   const byCol = HIRE_KANBAN_COLUMNS.map(() => []);
   onboarding.forEach((r) => { byCol[hireKanbanColumnIndex(r.next)].push(r); });
+  // Soonest (or most overdue) due date first within each column -- day
+  // count ascending put the newest hires first instead, which buried
+  // whoever actually needed attention next.
+  byCol.forEach((col) => col.sort((a, b) => (a.next?.due_date || '').localeCompare(b.next?.due_date || '')));
 
   document.getElementById('board-kanban').innerHTML = `
     <div class="kanban">
