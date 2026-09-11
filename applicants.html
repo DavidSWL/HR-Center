@@ -847,14 +847,23 @@ document.getElementById('resume-pool-export-btn').addEventListener('click', asyn
       const pages = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((x, y) => (x.page_number || 0) - (y.page_number || 0));
       return { a, pages };
     }));
-    resumeReportRows.sort((x, y) => (x.a.applied_date || '').localeCompare(y.a.applied_date || ''));
+    resumeReportRows.sort((x, y) => {
+      // Newest applied first; anyone with no known applied date sorts
+      // last regardless -- there's nothing to rank them by.
+      const dx = x.a.applied_date && x.a.applied_date !== 'N/A' ? x.a.applied_date : '';
+      const dy = y.a.applied_date && y.a.applied_date !== 'N/A' ? y.a.applied_date : '';
+      if (!dx && !dy) return 0;
+      if (!dx) return 1;
+      if (!dy) return -1;
+      return dy.localeCompare(dx);
+    });
 
     const monthGroups = {};
     resumeReportRows.forEach(({ a }) => {
       const key = a.applied_date ? a.applied_date.slice(0, 7) : 'unknown';
       monthGroups[key] = (monthGroups[key] || 0) + 1;
     });
-    const monthKeys = Object.keys(monthGroups).sort((x, y) => (x === 'unknown' ? 1 : y === 'unknown' ? -1 : x.localeCompare(y)));
+    const monthKeys = Object.keys(monthGroups).sort((x, y) => (x === 'unknown' ? 1 : y === 'unknown' ? -1 : y.localeCompare(x)));
     const monthLabel = (key) => key === 'unknown' ? 'Applied date unknown' : new Date(key + '-01T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     const openingLabel = (a) => a.applied_job_id ? (openJobs.find((j) => j.id === a.applied_job_id) ? jobLabel(openJobs.find((j) => j.id === a.applied_job_id)) : 'Opening no longer listed') : 'Not tied to a specific opening';
     const experienceLabel = (a) => a.has_landscape_experience ? `Yes${a.years_experience ? ` — ${a.years_experience} yr${a.years_experience === 1 ? '' : 's'}` : ''}` : 'Not indicated';
