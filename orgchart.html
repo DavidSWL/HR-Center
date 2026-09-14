@@ -17,6 +17,7 @@
 .org-tree{position:relative;padding:16px 16px 30px;overflow-x:auto}
 .org-connectors{position:absolute;inset:0;pointer-events:none}
 .org-connectors polyline{fill:none;stroke:var(--edge);stroke-width:1.5px}
+.org-connectors polyline.dotted{stroke-dasharray:4 3}
 .org-rows{display:flex;flex-direction:column;gap:34px;align-items:flex-start}
 .org-row{display:grid;gap:14px;justify-items:center}
 .org-card{position:relative;z-index:1;background:var(--raise);border:1px solid var(--edge);box-shadow:0 1px 3px rgba(0,0,0,.08);padding:5px 8px;cursor:pointer;font-size:11px;min-width:108px;text-align:center}
@@ -441,6 +442,29 @@ function renderOrgBoard() {
       const branchY = my + (cy - my) / 2;
       const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
       poly.setAttribute('points', `${mx},${my} ${mx},${branchY} ${cx},${branchY} ${cx},${cy}`);
+      svg.appendChild(poly);
+    });
+
+    // Dotted-line reporting (e.g. a client rep whose solid line is to
+    // their branch manager but who also dotted-lines to a VP) -- same
+    // employees.html field used on the profile page, just drawn here as
+    // a dashed connector instead of solid.
+    eligible.forEach((e) => {
+      const dlId = e.dotted_line_emp_id;
+      if (!dlId || !eligibleIds.has(dlId)) return;
+      const childEl = treeEl.querySelector(`.org-card[data-id="${e.id}"]`);
+      const dlEl = treeEl.querySelector(`.org-card[data-id="${dlId}"]`);
+      if (!childEl || !dlEl) return;
+      const c = childEl.getBoundingClientRect();
+      const d = dlEl.getBoundingClientRect();
+      const dx = d.left + d.width / 2 - treeRect.left;
+      const dy = d.bottom - treeRect.top;
+      const cx = c.left + c.width / 2 - treeRect.left;
+      const cy = c.top - treeRect.top;
+      const branchY = dy + (cy - dy) / 2;
+      const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      poly.setAttribute('class', 'dotted');
+      poly.setAttribute('points', `${dx},${dy} ${dx},${branchY} ${cx},${branchY} ${cx},${cy}`);
       svg.appendChild(poly);
     });
   }
