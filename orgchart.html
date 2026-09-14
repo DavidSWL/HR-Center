@@ -452,6 +452,27 @@ function renderOrgBoard() {
     const treeRect = treeEl.getBoundingClientRect();
     svg.setAttribute('width', treeRect.width);
     svg.setAttribute('height', treeRect.height);
+
+    // A connector's horizontal "jog" needs to land in the actual gap
+    // between two rows, not just at the raw halfway point between its
+    // two endpoints -- for a dotted line spanning several rows (e.g. a
+    // client rep several rows down dotted-lined to a VP near the top),
+    // the raw midpoint can fall right on top of an unrelated row's
+    // cards in between, which reads as a stray line running through
+    // people it has nothing to do with. Snap to whichever row-gap
+    // center is closest instead.
+    const rowRects = [...treeEl.querySelectorAll('.org-row')]
+      .map((el) => el.getBoundingClientRect())
+      .sort((a, b) => a.top - b.top);
+    const gapCenters = [];
+    for (let i = 0; i < rowRects.length - 1; i++) {
+      gapCenters.push((rowRects[i].bottom + rowRects[i + 1].top) / 2 - treeRect.top);
+    }
+    function nearestGapY(rawY) {
+      if (!gapCenters.length) return rawY;
+      return gapCenters.reduce((best, g) => (Math.abs(g - rawY) < Math.abs(best - rawY) ? g : best), gapCenters[0]);
+    }
+
     eligible.forEach((e) => {
       const mgrId = e.manager_emp_id;
       if (!mgrId || !eligibleIds.has(mgrId)) return;
@@ -464,7 +485,7 @@ function renderOrgBoard() {
       const my = m.bottom - treeRect.top;
       const cx = c.left + c.width / 2 - treeRect.left;
       const cy = c.top - treeRect.top;
-      const branchY = my + (cy - my) / 2;
+      const branchY = nearestGapY(my + (cy - my) / 2);
       const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
       poly.setAttribute('points', `${mx},${my} ${mx},${branchY} ${cx},${branchY} ${cx},${cy}`);
       svg.appendChild(poly);
@@ -486,7 +507,7 @@ function renderOrgBoard() {
       const dy = d.bottom - treeRect.top;
       const cx = c.left + c.width / 2 - treeRect.left;
       const cy = c.top - treeRect.top;
-      const branchY = dy + (cy - dy) / 2;
+      const branchY = nearestGapY(dy + (cy - dy) / 2);
       const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
       poly.setAttribute('class', 'dotted');
       poly.setAttribute('points', `${dx},${dy} ${dx},${branchY} ${cx},${branchY} ${cx},${cy}`);
