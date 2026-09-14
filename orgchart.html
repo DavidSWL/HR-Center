@@ -17,7 +17,6 @@
 .org-tree{position:relative;padding:16px 16px 30px;overflow-x:auto}
 .org-connectors{position:absolute;inset:0;pointer-events:none}
 .org-connectors polyline{fill:none;stroke:var(--edge);stroke-width:1.5px}
-.org-connectors polyline.dotted{stroke-dasharray:4 3}
 .org-rows{display:flex;flex-direction:column;gap:34px;align-items:flex-start}
 .org-row{display:grid;gap:14px;justify-items:center}
 .org-card{position:relative;z-index:1;background:var(--raise);border:1px solid var(--edge);box-shadow:0 1px 3px rgba(0,0,0,.08);padding:5px 8px;cursor:pointer;font-size:11px;min-width:108px;text-align:center}
@@ -68,7 +67,7 @@
       </div>
 
       <div id="org-assign-view" hidden>
-        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Same Manager/Office list as the Board, just as a plain list. Department shows a colored tag on the Board card — it's separate from Division, so setting it here doesn't change anything on Reports or the roster. Rank controls which ROW someone sits in on the Board (rank 1 = top row, rank 2 = the next row down, and so on) — leave it blank and they'll show in their own row at the bottom. Reports to draws the solid line; Dotted line draws a dashed one to a second person (e.g. a client rep who reports to their branch manager but dotted-lines to a VP).</p>
+        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Same Manager/Office list as the Board, just as a plain list. Department shows a colored tag on the Board card — it's separate from Division, so setting it here doesn't change anything on Reports or the roster. Rank controls which ROW someone sits in on the Board (rank 1 = top row, rank 2 = the next row down, and so on) — leave it blank and they'll show in their own row at the bottom. Reports to draws the main line; Dotted line draws a second line to another person (e.g. a client rep who reports to their branch manager but also dotted-lines to a VP).</p>
         <div class="card">
           <table>
             <thead><tr><th>Employee</th><th>Job title</th><th>Division</th><th>Department</th><th>Rank</th><th>Reports to</th><th>Dotted line</th></tr></thead>
@@ -499,8 +498,10 @@ function renderOrgBoard() {
 
     // Dotted-line reporting (e.g. a client rep whose solid line is to
     // their branch manager but who also dotted-lines to a VP) -- same
-    // employees.html field used on the profile page, just drawn here as
-    // a dashed connector instead of solid.
+    // employees.html field used on the profile page. Drawn as a solid
+    // connector, same as a real reporting line -- the dashed style
+    // (removed) read as messy/broken rather than as a meaningful
+    // distinction once actual data was on the board.
     eligible.forEach((e) => {
       const dlId = e.dotted_line_emp_id;
       if (!dlId || !eligibleIds.has(dlId)) return;
@@ -515,7 +516,6 @@ function renderOrgBoard() {
       const cy = c.top - treeRect.top;
       const branchY = firstGapAfter(dy);
       const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-      poly.setAttribute('class', 'dotted');
       poly.setAttribute('points', `${dx},${dy} ${dx},${branchY} ${cx},${branchY} ${cx},${cy}`);
       svg.appendChild(poly);
     });
