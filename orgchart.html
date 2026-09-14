@@ -17,6 +17,7 @@
 .org-tree{position:relative;padding:16px 16px 30px;overflow-x:auto}
 .org-connectors{position:absolute;inset:0;pointer-events:none}
 .org-connectors polyline{fill:none;stroke:var(--edge);stroke-width:1.5px}
+.org-draw-canvas{position:absolute;inset:0;z-index:10;cursor:crosshair;touch-action:none;background:rgba(21,71,51,.03)}
 .org-rows{display:flex;flex-direction:column;gap:34px;align-items:flex-start}
 .org-row{display:grid;gap:14px;justify-items:center}
 .org-card{position:relative;z-index:1;background:var(--raise);border:1px solid var(--edge);box-shadow:0 1px 3px rgba(0,0,0,.08);padding:5px 8px;cursor:pointer;font-size:11px;min-width:108px;text-align:center}
@@ -59,6 +60,23 @@
       <div id="org-board-view">
         <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Managers, office staff, and client representatives only — field employees don't clutter this view (see the Maintenance field crews count below instead). Use the <b>◀ ▲ ▼ ▶</b> arrows on each card to move that person up/down a row or left/right within it. To change who someone reports to (the line), <b>click a card to select it</b> (it'll highlight), then click the card you want them to report to. Click the same card again to cancel.</p>
         <div class="org-root-drop" id="org-root-drop">After clicking someone, click here to remove their manager (top level)</div>
+
+        <div style="margin-bottom:10px">
+          <button type="button" class="gh" id="org-draw-btn">Draw a dotted line…</button>
+          <div id="org-draw-chooser" hidden style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span class="dim" style="font-size:11.5px">Whose dotted line do you want to draw?</span>
+            <select class="inp" id="org-draw-select" style="height:32px;font-size:12.5px;min-width:220px"></select>
+            <button type="button" class="gh solid" id="org-draw-start-btn">Start drawing</button>
+            <button type="button" class="gh" id="org-draw-cancel-btn">Cancel</button>
+          </div>
+          <div id="org-draw-toolbar" hidden style="margin-top:8px;display:flex;gap:8px;align-items:center">
+            <span class="dim" style="font-size:11.5px">Draw the line with your finger or mouse, right on the board below.</span>
+            <button type="button" class="gh" id="org-draw-clear-btn">Clear</button>
+            <button type="button" class="gh solid" id="org-draw-save-btn">Save</button>
+            <button type="button" class="gh" id="org-draw-abort-btn">Cancel</button>
+          </div>
+        </div>
+
         <div id="org-kanban"></div>
         <div class="card" id="org-field-card" style="margin-top:16px">
           <div class="card-h"><h3>Maintenance field crews — all regions</h3><span id="org-field-count"></span></div>
@@ -294,6 +312,9 @@ function renderOrgAssign() {
             <option value="${m.id}" ${e.dotted_line_emp_id === m.id ? 'selected' : ''}>${escapeHtml(`${m.first_name} ${m.last_name}`)}${m.position ? ` — ${escapeHtml(m.position)}` : ''}</option>
           `).join('')}
         </select>
+        ${Array.isArray(e.org_custom_line_pct) && e.org_custom_line_pct.length
+          ? `<button type="button" class="gh clear-drawn-line-btn" data-id="${e.id}" style="margin-top:4px;font-size:10.5px;padding:2px 6px">Clear hand-drawn line</button>`
+          : ''}
       </td>
     </tr>
   `).join('') : '<tr><td colspan="7" class="dim">Nobody is flagged Manager or Office yet — set that in Settings first.</td></tr>';
@@ -318,6 +339,22 @@ function renderOrgAssign() {
         console.error(err);
         showToast('Could not update — ' + err.message, 'error');
         renderOrgAssign();
+      }
+    });
+  });
+  document.querySelectorAll('.clear-drawn-line-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const empId = btn.dataset.id;
+      try {
+        await updateDoc(doc(db, 'employees', empId), { org_custom_line_pct: null, entered_by: profile.uid });
+        const emp = byId.get(empId);
+        if (emp) emp.org_custom_line_pct = null;
+        showToast('Hand-drawn line cleared — back to the auto-routed line.');
+        renderOrgAssign();
+        renderOrgBoard();
+      } catch (err) {
+        console.error(err);
+        showToast('Could not update — ' + err.message, 'error');
       }
     });
   });
@@ -501,10 +538,23 @@ function renderOrgBoard() {
     // employees.html field used on the profile page. Drawn as a solid
     // connector, same as a real reporting line -- the dashed style
     // (removed) read as messy/broken rather than as a meaningful
-    // distinction once actual data was on the board.
+    // distinction once actual data was on the board. If David has hand-
+    // drawn a custom path for this person (org_custom_line_pct), use
+    // that instead of the auto-routed elbow -- points are stored as
+    // percentages of the tree's size at draw time, converted back to
+    // pixels against the CURRENT tree size, so it holds up reasonably
+    // if the board's width changes but not if cards move around --
+    // that just needs a redraw.
     eligible.forEach((e) => {
       const dlId = e.dotted_line_emp_id;
       if (!dlId || !eligibleIds.has(dlId)) return;
+      if (Array.isArray(e.org_custom_line_pct) && e.org_custom_line_pct.length >= 2) {
+        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        const pts = e.org_custom_line_pct.map(([px, py]) => `${(px / 100) * treeRect.width},${(py / 100) * treeRect.height}`).join(' ');
+        poly.setAttribute('points', pts);
+        svg.appendChild(poly);
+        return;
+      }
       const childEl = treeEl.querySelector(`.org-card[data-id="${e.id}"]`);
       const dlEl = treeEl.querySelector(`.org-card[data-id="${dlId}"]`);
       if (!childEl || !dlEl) return;
@@ -680,6 +730,136 @@ async function reassignManager(empId, newMgrId) {
     showToast('Could not update — ' + err.message, 'error');
   }
 }
+
+// ---- Manual dotted-line drawing -- freehand, since the auto-routed
+// connector wasn't matching what everyone actually wanted for every
+// relationship. Requires the Dotted line already be set on the Assign
+// tab -- this only customizes HOW that line is drawn, not who it
+// connects to. Reuses the same touch+mouse canvas pattern the
+// signature pads elsewhere in this app already rely on, since that's
+// held up fine on this user's iPad where native drag-and-drop didn't.
+let drawState = null;
+
+function populateDrawSelect() {
+  const sel = document.getElementById('org-draw-select');
+  const candidates = eligibleList().filter((e) => e.dotted_line_emp_id && eligibleIdsSet().has(e.dotted_line_emp_id));
+  sel.innerHTML = candidates.length
+    ? candidates.map((e) => {
+        const target = byId.get(e.dotted_line_emp_id);
+        return `<option value="${e.id}">${escapeHtml(`${e.first_name} ${e.last_name}`)} → ${target ? escapeHtml(`${target.first_name} ${target.last_name}`) : '?'}</option>`;
+      }).join('')
+    : '<option value="">— Nobody has a dotted line set yet —</option>';
+}
+
+function eligibleIdsSet() {
+  return new Set(eligibleList().map((e) => e.id));
+}
+
+function startDrawing(empId) {
+  const treeEl = document.getElementById('org-tree');
+  if (!treeEl) { showToast('Nothing to draw on — add people to the Board first.', 'error'); return; }
+  const rect = treeEl.getBoundingClientRect();
+  const canvas = document.createElement('canvas');
+  canvas.className = 'org-draw-canvas';
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = rect.width * ratio;
+  canvas.height = rect.height * ratio;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+  treeEl.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(ratio, ratio);
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accentTx') || '#154733';
+
+  const points = [];
+  let isDrawing = false;
+  const pos = (ev) => {
+    const r = canvas.getBoundingClientRect();
+    const p = ev.touches ? ev.touches[0] : ev;
+    return [p.clientX - r.left, p.clientY - r.top];
+  };
+  const start = (ev) => {
+    ev.preventDefault();
+    isDrawing = true;
+    points.length = 0;
+    const [x, y] = pos(ev);
+    points.push([x, y]);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  };
+  const move = (ev) => {
+    if (!isDrawing) return;
+    ev.preventDefault();
+    const [x, y] = pos(ev);
+    const last = points[points.length - 1];
+    if (last && Math.hypot(x - last[0], y - last[1]) < 2) return; // skip near-duplicate points
+    points.push([x, y]);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+  const end = () => { isDrawing = false; };
+
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', end);
+  canvas.addEventListener('touchstart', start, { passive: false });
+  canvas.addEventListener('touchmove', move, { passive: false });
+  canvas.addEventListener('touchend', end);
+
+  drawState = { empId, canvas, ctx, points, endHandler: end };
+  document.getElementById('org-draw-toolbar').hidden = false;
+}
+
+function stopDrawing() {
+  if (drawState) {
+    window.removeEventListener('mouseup', drawState.endHandler);
+    drawState.canvas.remove();
+  }
+  drawState = null;
+  document.getElementById('org-draw-toolbar').hidden = true;
+}
+
+document.getElementById('org-draw-btn').addEventListener('click', () => {
+  populateDrawSelect();
+  document.getElementById('org-draw-chooser').hidden = false;
+});
+document.getElementById('org-draw-cancel-btn').addEventListener('click', () => {
+  document.getElementById('org-draw-chooser').hidden = true;
+});
+document.getElementById('org-draw-start-btn').addEventListener('click', () => {
+  const empId = document.getElementById('org-draw-select').value;
+  if (!empId) { showToast('Nobody to draw for — set a Dotted line on the Assign tab first.', 'error'); return; }
+  document.getElementById('org-draw-chooser').hidden = true;
+  startDrawing(empId);
+});
+document.getElementById('org-draw-abort-btn').addEventListener('click', () => stopDrawing());
+document.getElementById('org-draw-clear-btn').addEventListener('click', () => {
+  if (!drawState) return;
+  drawState.points.length = 0;
+  drawState.ctx.clearRect(0, 0, drawState.canvas.width, drawState.canvas.height);
+});
+document.getElementById('org-draw-save-btn').addEventListener('click', async () => {
+  if (!drawState || drawState.points.length < 2) { showToast('Draw a line first.', 'error'); return; }
+  const { empId, points, canvas } = drawState;
+  const pct = points.map(([x, y]) => [
+    Math.round((x / parseFloat(canvas.style.width)) * 1000) / 10,
+    Math.round((y / parseFloat(canvas.style.height)) * 1000) / 10,
+  ]);
+  try {
+    await updateDoc(doc(db, 'employees', empId), { org_custom_line_pct: pct, entered_by: profile.uid });
+    const emp = byId.get(empId);
+    if (emp) emp.org_custom_line_pct = pct;
+    showToast('Line saved.');
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+  stopDrawing();
+  renderOrgBoard();
+});
 
 document.querySelectorAll('#org-tab-strip .tab').forEach((btn) => {
   btn.addEventListener('click', () => {
