@@ -35,7 +35,7 @@
 .app-name-btn:hover{color:var(--accentTx);text-decoration-color:var(--accentTx)}
 .kanban{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;overflow-x:auto;padding-bottom:2px}
 .kanban-col{background:var(--panel);border:1px solid var(--edge);min-width:144px;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(0,0,0,.05)}
-.kanban-col-h{padding:8px 10px;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--edge);display:flex;justify-content:space-between;gap:6px;background:var(--raise)}
+.kanban-col-h{padding:8px 10px;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;border-bottom:1px solid var(--edge);display:flex;justify-content:space-between;gap:6px;background:var(--stage-bg,var(--raise));color:var(--stage-tx,var(--muted))}
 .kanban-col-body{padding:8px;display:flex;flex-direction:column;gap:8px;min-height:60px}
 .kanban-col.drag-over{background:var(--hover)}
 .kanban-card{background:var(--raise);border:1px solid var(--edge);box-shadow:0 1px 3px rgba(0,0,0,.08);padding:8px 10px;cursor:grab;font-size:12.5px}
@@ -1012,15 +1012,21 @@ document.querySelectorAll('#ats-tab-strip .tab').forEach((btn) => {
 // pass interview) don't appear here, same as the table's default
 // "Active pipeline" filter -- there's no single field to set by
 // dropping a card there, so it isn't offered as a destination. ----
+// Column header color deepens through a single green ramp as a
+// candidate gets closer to Started -- Applied is left uncolored
+// (nothing's happened yet). One hue read as progress, rather than a
+// different color per stage, so it doesn't compete with the existing
+// red/green gate-blocked and gate-clear card borders. Values are a
+// validated OKLCH ramp off the Oregon-green brand color, not eyeballed.
 const KANBAN_COLUMNS = [
   { label: 'Applied' },
-  { label: 'Considered', gate: true },
-  { label: 'Screening' },
-  { label: 'VP Review', gate: true },
-  { label: 'Interview / Offer' },
-  { label: 'Clinic', gate: true },
-  { label: 'Orientation' },
-  { label: 'Started' },
+  { label: 'Considered', gate: true, color: '#79C09A', tx: '#12150F' },
+  { label: 'Screening', color: '#65AB87', tx: '#12150F' },
+  { label: 'VP Review', gate: true, color: '#519773', tx: '#FFFFFF' },
+  { label: 'Interview / Offer', color: '#3D8360', tx: '#FFFFFF' },
+  { label: 'Clinic', gate: true, color: '#276F4E', tx: '#FFFFFF' },
+  { label: 'Orientation', color: '#0E5D3C', tx: '#FFFFFF' },
+  { label: 'Started', color: '#154733', tx: '#FFFFFF' },
 ];
 function kanbanColumnIndex(a) {
   if (a.outcome === 'hired') return 7;
@@ -1126,7 +1132,7 @@ function renderKanban() {
     <div class="kanban">
       ${KANBAN_COLUMNS.map((c, i) => `
         <div class="kanban-col" data-col="${i}">
-          <div class="kanban-col-h"><span>${c.label}</span><span>${byCol[i].length}</span></div>
+          <div class="kanban-col-h"${c.color ? ` style="--stage-bg:${c.color};--stage-tx:${c.tx}"` : ''}><span>${c.label}</span><span>${byCol[i].length}</span></div>
           <div class="kanban-col-body">
             ${byCol[i].map((a) => `
               <div class="kanban-card${cardGateClass(a, i) ? ' ' + cardGateClass(a, i) : ''}" draggable="true" data-id="${a.id}">
