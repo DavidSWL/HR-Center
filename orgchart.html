@@ -16,7 +16,7 @@
 .tabs .tab.active{background:var(--accent);color:#fff}
 .org-tree{position:relative;padding:16px 16px 30px;overflow-x:auto}
 .org-connectors{position:absolute;inset:0;pointer-events:none}
-.org-connectors line{stroke:var(--edge);stroke-width:1.5px}
+.org-connectors polyline{fill:none;stroke:var(--edge);stroke-width:1.5px}
 .org-rows{display:flex;flex-direction:column;gap:34px;align-items:flex-start}
 .org-row{display:grid;gap:14px;justify-items:center}
 .org-card{position:relative;z-index:1;background:var(--raise);border:1px solid var(--edge);box-shadow:0 1px 3px rgba(0,0,0,.08);padding:5px 8px;cursor:pointer;font-size:11px;min-width:108px;text-align:center}
@@ -341,9 +341,13 @@ function renderOrgBoard() {
     `
     : '<div class="card"><div class="card-body dim">Nobody is flagged Manager or Office yet — set that in Settings first.</div></div>';
 
-  // Draw a line from each person to their actual manager's card,
-  // wherever that manager sits -- rows are fixed rank tiers now, not the
-  // reporting tree itself, so a line can (and often will) cross rows.
+  // Draw a right-angle connector from each person to their actual
+  // manager's card, wherever that manager sits -- rows are fixed rank
+  // tiers now, not the reporting tree itself, so a connector can (and
+  // often will) cross rows. Elbowed (down / across / down) rather than
+  // a straight diagonal, like a standard org chart -- and everyone
+  // reporting to the same manager in the same row shares an identical
+  // first drop segment, so their lines visually merge into one trunk.
   const treeEl = document.getElementById('org-tree');
   if (treeEl) {
     const svg = document.getElementById('org-connectors');
@@ -358,12 +362,14 @@ function renderOrgBoard() {
       if (!childEl || !mgrEl) return;
       const c = childEl.getBoundingClientRect();
       const m = mgrEl.getBoundingClientRect();
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', m.left + m.width / 2 - treeRect.left);
-      line.setAttribute('y1', m.bottom - treeRect.top);
-      line.setAttribute('x2', c.left + c.width / 2 - treeRect.left);
-      line.setAttribute('y2', c.top - treeRect.top);
-      svg.appendChild(line);
+      const mx = m.left + m.width / 2 - treeRect.left;
+      const my = m.bottom - treeRect.top;
+      const cx = c.left + c.width / 2 - treeRect.left;
+      const cy = c.top - treeRect.top;
+      const branchY = my + (cy - my) / 2;
+      const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      poly.setAttribute('points', `${mx},${my} ${mx},${branchY} ${cx},${branchY} ${cx},${cy}`);
+      svg.appendChild(poly);
     });
   }
 
