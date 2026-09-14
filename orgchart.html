@@ -452,33 +452,6 @@ function renderOrgBoard() {
     const treeRect = treeEl.getBoundingClientRect();
     svg.setAttribute('width', treeRect.width);
     svg.setAttribute('height', treeRect.height);
-
-    // A connector's horizontal "jog" needs to land in the actual gap
-    // between two rows, not just at the raw halfway point between its
-    // two endpoints -- for a connector spanning several rows, a raw
-    // midpoint can fall right on top of an unrelated row's cards in
-    // between. It also needs to be tied to whichever card the line
-    // actually STARTS at -- using "nearest gap overall" made unrelated
-    // connectors that happened to span a similar vertical distance snap
-    // to the exact same gap and visually merge into one shared line,
-    // even though they had nothing to do with each other, and made
-    // true siblings (who SHOULD share a trunk) inconsistent when they
-    // sat in different rows. Always using the first gap right after the
-    // source card fixes both: everyone hanging off the same source
-    // naturally shares that same trunk, and unrelated connectors
-    // starting from different rows land in different gaps.
-    const rowRects = [...treeEl.querySelectorAll('.org-row')]
-      .map((el) => el.getBoundingClientRect())
-      .sort((a, b) => a.top - b.top);
-    const gapCenters = [];
-    for (let i = 0; i < rowRects.length - 1; i++) {
-      gapCenters.push((rowRects[i].bottom + rowRects[i + 1].top) / 2 - treeRect.top);
-    }
-    function firstGapAfter(sourceY) {
-      const after = gapCenters.filter((g) => g > sourceY + 0.5);
-      return after.length ? Math.min(...after) : sourceY;
-    }
-
     eligible.forEach((e) => {
       const mgrId = e.manager_emp_id;
       if (!mgrId || !eligibleIds.has(mgrId)) return;
@@ -491,7 +464,7 @@ function renderOrgBoard() {
       const my = m.bottom - treeRect.top;
       const cx = c.left + c.width / 2 - treeRect.left;
       const cy = c.top - treeRect.top;
-      const branchY = firstGapAfter(my);
+      const branchY = my + (cy - my) / 2;
       const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
       poly.setAttribute('points', `${mx},${my} ${mx},${branchY} ${cx},${branchY} ${cx},${cy}`);
       svg.appendChild(poly);
@@ -513,7 +486,7 @@ function renderOrgBoard() {
       const dy = d.bottom - treeRect.top;
       const cx = c.left + c.width / 2 - treeRect.left;
       const cy = c.top - treeRect.top;
-      const branchY = firstGapAfter(dy);
+      const branchY = dy + (cy - dy) / 2;
       const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
       poly.setAttribute('class', 'dotted');
       poly.setAttribute('points', `${dx},${dy} ${dx},${branchY} ${cx},${branchY} ${cx},${cy}`);
