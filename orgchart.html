@@ -24,6 +24,7 @@
 .org-card.selected{border-color:var(--accentTx);box-shadow:0 0 0 2px var(--accentTx)}
 .org-card .nm{font-weight:600}
 .org-card .meta{color:var(--faint);font-size:9.5px;margin-top:1px}
+.org-dept{font-family:var(--mono);font-size:8.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;margin-top:3px}
 .org-move{display:flex;justify-content:center;gap:2px;margin-bottom:3px}
 .org-move-btn{width:16px;height:14px;line-height:12px;padding:0;border:1px solid var(--edge);background:var(--bg);color:var(--faint);font-size:8px;cursor:pointer}
 .org-move-btn:hover{background:var(--hover);color:var(--muted)}
@@ -62,10 +63,10 @@
       </div>
 
       <div id="org-assign-view" hidden>
-        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Same Manager/Office list as the Board, just as a plain list — pick who each person reports to from the dropdown. Rank controls which ROW someone sits in on the Board (rank 1 = top row, rank 2 = the next row down, and so on) — leave it blank and they'll show in their own row at the bottom.</p>
+        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Same Manager/Office list as the Board, just as a plain list. Department shows a colored tag on the Board card — it's separate from Division, so setting it here doesn't change anything on Reports or the roster. Rank controls which ROW someone sits in on the Board (rank 1 = top row, rank 2 = the next row down, and so on) — leave it blank and they'll show in their own row at the bottom.</p>
         <div class="card">
           <table>
-            <thead><tr><th>Employee</th><th>Job title</th><th>Division</th><th>Rank</th><th>Reports to</th></tr></thead>
+            <thead><tr><th>Employee</th><th>Job title</th><th>Division</th><th>Department</th><th>Rank</th><th>Reports to</th></tr></thead>
             <tbody id="assign-rows"></tbody>
           </table>
         </div>
@@ -111,6 +112,23 @@ function escapeHtml(str) {
   div.textContent = str ?? '';
   return div.innerHTML;
 }
+
+// Department is separate from the Division field used elsewhere (roster,
+// reports, headcount) -- it's just a color-coded grouping for the org
+// chart, on a fixed list of 7 rather than free text, so it doesn't
+// disturb anything Division already drives. Colors deliberately avoid
+// green and red -- those are reserved for the Oregon-green brand accent
+// and for "late/at risk" respectively.
+const DEPARTMENTS = [
+  { name: 'Operations', color: '#3B5BA5' },
+  { name: 'Client Services', color: '#1B7A72' },
+  { name: 'Enhancements', color: '#9C6B1F' },
+  { name: 'Trees', color: '#6B4226' },
+  { name: 'Design', color: '#6B4C9A' },
+  { name: 'Sales', color: '#2E4172' },
+  { name: 'Support Services', color: '#8A3B62' },
+];
+const DEPT_COLOR = new Map(DEPARTMENTS.map((d) => [d.name, d.color]));
 
 // Shared between the List view's tables and the Board's Kanban --
 // reloaded fresh from Firestore after every drag-and-drop reassignment
@@ -224,6 +242,14 @@ function renderOrgAssign() {
       <td><b>${escapeHtml(`${e.first_name} ${e.last_name}`)}</b>${orgManagerIds.has(e.id) ? ' <span class="pill">Manager</span>' : ''}</td>
       <td class="dim">${escapeHtml(e.position) || '—'}</td>
       <td class="dim">${escapeHtml(e.division) || '—'}</td>
+      <td>
+        <select class="inp assign-dept-select" data-id="${e.id}" style="height:32px;font-size:12.5px;min-width:150px">
+          <option value="">— None —</option>
+          ${DEPARTMENTS.map((d) => `
+            <option value="${escapeHtml(d.name)}" ${e.org_department === d.name ? 'selected' : ''}>${escapeHtml(d.name)}</option>
+          `).join('')}
+        </select>
+      </td>
       <td><input type="number" class="inp assign-rank-in" data-id="${e.id}" value="${e.org_rank ?? ''}" placeholder="—" style="height:32px;font-size:12.5px;width:70px"></td>
       <td>
         <select class="inp assign-mgr-select" data-id="${e.id}" style="height:32px;font-size:12.5px;min-width:200px">
@@ -234,12 +260,28 @@ function renderOrgAssign() {
         </select>
       </td>
     </tr>
-  `).join('') : '<tr><td colspan="5" class="dim">Nobody is flagged Manager or Office yet — set that in Settings first.</td></tr>';
+  `).join('') : '<tr><td colspan="6" class="dim">Nobody is flagged Manager or Office yet — set that in Settings first.</td></tr>';
 
   document.querySelectorAll('.assign-mgr-select').forEach((sel) => {
     sel.addEventListener('change', async () => {
       await reassignManager(sel.dataset.id, sel.value || null);
       renderOrgAssign(); // resets the dropdown to the real value if the change was rejected
+    });
+  });
+  document.querySelectorAll('.assign-dept-select').forEach((sel) => {
+    sel.addEventListener('change', async () => {
+      const empId = sel.dataset.id;
+      const department = sel.value || null;
+      try {
+        await updateDoc(doc(db, 'employees', empId), { org_department: department, entered_by: profile.uid });
+        const emp = byId.get(empId);
+        if (emp) emp.org_department = department;
+        showToast('Department updated.');
+        renderOrgBoard();
+      } catch (err) {
+        console.error(err);
+        showToast('Could not update — ' + err.message, 'error');
+      }
     });
   });
   document.querySelectorAll('.assign-rank-in').forEach((input) => {
@@ -312,8 +354,9 @@ function renderOrgBoard() {
   const totalCols = maxCol + 4; // headroom so there's always room to move further right
 
   function cardHtml(e, col) {
+    const deptColor = e.org_department ? DEPT_COLOR.get(e.org_department) : null;
     return `
-      <div class="org-card" draggable="true" data-id="${e.id}" style="grid-column:${col + 1}">
+      <div class="org-card" draggable="true" data-id="${e.id}" style="grid-column:${col + 1}${deptColor ? `;border-top:3px solid ${deptColor}` : ''}">
         <div class="org-move">
           <button type="button" class="org-move-btn" data-id="${e.id}" data-dir="left" title="Move left">◀</button>
           <button type="button" class="org-move-btn" data-id="${e.id}" data-dir="up" title="Move up a row">▲</button>
@@ -322,6 +365,7 @@ function renderOrgBoard() {
         </div>
         <div class="nm">${escapeHtml(`${e.first_name} ${e.last_name}`)}${orgManagerIds.has(e.id) ? ' <span class="pill">Manager</span>' : ''}</div>
         <div class="meta">${escapeHtml(e.position) || '—'}${e.division ? ` · ${escapeHtml(e.division)}` : ''}</div>
+        ${deptColor ? `<div class="org-dept" style="color:${deptColor}">${escapeHtml(e.org_department)}</div>` : ''}
       </div>
     `;
   }
