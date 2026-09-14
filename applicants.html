@@ -498,7 +498,7 @@
 
 <script type="module">
 import { requireAuth } from './auth.js';
-import { initShell, showToast, formatDate } from './app.js';
+import { initShell, showToast, formatDate, formatDateTime } from './app.js';
 import { db } from './firebaseconfig.js';
 import { ONBOARDING_CHECKLIST, LOGO_DATA_URL } from './letterhead-assets.js';
 import { JOB_DESCRIPTIONS } from './jobdescriptionsdata.js';
@@ -1106,6 +1106,20 @@ function cardGateLinesHtml(a, colIndex) {
   if (colIndex === 6) return gateLineHtml('Orientation', a.orientation_completed ? 'ok' : '', a.orientation_completed ? 'Done' : (a.orientation_booked_date ? formatDate(a.orientation_booked_date) : 'Not booked'));
   return '';
 }
+// The actual date each of these four milestones happened, not just
+// whatever the card's status pill says -- separate from "last touched"
+// below, since other unrelated edits (a flag, a note) also bump that.
+function cardDateHtml(a, colIndex) {
+  const byCol = {
+    4: ['Offered/interviewed', a.interview_passed_at],
+    5: ['Clinic', a.physical_passed_at],
+    6: ['Orientation', a.orientation_completed_at],
+    7: ['Started', a.hired_at],
+  };
+  const entry = byCol[colIndex];
+  if (!entry || !entry[1]) return '';
+  return `<div class="meta" style="margin-top:2px">${entry[0]}: ${formatDate(entry[1])}</div>`;
+}
 // Blocked = sitting in a gate column (Considered/VP Review/Clinic) with
 // its own requirement still open; clear = everything that column needs
 // is already done and it's just waiting to be dragged/checked forward.
@@ -1139,6 +1153,8 @@ function renderKanban() {
                 <div class="nm">${escapeHtml(a.name)}</div>
                 <div class="meta">${escapeHtml(a.position_applied) || '—'}</div>
                 ${cardGateLinesHtml(a, i)}
+                ${cardDateHtml(a, i)}
+                <div class="meta" style="margin-top:2px">Last touched ${formatDateTime(a.updated_at)}</div>
                 ${a.source === 'referral' ? '<span class="pill" style="margin-top:4px;display:inline-block">Referral</span>' : ''}
                 <button type="button" class="gh kanban-flag-btn" data-id="${a.id}" style="margin-top:6px;font-size:11px;padding:2px 8px">Flag…</button>
               </div>
@@ -1445,11 +1461,26 @@ function render() {
   });
 }
 
+// Interview/Offer, Clinic, Orientation and Started each get their own
+// date -- the actual day that milestone happened, not just "whenever
+// this record was last edited" -- stamped centrally here so it's
+// correct no matter which entry point sets the underlying field
+// (Kanban drag, the table's checkboxes, or the edit modal). Clearing
+// the field (e.g. dragging a card backward) clears the date with it.
+function withMilestoneDates(fields) {
+  const stamped = { ...fields };
+  if ('interview_status' in fields) stamped.interview_passed_at = fields.interview_status === 'passed' ? todayStr : null;
+  if ('physical_passed' in fields) stamped.physical_passed_at = fields.physical_passed ? todayStr : null;
+  if ('orientation_completed' in fields) stamped.orientation_completed_at = fields.orientation_completed ? todayStr : null;
+  return stamped;
+}
+
 async function updateApplicant(id, fields) {
+  const stamped = withMilestoneDates(fields);
   try {
-    await updateDoc(doc(db, 'applicants', id), { ...fields, entered_by: profile.uid, updated_at: serverTimestamp() });
+    await updateDoc(doc(db, 'applicants', id), { ...stamped, entered_by: profile.uid, updated_at: serverTimestamp() });
     const a = applicants.find((x) => x.id === id);
-    if (a) Object.assign(a, fields);
+    if (a) Object.assign(a, stamped, { updated_at: new Date() });
     render();
     renderPipeline();
     renderOpenRoles();
