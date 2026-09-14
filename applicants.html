@@ -1771,36 +1771,62 @@ function progressFieldsHtml(a) {
         </select>
       </div>
     </div>
-    <div class="field">
-      <label class="f-lab" for="edit-app-interview">Interview / Offer</label>
-      <select class="f-in" id="edit-app-interview">
-        <option value="pending" ${a.interview_status === 'pending' || !a.interview_status ? 'selected' : ''}>Pending</option>
-        <option value="passed" ${a.interview_status === 'passed' ? 'selected' : ''}>Passed / offer extended</option>
-        <option value="not_passed" ${a.interview_status === 'not_passed' ? 'selected' : ''}>Did not pass</option>
-      </select>
+    <div class="frow">
+      <div class="field">
+        <label class="f-lab" for="edit-app-interview">Interview / Offer</label>
+        <select class="f-in" id="edit-app-interview">
+          <option value="pending" ${a.interview_status === 'pending' || !a.interview_status ? 'selected' : ''}>Pending</option>
+          <option value="passed" ${a.interview_status === 'passed' ? 'selected' : ''}>Passed / offer extended</option>
+          <option value="not_passed" ${a.interview_status === 'not_passed' ? 'selected' : ''}>Did not pass</option>
+        </select>
+      </div>
+      ${a.interview_status === 'passed' ? `
+      <div class="field">
+        <label class="f-lab" for="edit-app-interview-date">Interview/offer date</label>
+        <input class="f-in" id="edit-app-interview-date" type="date" value="${a.interview_passed_at || ''}">
+      </div>` : ''}
     </div>
     <div class="frow">
       <div class="field">
         <label class="f-lab">Clinic</label>
         <label style="display:block;font-size:12.5px"><input type="checkbox" id="edit-app-physical" ${a.physical_passed ? 'checked' : ''}> Passed</label>
       </div>
+      ${a.physical_passed ? `
+      <div class="field">
+        <label class="f-lab" for="edit-app-physical-date">Clinic date</label>
+        <input class="f-in" id="edit-app-physical-date" type="date" value="${a.physical_passed_at || ''}">
+      </div>` : ''}
+    </div>
+    <div class="frow">
       <div class="field">
         <label class="f-lab" for="edit-app-orientation-date">Orientation booked</label>
         <input class="f-in" id="edit-app-orientation-date" type="date" value="${a.orientation_booked_date || ''}">
       </div>
+      <div class="field">
+        <label class="f-lab">Orientation</label>
+        <label style="display:block;font-size:12.5px"><input type="checkbox" id="edit-app-orientation-done" ${a.orientation_completed ? 'checked' : ''}> Completed</label>
+      </div>
     </div>
+    ${a.orientation_completed ? `
     <div class="field">
-      <label class="f-lab">Orientation</label>
-      <label style="display:block;font-size:12.5px"><input type="checkbox" id="edit-app-orientation-done" ${a.orientation_completed ? 'checked' : ''}> Completed</label>
-    </div>
-    <div class="field">
-      <label class="f-lab" for="edit-app-outcome">Outcome</label>
-      <select class="f-in" id="edit-app-outcome">
-        ${outcomeOptionsHtml(a.outcome)}
-      </select>
-      ${HAS_REASON_OUTCOMES.includes(a.outcome) && profile.role === 'david'
-        ? `<button type="button" class="gh" id="edit-app-reason-btn" style="margin-top:6px;font-size:11px;padding:2px 8px">Reason (private)</button>`
-        : ''}
+      <label class="f-lab" for="edit-app-orientation-done-date">Orientation completed date</label>
+      <input class="f-in" id="edit-app-orientation-done-date" type="date" value="${a.orientation_completed_at || ''}">
+    </div>` : ''}
+    <div class="frow">
+      <div class="field">
+        <label class="f-lab" for="edit-app-outcome">Outcome</label>
+        <select class="f-in" id="edit-app-outcome">
+          ${outcomeOptionsHtml(a.outcome)}
+        </select>
+        ${HAS_REASON_OUTCOMES.includes(a.outcome) && profile.role === 'david'
+          ? `<button type="button" class="gh" id="edit-app-reason-btn" style="margin-top:6px;font-size:11px;padding:2px 8px">Reason (private)</button>`
+          : ''}
+      </div>
+      ${a.outcome === 'hired' ? `
+      <div class="field">
+        <label class="f-lab" for="edit-app-hired-date">Started date</label>
+        <input class="f-in" id="edit-app-hired-date" type="date" value="${a.hired_at || ''}">
+      </div>` : ''}
     </div>
   `;
 }
@@ -1832,6 +1858,21 @@ function renderEditAppProgress(applicantId) {
     else if (a.outcome === 'hired') { fields.hired = false; fields.hired_at = null; }
     liveUpdate(fields);
   });
+  // Manual date correction -- the milestone dates above stamp
+  // automatically the moment a checkbox/select is flipped, but anyone
+  // who reached that stage before this feature existed has no date on
+  // file, and any auto-stamped date is only ever "today," not the real
+  // day it happened. These let David fix or backfill the actual date
+  // directly, without going through interview_status etc. (so they
+  // don't get re-stamped to today the next time something else changes).
+  const interviewDateInp = document.getElementById('edit-app-interview-date');
+  if (interviewDateInp) interviewDateInp.addEventListener('change', (e) => liveUpdate({ interview_passed_at: e.target.value || null }));
+  const physicalDateInp = document.getElementById('edit-app-physical-date');
+  if (physicalDateInp) physicalDateInp.addEventListener('change', (e) => liveUpdate({ physical_passed_at: e.target.value || null }));
+  const orientationDoneDateInp = document.getElementById('edit-app-orientation-done-date');
+  if (orientationDoneDateInp) orientationDoneDateInp.addEventListener('change', (e) => liveUpdate({ orientation_completed_at: e.target.value || null }));
+  const hiredDateInp = document.getElementById('edit-app-hired-date');
+  if (hiredDateInp) hiredDateInp.addEventListener('change', (e) => liveUpdate({ hired_at: e.target.value || null }));
   const reasonBtn = document.getElementById('edit-app-reason-btn');
   if (reasonBtn) reasonBtn.addEventListener('click', () => openRejectReason(applicantId));
 }
