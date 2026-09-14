@@ -57,7 +57,7 @@
       </div>
 
       <div id="org-board-view">
-        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Managers and office staff only — field employees don't clutter this view. Use the <b>◀ ▲ ▼ ▶</b> arrows on each card to move that person up/down a row or left/right within it. To change who someone reports to (the line), <b>click a card to select it</b> (it'll highlight), then click the card you want them to report to. Click the same card again to cancel.</p>
+        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Managers, office staff, and client representatives only — field employees don't clutter this view (see the Maintenance field crews count below instead). Use the <b>◀ ▲ ▼ ▶</b> arrows on each card to move that person up/down a row or left/right within it. To change who someone reports to (the line), <b>click a card to select it</b> (it'll highlight), then click the card you want them to report to. Click the same card again to cancel.</p>
         <div class="org-root-drop" id="org-root-drop">After clicking someone, click here to remove their manager (top level)</div>
         <div id="org-kanban"></div>
         <div class="card" id="org-field-card" style="margin-top:16px">
@@ -146,22 +146,25 @@ let byId = new Map();
 // Anyone in neither is Field and doesn't get a card.
 let orgManagerIds = new Set();
 let orgOfficeIds = new Set();
+let orgClientRepIds = new Set();
 // Tap-to-move -- native HTML5 drag-and-drop (dragstart/dragover/drop)
 // doesn't work on iPad/iPhone touch at all, so this is the actual way
 // most people using this app will reassign someone, not a fallback.
 let selectedEmpId = null;
 
 async function loadAndRender() {
-  const [empSnap, mgrSnap, officeSnap] = await Promise.all([
+  const [empSnap, mgrSnap, officeSnap, clientRepSnap] = await Promise.all([
     getDocs(collection(db, 'employees')),
     getDoc(doc(db, 'settings', 'managers')),
     getDoc(doc(db, 'settings', 'office_employees')),
+    getDoc(doc(db, 'settings', 'client_reps')),
   ]);
   const all = empSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => !e.is_test);
   active = all.filter((e) => e.status !== 'terminated');
   byId = new Map(active.map((e) => [e.id, e]));
   orgManagerIds = new Set(mgrSnap.exists() ? (mgrSnap.data().employee_ids || []) : []);
   orgOfficeIds = new Set(officeSnap.exists() ? (officeSnap.data().employee_ids || []) : []);
+  orgClientRepIds = new Set(clientRepSnap.exists() ? (clientRepSnap.data().employee_ids || []) : []);
 
   // Direct reports per manager -- computed from manager_emp_id every
   // load, never stored, same as anniversary/tenure elsewhere in this app.
@@ -240,7 +243,7 @@ async function loadAndRender() {
 // since the whole point of the Board is to stay small enough to read at
 // a glance -- ~100 field employees would defeat that.
 function renderFieldSummary() {
-  const field = active.filter((e) => !orgManagerIds.has(e.id) && !orgOfficeIds.has(e.id)
+  const field = active.filter((e) => !orgManagerIds.has(e.id) && !orgOfficeIds.has(e.id) && !orgClientRepIds.has(e.id)
     && (e.division || '').toLowerCase().includes('maintenance'));
   document.getElementById('org-field-count').textContent = `${field.length} active`;
   const byDivision = new Map();
@@ -259,7 +262,7 @@ function renderFieldSummary() {
 // reassignManager() the Board's click-to-move uses; this is just a
 // more reliable way to get there than clicking cards.
 function renderOrgAssign() {
-  const eligible = active.filter((e) => orgManagerIds.has(e.id) || orgOfficeIds.has(e.id))
+  const eligible = active.filter((e) => orgManagerIds.has(e.id) || orgOfficeIds.has(e.id) || orgClientRepIds.has(e.id))
     .sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`));
 
   document.getElementById('assign-rows').innerHTML = eligible.length ? eligible.map((e) => `
@@ -338,7 +341,7 @@ function renderOrgAssign() {
 // another sets manager_emp_id -- this IS the org chart edit UI, there's
 // no separate "reassign manager" form anywhere else. ----
 function renderOrgBoard() {
-  const eligible = active.filter((e) => orgManagerIds.has(e.id) || orgOfficeIds.has(e.id));
+  const eligible = active.filter((e) => orgManagerIds.has(e.id) || orgOfficeIds.has(e.id) || orgClientRepIds.has(e.id));
   const eligibleIds = new Set(eligible.map((e) => e.id));
 
   // Group by rank tier. Unranked people (org_rank not set) get their own
@@ -510,7 +513,7 @@ function renderOrgBoard() {
 }
 
 function eligibleList() {
-  return active.filter((e) => orgManagerIds.has(e.id) || orgOfficeIds.has(e.id));
+  return active.filter((e) => orgManagerIds.has(e.id) || orgOfficeIds.has(e.id) || orgClientRepIds.has(e.id));
 }
 
 // Up/down: step org_rank by 1 -- since rank number IS the row, moving a
