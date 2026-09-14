@@ -550,7 +550,7 @@ function renderOrgBoard() {
       if (!dlId || !eligibleIds.has(dlId)) return;
       if (Array.isArray(e.org_custom_line_pct) && e.org_custom_line_pct.length >= 2) {
         const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-        const pts = e.org_custom_line_pct.map(([px, py]) => `${(px / 100) * treeRect.width},${(py / 100) * treeRect.height}`).join(' ');
+        const pts = e.org_custom_line_pct.map((p) => `${(p.x / 100) * treeRect.width},${(p.y / 100) * treeRect.height}`).join(' ');
         poly.setAttribute('points', pts);
         svg.appendChild(poly);
         return;
@@ -844,10 +844,12 @@ document.getElementById('org-draw-clear-btn').addEventListener('click', () => {
 document.getElementById('org-draw-save-btn').addEventListener('click', async () => {
   if (!drawState || drawState.points.length < 2) { showToast('Draw a line first.', 'error'); return; }
   const { empId, points, canvas } = drawState;
-  const pct = points.map(([x, y]) => [
-    Math.round((x / parseFloat(canvas.style.width)) * 1000) / 10,
-    Math.round((y / parseFloat(canvas.style.height)) * 1000) / 10,
-  ]);
+  // Firestore doesn't support arrays-of-arrays, so each point is
+  // {x, y} rather than [x, y].
+  const pct = points.map(([x, y]) => ({
+    x: Math.round((x / parseFloat(canvas.style.width)) * 1000) / 10,
+    y: Math.round((y / parseFloat(canvas.style.height)) * 1000) / 10,
+  }));
   try {
     await updateDoc(doc(db, 'employees', empId), { org_custom_line_pct: pct, entered_by: profile.uid });
     const emp = byId.get(empId);
