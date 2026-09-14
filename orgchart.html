@@ -17,7 +17,11 @@
 .org-tree{position:relative;padding:16px 16px 30px;overflow-x:auto}
 .org-connectors{position:absolute;inset:0;pointer-events:none}
 .org-connectors polyline{fill:none;stroke:var(--edge);stroke-width:1.5px}
+.org-connectors polyline.custom{stroke-dasharray:5 4}
 .org-draw-canvas{position:absolute;inset:0;z-index:10;cursor:crosshair;touch-action:none;background:rgba(21,71,51,.03)}
+.org-draw-canvas polyline{fill:none;stroke:var(--accentTx);stroke-width:2px;stroke-dasharray:5 4}
+.org-draw-canvas circle{fill:var(--accentTx);stroke:#fff;stroke-width:1.5px;cursor:grab;touch-action:none}
+.org-draw-canvas circle:active{cursor:grabbing}
 .org-rows{display:flex;flex-direction:column;gap:34px;align-items:flex-start}
 .org-row{display:grid;gap:14px;justify-items:center}
 .org-card{position:relative;z-index:1;background:var(--raise);border:1px solid var(--edge);box-shadow:0 1px 3px rgba(0,0,0,.08);padding:5px 8px;cursor:pointer;font-size:11px;min-width:108px;text-align:center}
@@ -69,8 +73,9 @@
             <button type="button" class="gh solid" id="org-draw-start-btn">Start drawing</button>
             <button type="button" class="gh" id="org-draw-cancel-btn">Cancel</button>
           </div>
-          <div id="org-draw-toolbar" hidden style="margin-top:8px;display:flex;gap:8px;align-items:center">
-            <span class="dim" style="font-size:11.5px">Draw the line with your finger or mouse, right on the board below.</span>
+          <div id="org-draw-toolbar" hidden style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span class="dim" style="font-size:11.5px">Tap/click on the board to add points for the line to pass through. Drag any point to move it.</span>
+            <button type="button" class="gh" id="org-draw-undo-btn">Undo point</button>
             <button type="button" class="gh" id="org-draw-clear-btn">Clear</button>
             <button type="button" class="gh solid" id="org-draw-save-btn">Save</button>
             <button type="button" class="gh" id="org-draw-abort-btn">Cancel</button>
@@ -550,6 +555,7 @@ function renderOrgBoard() {
       if (!dlId || !eligibleIds.has(dlId)) return;
       if (Array.isArray(e.org_custom_line_pct) && e.org_custom_line_pct.length >= 2) {
         const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        poly.setAttribute('class', 'custom');
         const pts = e.org_custom_line_pct.map((p) => `${(p.x / 100) * treeRect.width},${(p.y / 100) * treeRect.height}`).join(' ');
         poly.setAttribute('points', pts);
         svg.appendChild(poly);
@@ -731,18 +737,16 @@ async function reassignManager(empId, newMgrId) {
   }
 }
 
-// ---- Manual dotted-line drawing -- freehand, since the auto-routed
-// connector wasn't matching what everyone actually wanted for every
-// relationship. Requires the Dotted line already be set on the Assign
-// tab -- this only customizes HOW that line is drawn, not who it
-// connects to. Reuses the same touch+mouse canvas pattern the
-// signature pads elsewhere in this app already rely on, since that's
-// held up fine on this user's iPad where native drag-and-drop didn't.
+// ---- Manual dotted-line drawing -- click to place points, drag any
+// point to adjust it, like a basic diagram tool's connector editor.
+// Requires the Dotted line already be set on the Assign tab -- this
+// only customizes HOW that line is drawn, not who it connects to.
 let drawState = null;
 
 function populateDrawSelect() {
   const sel = document.getElementById('org-draw-select');
-  const candidates = eligibleList().filter((e) => e.dotted_line_emp_id && eligibleIdsSet().has(e.dotted_line_emp_id));
+  const idSet = eligibleIdsSet();
+  const candidates = eligibleList().filter((e) => e.dotted_line_emp_id && idSet.has(e.dotted_line_emp_id));
   sel.innerHTML = candidates.length
     ? candidates.map((e) => {
         const target = byId.get(e.dotted_line_emp_id);
@@ -755,69 +759,90 @@ function eligibleIdsSet() {
   return new Set(eligibleList().map((e) => e.id));
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
 function startDrawing(empId) {
   const treeEl = document.getElementById('org-tree');
   if (!treeEl) { showToast('Nothing to draw on — add people to the Board first.', 'error'); return; }
   const rect = treeEl.getBoundingClientRect();
-  const canvas = document.createElement('canvas');
-  canvas.className = 'org-draw-canvas';
-  const ratio = window.devicePixelRatio || 1;
-  canvas.width = rect.width * ratio;
-  canvas.height = rect.height * ratio;
-  canvas.style.width = rect.width + 'px';
-  canvas.style.height = rect.height + 'px';
-  treeEl.appendChild(canvas);
-  const ctx = canvas.getContext('2d');
-  ctx.scale(ratio, ratio);
-  ctx.lineWidth = 2;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accentTx') || '#154733';
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'org-draw-canvas');
+  svg.setAttribute('width', rect.width);
+  svg.setAttribute('height', rect.height);
+  treeEl.appendChild(svg);
 
-  const points = [];
-  let isDrawing = false;
-  const pos = (ev) => {
-    const r = canvas.getBoundingClientRect();
+  const poly = document.createElementNS(SVG_NS, 'polyline');
+  svg.appendChild(poly);
+
+  const points = []; // {x, y} in px, relative to the svg
+  const handles = []; // matching <circle> elements
+
+  const redrawPolyline = () => poly.setAttribute('points', points.map((p) => `${p.x},${p.y}`).join(' '));
+
+  function svgPos(ev) {
+    const r = svg.getBoundingClientRect();
     const p = ev.touches ? ev.touches[0] : ev;
-    return [p.clientX - r.left, p.clientY - r.top];
-  };
-  const start = (ev) => {
-    ev.preventDefault();
-    isDrawing = true;
-    points.length = 0;
-    const [x, y] = pos(ev);
-    points.push([x, y]);
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-  };
-  const move = (ev) => {
-    if (!isDrawing) return;
-    ev.preventDefault();
-    const [x, y] = pos(ev);
-    const last = points[points.length - 1];
-    if (last && Math.hypot(x - last[0], y - last[1]) < 2) return; // skip near-duplicate points
-    points.push([x, y]);
-    ctx.lineTo(x, y);
-    ctx.stroke();
-  };
-  const end = () => { isDrawing = false; };
+    return { x: p.clientX - r.left, y: p.clientY - r.top };
+  }
 
-  canvas.addEventListener('mousedown', start);
-  canvas.addEventListener('mousemove', move);
-  window.addEventListener('mouseup', end);
-  canvas.addEventListener('touchstart', start, { passive: false });
-  canvas.addEventListener('touchmove', move, { passive: false });
-  canvas.addEventListener('touchend', end);
+  function addPoint(pt) {
+    points.push(pt);
+    const circle = document.createElementNS(SVG_NS, 'circle');
+    circle.setAttribute('r', 6);
+    circle.setAttribute('cx', pt.x);
+    circle.setAttribute('cy', pt.y);
+    svg.appendChild(circle);
+    handles.push(circle);
+    wireHandleDrag(circle, points.length - 1);
+    redrawPolyline();
+  }
 
-  drawState = { empId, canvas, ctx, points, endHandler: end };
+  function wireHandleDrag(circle, index) {
+    let dragging = false;
+    const onMove = (ev) => {
+      if (!dragging) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const p = svgPos(ev);
+      points[index] = p;
+      circle.setAttribute('cx', p.x);
+      circle.setAttribute('cy', p.y);
+      redrawPolyline();
+    };
+    const onUp = () => { dragging = false; };
+    const onDown = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation(); // don't also register as a new-point click on the svg
+      dragging = true;
+    };
+    circle.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    circle.addEventListener('touchstart', onDown, { passive: false });
+    circle.addEventListener('touchmove', onMove, { passive: false });
+    circle.addEventListener('touchend', onUp);
+  }
+
+  const onSvgClick = (ev) => {
+    if (ev.target !== svg && ev.target !== poly) return; // a handle's own mousedown/touchstart already stopped propagation
+    addPoint(svgPos(ev));
+  };
+  svg.addEventListener('click', onSvgClick);
+  // touchend on empty svg space also places a point, for devices that
+  // don't synthesize a click reliably after a tap on an SVG element.
+  const onSvgTouchEnd = (ev) => {
+    if (ev.target !== svg && ev.target !== poly) return;
+    ev.preventDefault();
+    addPoint(svgPos(ev.changedTouches[0]));
+  };
+  svg.addEventListener('touchend', onSvgTouchEnd, { passive: false });
+
+  drawState = { empId, svg, points, handles, redrawPolyline };
   document.getElementById('org-draw-toolbar').hidden = false;
 }
 
 function stopDrawing() {
-  if (drawState) {
-    window.removeEventListener('mouseup', drawState.endHandler);
-    drawState.canvas.remove();
-  }
+  if (drawState) drawState.svg.remove();
   drawState = null;
   document.getElementById('org-draw-toolbar').hidden = true;
 }
@@ -836,19 +861,30 @@ document.getElementById('org-draw-start-btn').addEventListener('click', () => {
   startDrawing(empId);
 });
 document.getElementById('org-draw-abort-btn').addEventListener('click', () => stopDrawing());
+document.getElementById('org-draw-undo-btn').addEventListener('click', () => {
+  if (!drawState || !drawState.points.length) return;
+  drawState.points.pop();
+  const last = drawState.handles.pop();
+  if (last) last.remove();
+  drawState.redrawPolyline();
+});
 document.getElementById('org-draw-clear-btn').addEventListener('click', () => {
   if (!drawState) return;
   drawState.points.length = 0;
-  drawState.ctx.clearRect(0, 0, drawState.canvas.width, drawState.canvas.height);
+  drawState.handles.forEach((h) => h.remove());
+  drawState.handles.length = 0;
+  drawState.redrawPolyline();
 });
 document.getElementById('org-draw-save-btn').addEventListener('click', async () => {
-  if (!drawState || drawState.points.length < 2) { showToast('Draw a line first.', 'error'); return; }
-  const { empId, points, canvas } = drawState;
+  if (!drawState || drawState.points.length < 2) { showToast('Add at least two points first.', 'error'); return; }
+  const { empId, points, svg } = drawState;
+  const w = parseFloat(svg.getAttribute('width'));
+  const h = parseFloat(svg.getAttribute('height'));
   // Firestore doesn't support arrays-of-arrays, so each point is
   // {x, y} rather than [x, y].
-  const pct = points.map(([x, y]) => ({
-    x: Math.round((x / parseFloat(canvas.style.width)) * 1000) / 10,
-    y: Math.round((y / parseFloat(canvas.style.height)) * 1000) / 10,
+  const pct = points.map((p) => ({
+    x: Math.round((p.x / w) * 1000) / 10,
+    y: Math.round((p.y / h) * 1000) / 10,
   }));
   try {
     await updateDoc(doc(db, 'employees', empId), { org_custom_line_pct: pct, entered_by: profile.uid });
