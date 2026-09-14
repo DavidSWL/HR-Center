@@ -60,6 +60,10 @@
         <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Managers and office staff only — field employees don't clutter this view. Use the <b>◀ ▲ ▼ ▶</b> arrows on each card to move that person up/down a row or left/right within it. To change who someone reports to (the line), <b>click a card to select it</b> (it'll highlight), then click the card you want them to report to. Click the same card again to cancel.</p>
         <div class="org-root-drop" id="org-root-drop">After clicking someone, click here to remove their manager (top level)</div>
         <div id="org-kanban"></div>
+        <div class="card" id="org-field-card" style="margin-top:16px">
+          <div class="card-h"><h3>Maintenance field crews — all regions</h3><span id="org-field-count"></span></div>
+          <div class="card-body dim" id="org-field-breakdown" style="font-size:12.5px"></div>
+        </div>
       </div>
 
       <div id="org-assign-view" hidden>
@@ -227,6 +231,27 @@ async function loadAndRender() {
 
   renderOrgBoard();
   renderOrgAssign();
+  renderFieldSummary();
+}
+
+// ---- Field crew summary -- everyone NOT Manager/Office-flagged (so
+// not eligible for a card on the Board) whose division mentions
+// "Maintenance". One live-computed count instead of a card per person,
+// since the whole point of the Board is to stay small enough to read at
+// a glance -- ~100 field employees would defeat that.
+function renderFieldSummary() {
+  const field = active.filter((e) => !orgManagerIds.has(e.id) && !orgOfficeIds.has(e.id)
+    && (e.division || '').toLowerCase().includes('maintenance'));
+  document.getElementById('org-field-count').textContent = `${field.length} active`;
+  const byDivision = new Map();
+  field.forEach((e) => {
+    const d = e.division || 'Unspecified';
+    byDivision.set(d, (byDivision.get(d) || 0) + 1);
+  });
+  const regions = [...byDivision.keys()].sort();
+  document.getElementById('org-field-breakdown').textContent = regions.length
+    ? regions.map((d) => `${d}: ${byDivision.get(d)}`).join(' · ')
+    : 'No maintenance field crew members found in the active roster.';
 }
 
 // ---- Assign -- the same Manager/Office people as the Board, as a
