@@ -68,10 +68,10 @@
       </div>
 
       <div id="org-assign-view" hidden>
-        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Same Manager/Office list as the Board, just as a plain list. Department shows a colored tag on the Board card — it's separate from Division, so setting it here doesn't change anything on Reports or the roster. Rank controls which ROW someone sits in on the Board (rank 1 = top row, rank 2 = the next row down, and so on) — leave it blank and they'll show in their own row at the bottom.</p>
+        <p class="dim" style="font-size:11.5px;margin:-4px 0 10px">Same Manager/Office list as the Board, just as a plain list. Department shows a colored tag on the Board card — it's separate from Division, so setting it here doesn't change anything on Reports or the roster. Rank controls which ROW someone sits in on the Board (rank 1 = top row, rank 2 = the next row down, and so on) — leave it blank and they'll show in their own row at the bottom. Reports to draws the solid line; Dotted line draws a dashed one to a second person (e.g. a client rep who reports to their branch manager but dotted-lines to a VP).</p>
         <div class="card">
           <table>
-            <thead><tr><th>Employee</th><th>Job title</th><th>Division</th><th>Department</th><th>Rank</th><th>Reports to</th></tr></thead>
+            <thead><tr><th>Employee</th><th>Job title</th><th>Division</th><th>Department</th><th>Rank</th><th>Reports to</th><th>Dotted line</th></tr></thead>
             <tbody id="assign-rows"></tbody>
           </table>
         </div>
@@ -288,13 +288,38 @@ function renderOrgAssign() {
           `).join('')}
         </select>
       </td>
+      <td>
+        <select class="inp assign-dotted-select" data-id="${e.id}" style="height:32px;font-size:12.5px;min-width:200px">
+          <option value="">— None —</option>
+          ${eligible.filter((m) => m.id !== e.id).map((m) => `
+            <option value="${m.id}" ${e.dotted_line_emp_id === m.id ? 'selected' : ''}>${escapeHtml(`${m.first_name} ${m.last_name}`)}${m.position ? ` — ${escapeHtml(m.position)}` : ''}</option>
+          `).join('')}
+        </select>
+      </td>
     </tr>
-  `).join('') : '<tr><td colspan="6" class="dim">Nobody is flagged Manager or Office yet — set that in Settings first.</td></tr>';
+  `).join('') : '<tr><td colspan="7" class="dim">Nobody is flagged Manager or Office yet — set that in Settings first.</td></tr>';
 
   document.querySelectorAll('.assign-mgr-select').forEach((sel) => {
     sel.addEventListener('change', async () => {
       await reassignManager(sel.dataset.id, sel.value || null);
       renderOrgAssign(); // resets the dropdown to the real value if the change was rejected
+    });
+  });
+  document.querySelectorAll('.assign-dotted-select').forEach((sel) => {
+    sel.addEventListener('change', async () => {
+      const empId = sel.dataset.id;
+      const dottedId = sel.value || null;
+      try {
+        await updateDoc(doc(db, 'employees', empId), { dotted_line_emp_id: dottedId, entered_by: profile.uid });
+        const emp = byId.get(empId);
+        if (emp) emp.dotted_line_emp_id = dottedId;
+        showToast('Dotted line updated.');
+        renderOrgBoard();
+      } catch (err) {
+        console.error(err);
+        showToast('Could not update — ' + err.message, 'error');
+        renderOrgAssign();
+      }
     });
   });
   document.querySelectorAll('.assign-dept-select').forEach((sel) => {
