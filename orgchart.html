@@ -16,9 +16,9 @@
 .tabs .tab.active{background:var(--accent);color:#fff}
 .org-tree{position:relative;padding:16px 16px 30px;overflow-x:auto}
 .org-connectors{position:absolute;inset:0;pointer-events:none}
-.org-connectors line{stroke:var(--edge);stroke-width:1.5px}
-.org-rows{display:flex;flex-direction:column;gap:34px;align-items:center;width:fit-content;margin:0 auto}
-.org-row{display:flex;flex-direction:row;justify-content:center;gap:14px;flex-wrap:wrap;width:100%}
+.org-connectors polyline{fill:none;stroke:var(--edge);stroke-width:1.5px}
+.org-rows{display:flex;flex-direction:column;gap:34px;align-items:flex-start}
+.org-row{display:grid;gap:14px;justify-items:center}
 .org-card{position:relative;z-index:1;background:var(--raise);border:1px solid var(--edge);box-shadow:0 1px 3px rgba(0,0,0,.08);padding:5px 8px;cursor:pointer;font-size:11px;min-width:108px;text-align:center}
 .org-card.drag-over{background:var(--hover);border-color:var(--accentTx)}
 .org-card.selected{border-color:var(--accentTx);box-shadow:0 0 0 2px var(--accentTx)}
@@ -284,9 +284,36 @@ function renderOrgBoard() {
   });
   const ranks = [...byRank.keys()].sort((a, b) => a - b);
 
-  function cardHtml(e) {
+  // Column position (org_order) is a real number shared across the
+  // WHOLE board, not just a sequence within one row -- so column 4 in
+  // row 2 lines up with column 4 in row 4, and someone alone in their
+  // row can still sit anywhere left-to-right instead of being forced to
+  // the center. Anyone who hasn't been positioned yet gets a default
+  // column assigned right after whoever in their row HAS been placed
+  // (alphabetically among themselves), so nothing starts overlapping.
+  function effectiveColumns(row) {
+    const map = new Map();
+    const known = row.filter((e) => e.org_order != null);
+    known.forEach((e) => map.set(e.id, e.org_order));
+    let next = known.length ? Math.max(...known.map((e) => e.org_order)) + 1 : 0;
+    row.filter((e) => e.org_order == null)
+      .sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`))
+      .forEach((e) => { map.set(e.id, next); next += 1; });
+    return map;
+  }
+
+  let maxCol = 0;
+  const colByRank = new Map();
+  ranks.forEach((r) => {
+    const cols = effectiveColumns(byRank.get(r));
+    colByRank.set(r, cols);
+    cols.forEach((c) => { if (c > maxCol) maxCol = c; });
+  });
+  const totalCols = maxCol + 4; // headroom so there's always room to move further right
+
+  function cardHtml(e, col) {
     return `
-      <div class="org-card" draggable="true" data-id="${e.id}">
+      <div class="org-card" draggable="true" data-id="${e.id}" style="grid-column:${col + 1}">
         <div class="org-move">
           <button type="button" class="org-move-btn" data-id="${e.id}" data-dir="left" title="Move left">◀</button>
           <button type="button" class="org-move-btn" data-id="${e.id}" data-dir="up" title="Move up a row">▲</button>
@@ -299,33 +326,28 @@ function renderOrgBoard() {
     `;
   }
 
-  // Left-to-right position within a row -- org_order, ascending, with
-  // alphabetical as the fallback for anyone who hasn't been moved yet.
-  function rowSort(a, b) {
-    const oa = a.org_order ?? Infinity;
-    const ob = b.org_order ?? Infinity;
-    if (oa !== ob) return oa - ob;
-    return `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`);
-  }
-
   document.getElementById('org-kanban').innerHTML = eligible.length
     ? `
       <div class="org-tree" id="org-tree">
         <svg class="org-connectors" id="org-connectors"></svg>
         <div class="org-rows">
-          ${ranks.map((r) => `
-            <div class="org-row">
-              ${byRank.get(r).sort(rowSort).map(cardHtml).join('')}
-            </div>
-          `).join('')}
+          ${ranks.map((r) => {
+            const cols = colByRank.get(r);
+            const members = [...byRank.get(r)].sort((a, b) => cols.get(a.id) - cols.get(b.id));
+            return `<div class="org-row" style="grid-template-columns:repeat(${totalCols}, 120px)">${members.map((e) => cardHtml(e, cols.get(e.id))).join('')}</div>`;
+          }).join('')}
         </div>
       </div>
     `
     : '<div class="card"><div class="card-body dim">Nobody is flagged Manager or Office yet — set that in Settings first.</div></div>';
 
-  // Draw a line from each person to their actual manager's card,
-  // wherever that manager sits -- rows are fixed rank tiers now, not the
-  // reporting tree itself, so a line can (and often will) cross rows.
+  // Draw a right-angle connector from each person to their actual
+  // manager's card, wherever that manager sits -- rows are fixed rank
+  // tiers now, not the reporting tree itself, so a connector can (and
+  // often will) cross rows. Elbowed (down / across / down) rather than
+  // a straight diagonal, like a standard org chart -- and everyone
+  // reporting to the same manager in the same row shares an identical
+  // first drop segment, so their lines visually merge into one trunk.
   const treeEl = document.getElementById('org-tree');
   if (treeEl) {
     const svg = document.getElementById('org-connectors');
@@ -340,25 +362,28 @@ function renderOrgBoard() {
       if (!childEl || !mgrEl) return;
       const c = childEl.getBoundingClientRect();
       const m = mgrEl.getBoundingClientRect();
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', m.left + m.width / 2 - treeRect.left);
-      line.setAttribute('y1', m.bottom - treeRect.top);
-      line.setAttribute('x2', c.left + c.width / 2 - treeRect.left);
-      line.setAttribute('y2', c.top - treeRect.top);
-      svg.appendChild(line);
+      const mx = m.left + m.width / 2 - treeRect.left;
+      const my = m.bottom - treeRect.top;
+      const cx = c.left + c.width / 2 - treeRect.left;
+      const cy = c.top - treeRect.top;
+      const branchY = my + (cy - my) / 2;
+      const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      poly.setAttribute('points', `${mx},${my} ${mx},${branchY} ${cx},${branchY} ${cx},${cy}`);
+      svg.appendChild(poly);
     });
   }
 
   // Arrow-button move -- the reliable way to reposition someone, since
   // native drag-and-drop doesn't work on this user's iPad OR laptop.
-  // Up/down steps org_rank (the row); left/right steps org_order (the
-  // position within that row).
+  // Up/down steps org_rank (the row). Left/right nudges this one
+  // person's own column by 1 -- nobody else needs to move to make room,
+  // so it works even when someone's alone in their row.
   document.querySelectorAll('#org-kanban .org-move-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const dir = btn.dataset.dir;
       if (dir === 'up' || dir === 'down') moveRank(btn.dataset.id, dir);
-      else moveOrder(btn.dataset.id, dir);
+      else moveColumn(btn.dataset.id, dir, colByRank);
     });
   });
 
@@ -450,36 +475,23 @@ async function moveRank(empId, dir) {
   }
 }
 
-// Left/right: swap this person with their neighbor within the same row.
-// Whenever a swap happens, the whole row's org_order is made explicit
-// (0..n-1) so the new arrangement actually sticks -- two people who
-// never had an order set would otherwise both fall back to alphabetical
-// and the swap wouldn't visibly do anything.
-async function moveOrder(empId, dir) {
+// Left/right: nudge this one person's own column by 1. Nobody else has
+// to move to make room -- columns aren't packed, so someone alone in
+// their row can still sit anywhere left-to-right instead of always
+// landing dead center. colByRank is the same column map this render of
+// the Board just computed, so "current column" matches what's on screen
+// even for someone who's never been explicitly positioned yet.
+async function moveColumn(empId, dir, colByRank) {
   const emp = byId.get(empId);
   if (!emp) return;
   const rank = emp.org_rank ?? Infinity;
-  const row = eligibleList()
-    .filter((e) => (e.org_rank ?? Infinity) === rank)
-    .sort((a, b) => {
-      const oa = a.org_order ?? Infinity;
-      const ob = b.org_order ?? Infinity;
-      if (oa !== ob) return oa - ob;
-      return `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`);
-    });
-  const idx = row.findIndex((e) => e.id === empId);
-  const swapIdx = dir === 'left' ? idx - 1 : idx + 1;
-  if (swapIdx < 0 || swapIdx >= row.length) {
-    showToast(dir === 'left' ? 'Already first in this row.' : 'Already last in this row.', 'error');
-    return;
-  }
-  const reordered = [...row];
-  [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
+  const cols = colByRank.get(rank);
+  const cur = cols?.get(empId) ?? 0;
+  const newCol = dir === 'left' ? cur - 1 : cur + 1;
+  if (newCol < 0) { showToast('Already at the left edge.', 'error'); return; }
   try {
-    await Promise.all(reordered.map((e, i) => (e.org_order ?? null) === i
-      ? null
-      : updateDoc(doc(db, 'employees', e.id), { org_order: i, entered_by: profile.uid })));
-    reordered.forEach((e, i) => { e.org_order = i; });
+    await updateDoc(doc(db, 'employees', empId), { org_order: newCol, entered_by: profile.uid });
+    emp.org_order = newCol;
     renderOrgBoard();
   } catch (err) {
     console.error(err);
