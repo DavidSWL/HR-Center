@@ -449,7 +449,11 @@
     <div style="flex:1;overflow:auto;background:#111;display:flex;align-items:flex-start;justify-content:center;touch-action:pan-x pan-y" id="page-zoom-scroll">
       <img id="page-zoom-img" alt="Application page" style="max-width:none;transition:width .15s;cursor:zoom-in">
     </div>
-    <div style="display:flex;gap:8px;align-items:center;justify-content:center;padding:10px;background:var(--panel)">
+    <div style="display:flex;gap:8px;align-items:center;justify-content:center;padding:10px;background:var(--panel);flex-wrap:wrap">
+      <button type="button" class="gh" id="page-zoom-prev">&larr; Prev</button>
+      <span class="dim mono" id="page-zoom-idx" style="min-width:60px;text-align:center"></span>
+      <button type="button" class="gh" id="page-zoom-next">Next &rarr;</button>
+      <span style="width:1px;height:20px;background:var(--line);margin:0 4px"></span>
       <button type="button" class="gh" id="page-zoom-out">− Zoom out</button>
       <span class="dim mono" id="page-zoom-pct" style="min-width:48px;text-align:center">100%</span>
       <button type="button" class="gh" id="page-zoom-in">+ Zoom in</button>
@@ -2092,21 +2096,37 @@ appPagesDropzone.addEventListener('drop', async (e) => {
 
 // ---- Zoom viewer — click a thumbnail, then zoom in/out and scroll/drag
 // to pan. A phone photo of handwriting is often unreadable until you're
-// zoomed well past 100%.
+// zoomed well past 100%. Prev/Next (and the left/right arrow keys) step
+// through every page on this applicant without closing the viewer.
 let zoomPct = 100;
+let pageZoomIndex = 0;
 function openPageZoom(idx) {
   const p = applicationPages[idx];
   if (!p) return;
+  pageZoomIndex = idx;
   document.getElementById('page-zoom-title').textContent = `Page ${idx + 1} of ${applicationPages.length}`;
+  document.getElementById('page-zoom-idx').textContent = `${idx + 1} / ${applicationPages.length}`;
   document.getElementById('page-zoom-img').src = p.image_data_url;
   zoomPct = 100;
   applyZoom();
   document.getElementById('page-zoom-overlay').hidden = false;
 }
+function pageZoomStep(dir) {
+  if (!applicationPages.length) return;
+  openPageZoom((pageZoomIndex + dir + applicationPages.length) % applicationPages.length);
+}
 function applyZoom() {
   document.getElementById('page-zoom-img').style.width = zoomPct + '%';
   document.getElementById('page-zoom-pct').textContent = zoomPct + '%';
 }
+document.getElementById('page-zoom-prev').addEventListener('click', () => pageZoomStep(-1));
+document.getElementById('page-zoom-next').addEventListener('click', () => pageZoomStep(1));
+document.addEventListener('keydown', (e) => {
+  if (document.getElementById('page-zoom-overlay').hidden) return;
+  if (e.key === 'ArrowLeft') pageZoomStep(-1);
+  else if (e.key === 'ArrowRight') pageZoomStep(1);
+  else if (e.key === 'Escape') document.getElementById('page-zoom-overlay').hidden = true;
+});
 document.getElementById('page-zoom-img').addEventListener('click', () => {
   zoomPct = zoomPct < 200 ? zoomPct + 50 : 100;
   applyZoom();
