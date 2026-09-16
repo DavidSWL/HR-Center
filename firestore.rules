@@ -104,6 +104,15 @@ service cloud.firestore {
         || data.image_data_url.size() < 1300000;
     }
 
+    // Rules can't sum byte sizes across a list, so this backstop just
+    // caps the COUNT to match the client-side cap in safety.html — each
+    // photo is already resized/compressed there before it ever reaches
+    // here, same reasoning as photoSizeOk/applicationPageSizeOk above.
+    function incidentPhotosOk(data) {
+      return !('photo_data_urls' in data) || data.photo_data_urls == null
+        || data.photo_data_urls.size() <= 6;
+    }
+
     // ---- users ------------------------------------------------------------
     // Role assignment is how every other rule below decides who can do
     // what, so it is not something the app itself is allowed to change.
@@ -297,8 +306,8 @@ service cloud.firestore {
     match /incidents/{incidentId} {
       allow read: if isHrUser();
       allow create: if isHrUser() && isClean(request.resource.data)
-        && stamped(request.resource.data);
-      allow update: if isHrUser() && isClean(request.resource.data);
+        && stamped(request.resource.data) && incidentPhotosOk(request.resource.data);
+      allow update: if isHrUser() && isClean(request.resource.data) && incidentPhotosOk(request.resource.data);
       allow delete: if false;
     }
 
