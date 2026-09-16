@@ -72,7 +72,8 @@
             <option value="">All types</option>
             <option>Injury</option>
             <option>Near miss</option>
-            <option>Property damage</option>
+            <option>Company property damage</option>
+            <option>Client property damage</option>
             <option>Vehicle accident</option>
           </select>
           <button class="gh" id="export-btn" type="button">Export Form 300 CSV</button>
@@ -144,7 +145,8 @@
           <select class="f-in" id="inc-type" required>
             <option>Injury</option>
             <option>Near miss</option>
-            <option>Property damage</option>
+            <option>Company property damage</option>
+            <option>Client property damage</option>
             <option>Vehicle accident</option>
           </select>
         </div>
@@ -290,9 +292,10 @@
           .xlsx or .csv. Reads an "Incidents" sheet if present (general incidents) and a "Vehicle
           Accidents" sheet if present (auto-tagged as Vehicle accident). The employee named in each
           row is matched against the current roster by name — unmatched rows still import, just
-          unassigned. Category values that don't map cleanly onto Injury / Near miss / Property
-          damage / Vehicle accident are defaulted to Property damage and flagged for you to correct
-          afterward — everything imported stays fully editable by clicking its row.
+          unassigned. Category values that don't map cleanly onto Injury / Near miss / Company
+          property damage / Client property damage / Vehicle accident are defaulted to Company
+          property damage and flagged for you to correct afterward — everything imported stays
+          fully editable by clicking its row.
         </p>
         <input class="f-in" id="inc-csv-file" type="file" accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
       </div>
@@ -590,7 +593,8 @@ function renderReport() {
     <div><div class="v n">${incidents.length}</div><div class="k">Total incidents</div></div>
     <div><div class="v hot">$${totalCost.toLocaleString()}</div><div class="k">Total cost</div></div>
     <div><div class="v n">$${(costByType['Injury'] || 0).toLocaleString()}</div><div class="k">Injuries</div></div>
-    <div><div class="v n">$${(costByType['Property damage'] || 0).toLocaleString()}</div><div class="k">Property damage</div></div>
+    <div><div class="v n">$${(costByType['Company property damage'] || 0).toLocaleString()}</div><div class="k">Company property damage</div></div>
+    <div><div class="v n">$${(costByType['Client property damage'] || 0).toLocaleString()}</div><div class="k">Client property damage</div></div>
     <div><div class="v n">$${(costByType['Vehicle accident'] || 0).toLocaleString()}</div><div class="k">Vehicle accidents</div></div>
     <div><div class="v n">$${(costByType['Near miss'] || 0).toLocaleString()}</div><div class="k">Near misses</div></div>
   `;
@@ -754,6 +758,11 @@ function openEdit(id) {
   ensureOption(document.getElementById('department'), inc.department || '');
   document.getElementById('department').value = inc.department || '';
   document.getElementById('location').value = inc.location || '';
+  // Property damage split into Company/Client after some incidents were
+  // already saved as the old plain "Property damage" -- ensureOption
+  // keeps an old record's value showing correctly instead of silently
+  // blanking it; whoever opens it can pick the right one of the two.
+  ensureOption(document.getElementById('inc-type'), inc.incident_type);
   document.getElementById('inc-type').value = inc.incident_type || 'Injury';
   document.getElementById('what-happened').value = inc.what_happened || '';
   document.getElementById('injury-type').value = inc.injury_type || '';
@@ -1174,17 +1183,20 @@ function ipick(row, ...keys) {
   return '';
 }
 
-// Category values that came in already meaning exactly one of our four
+// Category values that came in already meaning exactly one of our five
 // types -- no review flag needed. Everything else gets a best-guess
 // default and a "verify" flag, since guessing wrong on a safety record
-// is worse than asking a human to glance at it once.
+// is worse than asking a human to glance at it once. property_damage is
+// always ambiguous now that it's split into Company/Client -- there's no
+// way to tell which from a generic imported category alone, so it always
+// gets flagged even though it maps to a default.
 const CATEGORY_MAP = {
   injury: 'Injury',
   near_miss: 'Near miss',
-  property_damage: 'Property damage',
+  property_damage: 'Company property damage',
   vehicle_accident: 'Vehicle accident',
 };
-const UNAMBIGUOUS_CATEGORIES = new Set(['injury', 'near_miss', 'property_damage', 'vehicle_accident']);
+const UNAMBIGUOUS_CATEGORIES = new Set(['injury', 'near_miss', 'vehicle_accident']);
 
 function resolveEmployee(nameText, employeesList) {
   if (!nameText) return null;
@@ -1215,7 +1227,7 @@ function mapIncidentRow(row, source) {
   const rawCategory = source === 'vehicle'
     ? 'vehicle_accident'
     : normalizeCategoryKey(ipick(row, 'category'));
-  const incidentType = CATEGORY_MAP[rawCategory] || 'Property damage';
+  const incidentType = CATEGORY_MAP[rawCategory] || 'Company property damage';
   const needsReview = source !== 'vehicle' && !UNAMBIGUOUS_CATEGORIES.has(rawCategory);
 
   const nameText = source === 'vehicle' ? ipick(row, 'driver') : ipick(row, 'employees_involved');
