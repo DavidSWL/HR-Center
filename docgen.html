@@ -3286,7 +3286,7 @@ function renderIncidentReport() {
           <div class="field"><label class="f-lab">Location / client site</label><input class="f-in" id="ir-location"></div>
         </div>
         <div class="field"><label class="f-lab">Incident type</label>
-          <select class="f-in" id="ir-type"><option>Injury</option><option>Near miss</option><option>Property damage</option><option>Vehicle accident</option></select>
+          <select class="f-in" id="ir-type"><option>Injury</option><option>Near miss</option><option>Company property damage</option><option>Client property damage</option><option>Vehicle accident</option></select>
         </div>
         <div class="field"><label class="f-lab">What happened</label><textarea class="f-in" id="ir-what-happened" rows="3" style="resize:vertical"></textarea></div>
 
@@ -3502,7 +3502,7 @@ function readIncidentReportForm() {
   };
 }
 
-const INCIDENT_TYPE_ES = { Injury: 'Lesión', 'Near miss': 'Casi accidente', 'Property damage': 'Daño a la propiedad', 'Vehicle accident': 'Accidente vehicular' };
+const INCIDENT_TYPE_ES = { Injury: 'Lesión', 'Near miss': 'Casi accidente', 'Company property damage': 'Daño a la propiedad de la empresa', 'Client property damage': 'Daño a la propiedad del cliente', 'Vehicle accident': 'Accidente vehicular' };
 const TREATMENT_LEVEL_LABELS = { none: 'None needed', first_aid: 'First aid', clinic: 'Clinic', er: 'Emergency room', hospitalization: 'Hospitalization', refused: 'Employee refused treatment' };
 const TREATMENT_LEVEL_LABELS_ES = { none: 'No se necesitó', first_aid: 'Primeros auxilios', clinic: 'Clínica', er: 'Sala de emergencias', hospitalization: 'Hospitalización', refused: 'Empleado rechazó tratamiento' };
 
@@ -5211,8 +5211,18 @@ async function populateIncidentReportForm(d) {
   setEmpField('ir-emp', d.emp_id);
   document.getElementById('ir-department').value = d.department || '';
   document.getElementById('ir-location').value = d.location || '';
-  document.getElementById('ir-type').value = d.incident_type || 'Injury';
-  document.getElementById('ir-type').dispatchEvent(new Event('change'));
+  // Property damage split into Company/Client after some incidents were
+  // already saved as the old plain "Property damage" -- keep that value
+  // selectable rather than silently blanking it when reopening one.
+  const irTypeSel = document.getElementById('ir-type');
+  if (d.incident_type && ![...irTypeSel.options].some((o) => o.value === d.incident_type)) {
+    const opt = document.createElement('option');
+    opt.value = d.incident_type;
+    opt.textContent = d.incident_type;
+    irTypeSel.appendChild(opt);
+  }
+  irTypeSel.value = d.incident_type || 'Injury';
+  irTypeSel.dispatchEvent(new Event('change'));
   document.getElementById('ir-what-happened').value = d.what_happened || '';
   document.getElementById('ir-injury-type').value = d.injury_type || '';
   document.getElementById('ir-body-part').value = d.body_part || '';

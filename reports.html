@@ -644,7 +644,7 @@ async function renderReport(key) {
       const dept = i.department || 'Unspecified';
       byDeptTotal[dept] = (byDeptTotal[dept] || 0) + 1;
       if (i.incident_type === 'Near miss') byDeptNearMiss[dept] = (byDeptNearMiss[dept] || 0) + 1;
-      if (i.incident_type === 'Property damage') byDeptProperty[dept] = (byDeptProperty[dept] || 0) + 1;
+      if (i.incident_type === 'Company property damage' || i.incident_type === 'Client property damage') byDeptProperty[dept] = (byDeptProperty[dept] || 0) + 1;
       if (i.incident_type === 'Vehicle accident') {
         const div = i.division || 'Unspecified';
         byDivVehicle[div] = (byDivVehicle[div] || 0) + 1;
