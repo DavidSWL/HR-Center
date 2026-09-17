@@ -180,6 +180,16 @@ function signedOnHtml(ts) {
   return `<div class="dim" style="margin-top:6px;font-size:11.5px">Signed ${ts.toDate().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</div>`;
 }
 
+// serverTimestamp() only resolves once the write lands, so the record
+// just saved doesn't have a real value to hand signedOnHtml() yet —
+// this shows the moment of signing immediately, using the browser's own
+// clock, so whoever just signed sees confirmation without needing to
+// close and reopen the document (which is the only way signedOnHtml()
+// above would otherwise pick it up).
+function signedNowHtml() {
+  return `<div class="dim" style="margin-top:6px;font-size:11.5px">Signed ${new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</div>`;
+}
+
 // Legal-letter-style long date ("August 18, 2026"), separate from app.js's
 // short admin-table formatDate() — this is only for printed documents.
 function longDate(dateStr, isEs = false) {
@@ -361,6 +371,7 @@ function openGenerator(key) {
   currentKey = key;
   pendingSigDocId = null;
   pendingSigTaskId = null;
+  loadedIncidentSignedAt = { manager: null, employee: null };
   refusalLinkedIncidentId = null;
   pendingIncidentRefusalDocId = null;
   linkedTerminationId = null;
@@ -507,7 +518,7 @@ function renderPipSheet(lang, emp, p) {
       <h4>${isEs ? 'Firma Electrónica del Gerente' : 'Manager Electronic Signature'}</h4>
       ${signaturePadHtml('pip-mgr-sig-pad', 'pip-mgr-sig-clear')}
       <button type="button" class="gh solid no-print" id="pip-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
-      ${signedOnHtml(p.signedAt)}
+      <div id="pip-signedon">${signedOnHtml(p.signedAt)}</div>
       ${signatureTaskFieldsHtml('pip')}
       <div class="doc-fineprint">${isEs
         ? 'El acuse de recibo de este plan no constituye acuerdo con su contenido, solo confirma que fue entregado y explicado.'
@@ -531,6 +542,7 @@ function renderPipSheet(lang, emp, p) {
         await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
         pendingSigDocId = null; pendingSigTaskId = null;
       }
+      document.getElementById('pip-signedon').innerHTML = signedNowHtml();
       showToast('Signature saved.');
     } catch (err) {
       console.error(err);
@@ -824,7 +836,7 @@ function renderReviewSheet(emp, milestone, data, lang = 'en') {
       <div class="form-section">${isEs ? 'Firma Electrónica de Recursos Humanos' : 'HR Electronic Signature'}</div>
       ${signaturePadHtml('rev-hr-sig-pad', 'rev-hr-sig-clear')}
       <button type="button" class="gh solid no-print" id="rev-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
-      ${signedOnHtml(data.signed_at)}
+      <div id="rev-signedon">${signedOnHtml(data.signed_at)}</div>
       ${signatureTaskFieldsHtml('rev')}
       </div>
     </div>
@@ -851,6 +863,7 @@ function renderReviewSheet(emp, milestone, data, lang = 'en') {
         await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
         pendingSigDocId = null; pendingSigTaskId = null;
       }
+      document.getElementById('rev-signedon').innerHTML = signedNowHtml();
       showToast('Signature saved.');
     } catch (err) {
       console.error(err);
@@ -1382,7 +1395,7 @@ function renderTerminationSheet(r, finalPay = {}, lang = 'en') {
       <div class="dim" style="font-size:11.5px;margin:-4px 0 8px">${isEs ? 'Al firmar, certifico lo anterior si el empleado no firmó.' : 'By signing, I certify the above if the employee did not sign.'}</div>
       ${signaturePadHtml('term-mgr-sig-pad', 'term-mgr-sig-clear')}
       <button type="button" class="gh solid no-print" id="term-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
-      ${signedOnHtml(r.signed_at)}
+      <div id="term-signedon">${signedOnHtml(r.signed_at)}</div>
       ${r.id ? signatureTaskFieldsHtml('term') : ''}
       <div class="form-section">${isEs ? 'Firma Electrónica del Testigo' : 'Witness Electronic Signature'}</div>
       <div class="dim" style="font-size:11.5px;margin:-4px 0 8px">${isEs ? '(si el empleado se niega a firmar o no está disponible)' : '(if the employee refuses to sign or is unavailable)'}</div>
@@ -1453,6 +1466,7 @@ function renderTerminationSheet(r, finalPay = {}, lang = 'en') {
         await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
         pendingSigDocId = null; pendingSigTaskId = null;
       }
+      document.getElementById('term-signedon').innerHTML = signedNowHtml();
       showToast('Signature saved.');
     } catch (err) {
       console.error(err);
@@ -1676,6 +1690,7 @@ function renderEmbeddedChangeNoticeSheet(r, lang) {
         ${signaturePadHtml('cne-emp-sig-pad', 'cne-emp-sig-clear')}
         <div class="form-cell"><b>${isEs ? 'Nombre en Letra de Molde' : 'Print Name'}</b>${escapeHtml(r.emp_name)}</div>
         <button type="button" class="gh solid no-print" id="cne-save-btn" style="margin-top:10px">${isEs ? 'Guardar' : 'Save'}</button>
+        <div id="cne-signedon"></div>
       </div>
     </div>
   `;
@@ -1705,6 +1720,7 @@ function renderEmbeddedChangeNoticeSheet(r, lang) {
         await updateDoc(doc(db, 'terminations', r.id), { notices, entered_by: profile.uid });
         r.notices = notices;
       }
+      if (signed) document.getElementById('cne-signedon').innerHTML = signedNowHtml();
       showToast('Saved.');
     } catch (err) {
       console.error(err);
@@ -1997,6 +2013,7 @@ function renderChangeNoticeSheet(lang) {
       ${signaturePadHtml('cn-emp-sig-pad', 'cn-emp-sig-clear')}
       <div class="form-cell"><b>${isEs ? 'Nombre en Letra de Molde' : 'Print Name'}</b>${emp.first_name} ${emp.last_name}</div>
       <button type="button" class="gh solid no-print" id="cn-save-btn" style="margin-top:10px">${isEs ? 'Guardar' : 'Save'}</button>
+      <div id="cn-signedon"></div>
     </div>
     <button class="gh no-print" id="cn-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
   `;
@@ -2035,6 +2052,7 @@ function renderChangeNoticeSheet(lang) {
           term.notices = notices;
         }
       }
+      if (signed) document.getElementById('cn-signedon').innerHTML = signedNowHtml();
       showToast('Saved.');
     } catch (err) {
       console.error(err);
@@ -2382,6 +2400,7 @@ function acceptanceBlock(agreementLabel, sigLabel, dateLabel) {
     <div class="accept-label-line"><span class="lbl">${escapeHtml(sigLabel)} <button type="button" class="gh no-print" id="ltr-sig-clear" style="font-size:9px;padding:2px 6px;margin-left:8px">Clear</button></span><span class="lbl short">${escapeHtml(dateLabel)}</span></div>
     <div class="no-print" style="margin-top:12px">
       <button type="button" class="gh solid" id="ltr-sig-save">Signed — save</button>
+      <div id="ltr-signedon"></div>
       ${signatureTaskFieldsHtml('ltr')}
     </div>
   </div>`;
@@ -2727,6 +2746,7 @@ function generateLetterSheet() {
         await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
         pendingSigDocId = null; pendingSigTaskId = null;
       }
+      document.getElementById('ltr-signedon').innerHTML = signedNowHtml();
       showToast('Signed and saved — find it any time in Documents.');
     } catch (err) {
       console.error(err);
@@ -3137,6 +3157,7 @@ function renderRefusalSheet(lang) {
         ? 'Este formulario documenta únicamente la decisión voluntaria del empleado. No es una renuncia ni liberación de ningún tipo. Conservar con el reporte del incidente.'
         : 'This form documents the employee’s voluntary decision only. It is not a release or waiver of any kind. Retain with the incident report.'}</div>
       <button type="button" class="gh solid no-print" id="ref-sig-save" style="margin-top:10px">${isEs ? 'Guardar' : 'Save'}</button>
+      <div id="ref-signedon"></div>
       </div>
     </div>
     <button class="gh no-print" id="ref-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
@@ -3200,6 +3221,7 @@ function renderRefusalSheet(lang) {
         module: 'documents', item: `Medical Treatment Refusal saved — ${emp.first_name} ${emp.last_name}`,
         entered_by: profile.uid, entered_at: serverTimestamp(),
       });
+      document.getElementById('ref-signedon').innerHTML = signedNowHtml();
       showToast('Saved — view it any time in Documents.');
     } catch (err) {
       console.error(err);
@@ -3673,11 +3695,13 @@ function renderIncidentReportSheet(lang = 'en') {
         <canvas id="ir-mgr-sig-pad" style="width:100%;height:90px;display:block;cursor:crosshair;touch-action:none"></canvas>
       </div>
       <button type="button" class="gh no-print" id="ir-mgr-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      <div id="ir-mgr-signedon">${signedOnHtml(loadedIncidentSignedAt.manager)}</div>
       <div class="form-section">${isEs ? 'Firma del Empleado' : 'Signature of Employee'}</div>
       <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
         <canvas id="ir-emp-sig-pad" style="width:100%;height:90px;display:block;cursor:crosshair;touch-action:none"></canvas>
       </div>
       <button type="button" class="gh no-print" id="ir-emp-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      <div id="ir-emp-signedon">${signedOnHtml(loadedIncidentSignedAt.employee)}</div>
       <button type="button" class="gh solid no-print" id="ir-save-btn" style="margin-top:10px">${isEs ? 'Guardar' : 'Save'}</button>
       ${signatureTaskFieldsHtml('ir', 'Save and create signature reminder')}
       <div class="dim no-print" style="font-size:11.5px;margin-top:4px">The incident always saves right away, signed or not. Fill in who/by-when above only if a signature is still missing and you want a task to follow up.</div>
@@ -3812,6 +3836,8 @@ async function saveIncidentReport(f, wantsSignatureTask = false) {
       });
     }
     await batch.commit();
+    if (hasMgrSig) document.getElementById('ir-mgr-signedon').innerHTML = signedNowHtml();
+    if (hasEmpSig) document.getElementById('ir-emp-signedon').innerHTML = signedNowHtml();
     if (pendingSigTaskId) {
       await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
       pendingSigDocId = null; pendingSigTaskId = null;
@@ -4846,6 +4872,13 @@ function renderJobDescriptionSheet(role, lang) {
 let pendingSigDocId = null;
 let pendingSigTaskId = null;
 
+// The manager/employee signed_at of whatever incident
+// loadPendingSignatureDoc() just reopened -- the sheet reads this to
+// show "Signed [date/time]" for whichever of the two already has a
+// signature on file. Reset alongside pendingSigDocId whenever a fresh,
+// unsigned generator opens.
+let loadedIncidentSignedAt = { manager: null, employee: null };
+
 function readTimecardForm() {
   const emp = employees.find((e) => e.id === document.getElementById('tc-emp').value);
   if (!emp) { showToast('Select an employee.', 'error'); return null; }
@@ -5087,6 +5120,7 @@ function renderMileageSheet(lang) {
       <div class="form-section">${isEs ? 'Firma Electrónica del Supervisor o RH' : 'Supervisor or HR Electronic Signature'}</div>
       ${signaturePadHtml('mi-sup-sig-pad', 'mi-sup-sig-clear')}
       <button type="button" class="gh solid no-print" id="mi-sig-save" style="margin-top:10px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
+      <div id="mi-signedon"></div>
     </div>
     <button class="gh no-print" id="mi-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
   `;
@@ -5098,7 +5132,7 @@ function renderMileageSheet(lang) {
     division: emp.division || '', position: emp.position || '',
     period_start: periodStart, period_end: periodEnd,
     rate, rows, total_miles: totalMiles, total_amount: totalAmount,
-  }, 'mi-sup-sig-pad'));
+  }, 'mi-sup-sig-pad', 'mi-signedon'));
   setUpSignaturePad('mi-sig-pad', 'mi-sig-clear');
   setUpSignaturePad('mi-sup-sig-pad', 'mi-sup-sig-clear');
   sheetRerender = (l) => withPreservedSignature('mi-sup-sig-pad', () => withPreservedSignature('mi-sig-pad', () => renderMileageSheet(l)));
@@ -5325,6 +5359,7 @@ async function loadPendingSignatureDoc(type, id) {
       }
       pendingSigDocId = id; pendingSigTaskId = taskId;
       pendingIncidentRefusalDocId = d.refusal_doc_id || null;
+      loadedIncidentSignedAt = { manager: d.manager_signed_at || null, employee: d.employee_signed_at || null };
       await populateIncidentReportForm(d);
       renderIncidentReportSheet(document.getElementById('lang-select').value);
       if (d.followup_checks) {
@@ -5461,7 +5496,7 @@ async function loadPendingSignatureDoc(type, id) {
 // signature as an image, saves (or updates) the signed record in
 // Documents, and — if this came from a "save for later" task — completes
 // that task so the follow-up doesn't linger once it's actually signed.
-async function finalizeSignedDocument(canvasId, docData, supervisorCanvasId = null) {
+async function finalizeSignedDocument(canvasId, docData, supervisorCanvasId = null, signedOnId = null) {
   const state = sigPads[canvasId];
   const supState = supervisorCanvasId ? sigPads[supervisorCanvasId] : null;
   if (!(state && state.hasStroke) && !(supState && supState.hasStroke)) {
@@ -5487,6 +5522,7 @@ async function finalizeSignedDocument(canvasId, docData, supervisorCanvasId = nu
       module: 'documents', item: `${signedLabel} signed — ${docData.emp_name}`,
       entered_by: profile.uid, entered_at: serverTimestamp(),
     });
+    if (signedOnId) document.getElementById(signedOnId).innerHTML = signedNowHtml();
     showToast('Signed and saved — find it any time in Documents.');
     pendingSigDocId = null;
     pendingSigTaskId = null;
@@ -5680,6 +5716,7 @@ function renderTimecardSheet(lang) {
       <div class="form-section">${isEs ? 'Firma Electrónica del Supervisor o RH' : 'Supervisor or HR Electronic Signature'}</div>
       ${signaturePadHtml('tc-sup-sig-pad', 'tc-sup-sig-clear')}
       <button type="button" class="gh solid no-print" id="tc-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
+      <div id="tc-signedon"></div>
       <div class="form-fine">${isEs
         ? 'Este registro corrige únicamente el tiempo trabajado; no crea ni modifica ninguna tasa de pago. Firmar arriba, imprimir como PDF y archivar según el proceso de RH.'
         : 'This record corrects worked time only; it does not create or change any pay rate. Sign above, print to PDF, and file per HR process.'}</div>
@@ -5693,7 +5730,7 @@ function renderTimecardSheet(lang) {
     emp_id: emp.id, emp_name: `${emp.first_name} ${emp.last_name}`,
     division: emp.division || '', position: emp.position || '',
     date, rows,
-  }, 'tc-sup-sig-pad'));
+  }, 'tc-sup-sig-pad', 'tc-signedon'));
   setUpSignaturePad('tc-sig-pad', 'tc-sig-clear');
   setUpSignaturePad('tc-sup-sig-pad', 'tc-sup-sig-clear');
   sheetRerender = (l) => withPreservedSignature('tc-sup-sig-pad', () => withPreservedSignature('tc-sig-pad', () => renderTimecardSheet(l)));
@@ -5886,6 +5923,7 @@ function renderMealPenaltySheet(lang) {
       <div class="form-section">${isEs ? 'Firma Electrónica del Supervisor o RH' : 'Supervisor or HR Electronic Signature'}</div>
       ${signaturePadHtml('mp-sup-sig-pad', 'mp-sup-sig-clear')}
       <button type="button" class="gh solid no-print" id="mp-sig-save" style="margin-bottom:10px;margin-left:8px">${isEs ? 'Firmado — guardar' : 'Signed — save'}</button>
+      <div id="mp-signedon"></div>
       <div class="form-fine">${isEs
         ? 'Este registro documenta el período de comida y la prima adeudada; no crea ni modifica ninguna tasa de pago regular. Firmar arriba, imprimir como PDF y archivar según el proceso de RH.'
         : 'This record documents the meal period and the premium owed; it does not create or change any regular pay rate. Sign above, print to PDF, and file per HR process.'}</div>
@@ -5902,7 +5940,7 @@ function renderMealPenaltySheet(lang) {
     late_lunch: f.lateLunch, late_lunch_time: f.lateLunchTime,
     premium_pending: f.premiumPending, pay_date: f.payDate,
     premium_assignee_id: f.assigneeId, premium_due_date: f.dueDate,
-  }, 'mp-sup-sig-pad'));
+  }, 'mp-sup-sig-pad', 'mp-signedon'));
   setUpSignaturePad('mp-sig-pad', 'mp-sig-clear');
   setUpSignaturePad('mp-sup-sig-pad', 'mp-sup-sig-clear');
   sheetRerender = (l) => withPreservedSignature('mp-sup-sig-pad', () => withPreservedSignature('mp-sig-pad', () => renderMealPenaltySheet(l)));
@@ -6127,6 +6165,7 @@ function renderMealWaiver2Sheet(lang) {
         ? 'Un segundo período de comida solo puede renunciarse por consentimiento mutuo cuando las horas totales no exceden 12 y el primer período de comida no fue renunciado (Código Laboral §512). Un período de comida perdido o no conforme requiere una hora adicional de pago a la tarifa regular (Código Laboral §226.7). Conserve el formulario completo en el expediente del empleado y envíe una copia a Recursos Humanos.'
         : 'A second meal period may only be waived by mutual consent when total hours worked do not exceed 12 and the first meal period was not waived (Labor Code §512). A missed or non-compliant meal period requires one additional hour of pay at the regular rate (Labor Code §226.7). Retain the completed form in the employee file and forward a copy to HR.'}</div>
       <button type="button" class="gh solid no-print" id="mw2-sig-save" style="margin-top:10px">${isEs ? 'Guardar' : 'Save'}</button>
+      <div id="mw2-signedon"></div>
       </div>
     </div>
     <button class="gh no-print" id="mw2-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
@@ -6165,6 +6204,7 @@ function renderMealWaiver2Sheet(lang) {
         module: 'documents', item: `Second Meal Period Waiver saved — ${f.emp.first_name} ${f.emp.last_name}`,
         entered_by: profile.uid, entered_at: serverTimestamp(),
       });
+      document.getElementById('mw2-signedon').innerHTML = signedNowHtml();
       showToast('Saved — view it any time in Documents.');
     } catch (err) {
       console.error(err);
