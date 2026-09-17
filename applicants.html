@@ -185,6 +185,10 @@
               <option value="">— Not tied to a specific opening —</option>
             </select>
           </div>
+          <div class="field" style="margin-top:2px">
+            <label class="f-lab" for="new-app-team">Team</label>
+            <select class="f-in" id="new-app-team"></select>
+          </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:2px">
             <div class="field" id="new-app-referrer-field" hidden>
               <label class="f-lab" for="new-app-referrer-search">Referred by</label>
@@ -405,6 +409,10 @@
           <option value="">— Not tied to a specific opening —</option>
         </select>
       </div>
+      <div class="field">
+        <label class="f-lab" for="edit-app-team">Team</label>
+        <select class="f-in" id="edit-app-team"></select>
+      </div>
       <div class="frow">
         <div class="field">
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600">
@@ -449,7 +457,11 @@
     <div style="flex:1;overflow:auto;background:#111;display:flex;align-items:flex-start;justify-content:center;touch-action:pan-x pan-y" id="page-zoom-scroll">
       <img id="page-zoom-img" alt="Application page" style="max-width:none;transition:width .15s;cursor:zoom-in">
     </div>
-    <div style="display:flex;gap:8px;align-items:center;justify-content:center;padding:10px;background:var(--panel)">
+    <div style="display:flex;gap:8px;align-items:center;justify-content:center;padding:10px;background:var(--panel);flex-wrap:wrap">
+      <button type="button" class="gh" id="page-zoom-prev">&larr; Prev</button>
+      <span class="dim mono" id="page-zoom-idx" style="min-width:60px;text-align:center"></span>
+      <button type="button" class="gh" id="page-zoom-next">Next &rarr;</button>
+      <span style="width:1px;height:20px;background:var(--line);margin:0 4px"></span>
       <button type="button" class="gh" id="page-zoom-out">− Zoom out</button>
       <span class="dim mono" id="page-zoom-pct" style="min-width:48px;text-align:center">100%</span>
       <button type="button" class="gh" id="page-zoom-in">+ Zoom in</button>
@@ -1028,6 +1040,32 @@ const KANBAN_COLUMNS = [
   { label: 'Orientation', color: '#0E5D3C', tx: '#FFFFFF' },
   { label: 'Started', color: '#154733', tx: '#FFFFFF' },
 ];
+
+// Candidate's team, assigned directly (not derived/guessed from a
+// linked job posting -- that turned out not to be reliable enough).
+// Trees uses the ACTUAL Oregon green rather than a second invented
+// green -- this app's style rule is "Oregon green is the only green"
+// everywhere, not just the org chart.
+const TEAM_COLORS = {
+  LA: '#2E5AA8',
+  OC: '#C2703A',
+  IE: '#6B7280',
+  Trees: '#154733',
+  Enhancements: '#6B4C9A',
+};
+const TEAMS = Object.keys(TEAM_COLORS);
+function teamOptionsHtml(current) {
+  return `<option value="">— None —</option>${TEAMS.map((t) =>
+    `<option value="${t}" ${current === t ? 'selected' : ''}>${t}</option>`
+  ).join('')}`;
+}
+function applicantDivisionColor(a) {
+  return a.team && TEAM_COLORS[a.team] ? { label: a.team, color: TEAM_COLORS[a.team] } : null;
+}
+function cardDivisionTagHtml(a) {
+  const d = applicantDivisionColor(a);
+  return d ? `<div class="meta" style="margin-top:2px;color:${d.color};font-weight:600;font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.04em">${escapeHtml(d.label)}</div>` : '';
+}
 function kanbanColumnIndex(a) {
   if (a.outcome === 'hired') return 7;
   for (let i = FUNNEL_STAGES.length - 1; i >= 0; i--) {
@@ -1149,9 +1187,10 @@ function renderKanban() {
           <div class="kanban-col-h"${c.color ? ` style="--stage-bg:${c.color};--stage-tx:${c.tx}"` : ''}><span>${c.label}</span><span>${byCol[i].length}</span></div>
           <div class="kanban-col-body">
             ${byCol[i].map((a) => `
-              <div class="kanban-card${cardGateClass(a, i) ? ' ' + cardGateClass(a, i) : ''}" draggable="true" data-id="${a.id}">
+              <div class="kanban-card${cardGateClass(a, i) ? ' ' + cardGateClass(a, i) : ''}"${applicantDivisionColor(a) ? ` style="border-top:3px solid ${applicantDivisionColor(a).color}"` : ''} draggable="true" data-id="${a.id}">
                 <div class="nm">${escapeHtml(a.name)}</div>
                 <div class="meta">${escapeHtml(a.position_applied) || '—'}</div>
+                ${cardDivisionTagHtml(a)}
                 ${cardGateLinesHtml(a, i)}
                 ${cardDateHtml(a, i)}
                 <div class="meta" style="margin-top:2px">Last touched ${formatDateTime(a.updated_at)}</div>
@@ -1533,6 +1572,7 @@ async function removeApplicant(id) {
 
 document.getElementById('new-app-position').innerHTML = roleOptionsHtml('');
 wirePositionToggle('new-app-position', 'new-app-position-other', 'new-app-position-other-field');
+document.getElementById('new-app-team').innerHTML = teamOptionsHtml('');
 
 document.getElementById('add-applicant-btn').addEventListener('click', async () => {
   const name = document.getElementById('new-app-name').value.trim();
@@ -1547,6 +1587,7 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
       referred_by_emp_id: source === 'referral' ? referredByEmpId : '',
       position_applied: readPositionField('new-app-position', 'new-app-position-other'),
       applied_job_id: document.getElementById('new-app-job').value || null,
+      team: document.getElementById('new-app-team').value || null,
       applied_date: appliedDate,
       application_complete: false,
       dmv_pull_status: 'pending',
@@ -1573,6 +1614,7 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
     document.getElementById('new-app-position-other').value = '';
     document.getElementById('new-app-position-other-field').hidden = true;
     document.getElementById('new-app-job').value = '';
+    document.getElementById('new-app-team').value = '';
     setAppliedDate('new-app-applied-date', 'new-app-applied-na', todayStr);
     showToast('Applicant added.');
     await loadApplicants();
@@ -1904,6 +1946,7 @@ function openEditApplicant(applicantId) {
     jobSel.appendChild(opt);
   }
   jobSel.value = a.applied_job_id || '';
+  document.getElementById('edit-app-team').innerHTML = teamOptionsHtml(a.team || '');
   document.getElementById('edit-app-has-experience').checked = !!a.has_landscape_experience;
   document.getElementById('edit-app-years-field').hidden = !a.has_landscape_experience;
   document.getElementById('edit-app-years-experience').value = a.years_experience ?? '';
@@ -2092,21 +2135,37 @@ appPagesDropzone.addEventListener('drop', async (e) => {
 
 // ---- Zoom viewer — click a thumbnail, then zoom in/out and scroll/drag
 // to pan. A phone photo of handwriting is often unreadable until you're
-// zoomed well past 100%.
+// zoomed well past 100%. Prev/Next (and the left/right arrow keys) step
+// through every page on this applicant without closing the viewer.
 let zoomPct = 100;
+let pageZoomIndex = 0;
 function openPageZoom(idx) {
   const p = applicationPages[idx];
   if (!p) return;
+  pageZoomIndex = idx;
   document.getElementById('page-zoom-title').textContent = `Page ${idx + 1} of ${applicationPages.length}`;
+  document.getElementById('page-zoom-idx').textContent = `${idx + 1} / ${applicationPages.length}`;
   document.getElementById('page-zoom-img').src = p.image_data_url;
   zoomPct = 100;
   applyZoom();
   document.getElementById('page-zoom-overlay').hidden = false;
 }
+function pageZoomStep(dir) {
+  if (!applicationPages.length) return;
+  openPageZoom((pageZoomIndex + dir + applicationPages.length) % applicationPages.length);
+}
 function applyZoom() {
   document.getElementById('page-zoom-img').style.width = zoomPct + '%';
   document.getElementById('page-zoom-pct').textContent = zoomPct + '%';
 }
+document.getElementById('page-zoom-prev').addEventListener('click', () => pageZoomStep(-1));
+document.getElementById('page-zoom-next').addEventListener('click', () => pageZoomStep(1));
+document.addEventListener('keydown', (e) => {
+  if (document.getElementById('page-zoom-overlay').hidden) return;
+  if (e.key === 'ArrowLeft') pageZoomStep(-1);
+  else if (e.key === 'ArrowRight') pageZoomStep(1);
+  else if (e.key === 'Escape') document.getElementById('page-zoom-overlay').hidden = true;
+});
 document.getElementById('page-zoom-img').addEventListener('click', () => {
   zoomPct = zoomPct < 200 ? zoomPct + 50 : 100;
   applyZoom();
@@ -2133,6 +2192,7 @@ document.getElementById('edit-app-save-btn').addEventListener('click', async () 
     referred_by_emp_id: source === 'referral' ? referredByEmpId : '',
     position_applied: readPositionField('edit-app-position', 'edit-app-position-other'),
     applied_job_id: document.getElementById('edit-app-job').value || null,
+    team: document.getElementById('edit-app-team').value || null,
     has_landscape_experience: hasExperience,
     years_experience: hasExperience && yearsExperience !== '' ? Number(yearsExperience) : null,
   });
