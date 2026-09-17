@@ -1139,7 +1139,7 @@ function cardGateLinesHtml(a, colIndex) {
     const s = a.vp_review_status;
     return gateLineHtml('VP sign-off', s === 'approved' ? 'ok' : s === 'declined' ? 'bad' : '', s === 'approved' ? 'Approved' : s === 'declined' ? 'Declined' : 'Awaiting');
   }
-  if (colIndex === 4) return gateLineHtml('Interview', a.interview_status === 'passed' ? 'ok' : '', a.interview_status === 'passed' ? 'Passed' : 'Pending');
+  if (colIndex === 4) return gateLineHtml('Interview', a.interview_status === 'passed' ? 'ok' : '', a.interview_status === 'passed' ? 'Passed' : (a.interview_booked_date ? formatDate(a.interview_booked_date) : 'Not booked'));
   if (colIndex === 5) return gateLineHtml('Clinic', a.physical_passed ? 'ok' : '', a.physical_passed ? 'Passed' : 'Pending');
   if (colIndex === 6) return gateLineHtml('Orientation', a.orientation_completed ? 'ok' : '', a.orientation_completed ? 'Done' : (a.orientation_booked_date ? formatDate(a.orientation_booked_date) : 'Not booked'));
   return '';
@@ -1147,9 +1147,18 @@ function cardGateLinesHtml(a, colIndex) {
 // The actual date each of these four milestones happened, not just
 // whatever the card's status pill says -- separate from "last touched"
 // below, since other unrelated edits (a flag, a note) also bump that.
+// Interview booked and Offer extended are two separate facts, not one
+// or the other -- a candidate can have an interview on the books
+// without an offer yet, or (once marked Passed) both a booked date and
+// an offer date at once. Shown as independent lines.
 function cardDateHtml(a, colIndex) {
+  if (colIndex === 4) {
+    return [
+      a.interview_booked_date ? `<div class="meta" style="margin-top:2px">Interview booked: ${formatDate(a.interview_booked_date)}</div>` : '',
+      a.offered_at ? `<div class="meta" style="margin-top:2px">Offered: ${formatDate(a.offered_at)}</div>` : '',
+    ].join('');
+  }
   const byCol = {
-    4: ['Offered/interviewed', a.interview_passed_at],
     5: ['Clinic', a.physical_passed_at],
     6: ['Orientation', a.orientation_completed_at],
     7: ['Started', a.hired_at],
@@ -1508,7 +1517,7 @@ function render() {
 // the field (e.g. dragging a card backward) clears the date with it.
 function withMilestoneDates(fields) {
   const stamped = { ...fields };
-  if ('interview_status' in fields) stamped.interview_passed_at = fields.interview_status === 'passed' ? todayStr : null;
+  if ('interview_status' in fields) stamped.offered_at = fields.interview_status === 'passed' ? todayStr : null;
   if ('physical_passed' in fields) stamped.physical_passed_at = fields.physical_passed ? todayStr : null;
   if ('orientation_completed' in fields) stamped.orientation_completed_at = fields.orientation_completed ? todayStr : null;
   return stamped;
@@ -1594,6 +1603,8 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
       prescreen_passed: false,
       vp_review_status: 'pending',
       interview_status: 'pending',
+      interview_booked_date: '',
+      offered_at: null,
       physical_passed: false,
       orientation_booked_date: '',
       orientation_completed: false,
@@ -1815,6 +1826,10 @@ function progressFieldsHtml(a) {
     </div>
     <div class="frow">
       <div class="field">
+        <label class="f-lab" for="edit-app-interview-booked-date">Interview booked</label>
+        <input class="f-in" id="edit-app-interview-booked-date" type="date" value="${a.interview_booked_date || ''}">
+      </div>
+      <div class="field">
         <label class="f-lab" for="edit-app-interview">Interview / Offer</label>
         <select class="f-in" id="edit-app-interview">
           <option value="pending" ${a.interview_status === 'pending' || !a.interview_status ? 'selected' : ''}>Pending</option>
@@ -1822,12 +1837,12 @@ function progressFieldsHtml(a) {
           <option value="not_passed" ${a.interview_status === 'not_passed' ? 'selected' : ''}>Did not pass</option>
         </select>
       </div>
-      ${a.interview_status === 'passed' ? `
-      <div class="field">
-        <label class="f-lab" for="edit-app-interview-date">Interview/offer date</label>
-        <input class="f-in" id="edit-app-interview-date" type="date" value="${a.interview_passed_at || ''}">
-      </div>` : ''}
     </div>
+    ${a.interview_status === 'passed' ? `
+    <div class="field">
+      <label class="f-lab" for="edit-app-offer-date">Offer date</label>
+      <input class="f-in" id="edit-app-offer-date" type="date" value="${a.offered_at || ''}">
+    </div>` : ''}
     <div class="frow">
       <div class="field">
         <label class="f-lab">Clinic</label>
@@ -1890,6 +1905,7 @@ function renderEditAppProgress(applicantId) {
   document.getElementById('edit-app-prescreen').addEventListener('change', (e) => liveUpdate({ prescreen_passed: e.target.checked }));
   document.getElementById('edit-app-vp').addEventListener('change', (e) => liveUpdate({ vp_review_status: e.target.value }));
   document.getElementById('edit-app-interview').addEventListener('change', (e) => liveUpdate({ interview_status: e.target.value }));
+  document.getElementById('edit-app-interview-booked-date').addEventListener('change', (e) => liveUpdate({ interview_booked_date: e.target.value }));
   document.getElementById('edit-app-physical').addEventListener('change', (e) => liveUpdate({ physical_passed: e.target.checked }));
   document.getElementById('edit-app-orientation-date').addEventListener('change', (e) => liveUpdate({ orientation_booked_date: e.target.value }));
   document.getElementById('edit-app-orientation-done').addEventListener('change', (e) => liveUpdate({ orientation_completed: e.target.checked }));
@@ -1907,8 +1923,8 @@ function renderEditAppProgress(applicantId) {
   // day it happened. These let David fix or backfill the actual date
   // directly, without going through interview_status etc. (so they
   // don't get re-stamped to today the next time something else changes).
-  const interviewDateInp = document.getElementById('edit-app-interview-date');
-  if (interviewDateInp) interviewDateInp.addEventListener('change', (e) => liveUpdate({ interview_passed_at: e.target.value || null }));
+  const offerDateInp = document.getElementById('edit-app-offer-date');
+  if (offerDateInp) offerDateInp.addEventListener('change', (e) => liveUpdate({ offered_at: e.target.value || null }));
   const physicalDateInp = document.getElementById('edit-app-physical-date');
   if (physicalDateInp) physicalDateInp.addEventListener('change', (e) => liveUpdate({ physical_passed_at: e.target.value || null }));
   const orientationDoneDateInp = document.getElementById('edit-app-orientation-done-date');
