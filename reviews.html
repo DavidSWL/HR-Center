@@ -155,6 +155,22 @@ function staffName(uid) {
 }
 function daysBetween(a, b) { return Math.round((a - b) / (1000 * 60 * 60 * 24)); }
 
+// Same team colors the ATS candidate board uses, keyed off the
+// employee's existing Location field (the same OC/LA/IE/Trees/
+// Enhancements list the roster and Add-to-Roster forms already use) --
+// no new field, so a hire's team color is already set the moment
+// they're added. Corporate and Yard aren't teams, so they get no color.
+const TEAM_COLORS = {
+  LA: '#2E5AA8',
+  OC: '#C2703A',
+  IE: '#6B7280',
+  Trees: '#154733',
+  Enhancements: '#6B4C9A',
+};
+function empTeamColor(emp) {
+  return emp.location && TEAM_COLORS[emp.location] ? { label: emp.location, color: TEAM_COLORS[emp.location] } : null;
+}
+
 // New-hire front-loaded sick time schedule -- not the standard 24-hr/
 // year policy every employee gets (see the Paid Sick Leave Notice in
 // onboarding), a separate ramp SWL uses only during a new hire's first
@@ -366,14 +382,18 @@ function renderKanbanBoard(onboarding) {
         <div class="kanban-col">
           <div class="kanban-col-h"><span>${c.label}</span><span>${byCol[i].length}</span></div>
           <div class="kanban-col-body">
-            ${byCol[i].map(({ emp, day, next }) => `
-              <div class="kanban-card${day > 90 && next ? ' gate-blocked' : ''}" data-emp="${emp.id}">
+            ${byCol[i].map(({ emp, day, next }) => {
+              const team = empTeamColor(emp);
+              return `
+              <div class="kanban-card${day > 90 && next ? ' gate-blocked' : ''}"${team ? ` style="border-top:3px solid ${team.color}"` : ''} data-emp="${emp.id}">
                 <div class="nm">${emp.first_name} ${emp.last_name}${isDavid && concernByEmp[emp.id]?.flagged ? ' <span class="pill bad">Concern</span>' : ''}</div>
                 <div class="meta">${emp.division || '—'} · Day ${day}${day > 90 && next ? ' <span class="pill bad">Past 90</span>' : ''}</div>
+                ${team ? `<div class="meta" style="margin-top:2px;color:${team.color};font-weight:600;font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.04em">${team.label}</div>` : ''}
                 ${next ? `<div class="meta">Due ${formatDate(next.due_date)}</div>` : ''}
                 ${isDavid ? `<button type="button" class="gh concern-btn" data-emp="${emp.id}" style="margin-top:6px;font-size:11px;padding:2px 8px">Concern (private)</button>` : ''}
               </div>
-            `).join('') || '<div class="kanban-empty dim">—</div>'}
+            `;
+            }).join('') || '<div class="kanban-empty dim">—</div>'}
           </div>
         </div>
       `).join('')}
