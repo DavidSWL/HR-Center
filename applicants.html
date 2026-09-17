@@ -61,6 +61,9 @@
 .card-h.clickable{cursor:pointer;user-select:none}
 .card-h.clickable:hover{background:var(--hover)}
 .card-h .chevron{font-family:var(--mono);font-size:11px;color:var(--faint);width:14px;text-align:center;flex-shrink:0}
+/* This modal alone gets extra width -- it's grown a long, two-column
+   list of stage/date pairs that the shared 480px modal size crowds. */
+#edit-app-overlay .modal{width:720px}
 </style>
 </head>
 <body>
@@ -1554,7 +1557,6 @@ function render() {
 // dragging a card backward) clears the date with it.
 function withMilestoneDates(fields) {
   const stamped = { ...fields };
-  if ('application_complete' in fields) stamped.application_complete_at = fields.application_complete ? todayStr : null;
   if ('dmv_pull_status' in fields) stamped.dmv_pull_at = fields.dmv_pull_status && fields.dmv_pull_status !== 'pending' ? todayStr : null;
   if ('prescreen_passed' in fields) stamped.prescreen_passed_at = fields.prescreen_passed ? todayStr : null;
   if ('vp_review_status' in fields) stamped.vp_review_at = fields.vp_review_status && fields.vp_review_status !== 'pending' ? todayStr : null;
@@ -1640,7 +1642,6 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
       team: document.getElementById('new-app-team').value || null,
       applied_date: appliedDate,
       application_complete: false,
-      application_complete_at: null,
       dmv_pull_status: 'pending',
       dmv_pull_at: null,
       prescreen_passed: false,
@@ -1838,8 +1839,15 @@ function progressSummaryHtml(a) {
   `).join('')}</div>`;
 }
 
+// Every stage is the same shape -- status control on the left, its
+// date on the right, always both visible -- so the layout is a stable
+// grid instead of fields popping in and out as statuses change.
+// Application complete is the one exception: it's never a separate
+// event from receiving the application, so that date is computed from
+// Applied rather than given its own field to fill in.
 function progressFieldsHtml(a) {
   const driver = isDriverRole(a.position_applied);
+  const appliedDateText = a.applied_date && a.applied_date !== 'N/A' ? formatDate(a.applied_date) : 'unknown';
   return `
     <div class="frow">
       <div class="field">
@@ -1847,21 +1855,42 @@ function progressFieldsHtml(a) {
         <label style="display:block;font-size:12.5px"><input type="checkbox" id="edit-app-complete" ${a.application_complete ? 'checked' : ''}> Complete</label>
       </div>
       <div class="field">
-        ${driver ? `
-          <label class="f-lab" for="edit-app-dmv">DMV Pull</label>
-          <select class="f-in" id="edit-app-dmv">
-            <option value="pending" ${a.dmv_pull_status === 'pending' || !a.dmv_pull_status ? 'selected' : ''}>Pending</option>
-            <option value="passed" ${a.dmv_pull_status === 'passed' ? 'selected' : ''}>Passed</option>
-            <option value="failed" ${a.dmv_pull_status === 'failed' ? 'selected' : ''}>Failed</option>
-          </select>
-        ` : `<label class="f-lab">DMV Pull</label><div class="dim" style="font-size:12.5px;padding-top:5px">N/A — not a driver role</div>`}
+        <label class="f-lab">Complete date</label>
+        <div class="dim" style="font-size:12.5px;padding-top:5px">${a.application_complete ? `Same as applied — ${appliedDateText}` : '—'}</div>
       </div>
     </div>
+    ${driver ? `
+    <div class="frow">
+      <div class="field">
+        <label class="f-lab" for="edit-app-dmv">DMV Pull</label>
+        <select class="f-in" id="edit-app-dmv">
+          <option value="pending" ${a.dmv_pull_status === 'pending' || !a.dmv_pull_status ? 'selected' : ''}>Pending</option>
+          <option value="passed" ${a.dmv_pull_status === 'passed' ? 'selected' : ''}>Passed</option>
+          <option value="failed" ${a.dmv_pull_status === 'failed' ? 'selected' : ''}>Failed</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="f-lab" for="edit-app-dmv-date">DMV pull date</label>
+        <input class="f-in" id="edit-app-dmv-date" type="date" value="${a.dmv_pull_at || ''}">
+      </div>
+    </div>
+    ` : `
+    <div class="field">
+      <label class="f-lab">DMV Pull</label>
+      <div class="dim" style="font-size:12.5px">N/A — not a driver role</div>
+    </div>
+    `}
     <div class="frow">
       <div class="field">
         <label class="f-lab">Screening</label>
         <label style="display:block;font-size:12.5px"><input type="checkbox" id="edit-app-prescreen" ${a.prescreen_passed ? 'checked' : ''}> Passed</label>
       </div>
+      <div class="field">
+        <label class="f-lab" for="edit-app-prescreen-date">Screening date</label>
+        <input class="f-in" id="edit-app-prescreen-date" type="date" value="${a.prescreen_passed_at || ''}">
+      </div>
+    </div>
+    <div class="frow">
       <div class="field">
         <label class="f-lab" for="edit-app-vp">VP Review</label>
         <select class="f-in" id="edit-app-vp">
@@ -1869,6 +1898,10 @@ function progressFieldsHtml(a) {
           <option value="approved" ${a.vp_review_status === 'approved' ? 'selected' : ''}>Approved — green light</option>
           <option value="declined" ${a.vp_review_status === 'declined' ? 'selected' : ''}>Declined</option>
         </select>
+      </div>
+      <div class="field">
+        <label class="f-lab" for="edit-app-vp-date">VP Review date</label>
+        <input class="f-in" id="edit-app-vp-date" type="date" value="${a.vp_review_at || ''}">
       </div>
     </div>
     <div class="frow">
@@ -1894,22 +1927,20 @@ function progressFieldsHtml(a) {
           <option value="declined" ${a.offer_status === 'declined' ? 'selected' : ''}>Declined</option>
         </select>
       </div>
-      ${a.offer_status === 'extended' ? `
       <div class="field">
         <label class="f-lab" for="edit-app-offer-date">Offer date</label>
         <input class="f-in" id="edit-app-offer-date" type="date" value="${a.offered_at || ''}">
-      </div>` : ''}
+      </div>
     </div>
     <div class="frow">
       <div class="field">
         <label class="f-lab">Clinic</label>
         <label style="display:block;font-size:12.5px"><input type="checkbox" id="edit-app-physical" ${a.physical_passed ? 'checked' : ''}> Passed</label>
       </div>
-      ${a.physical_passed ? `
       <div class="field">
         <label class="f-lab" for="edit-app-physical-date">Clinic date</label>
         <input class="f-in" id="edit-app-physical-date" type="date" value="${a.physical_passed_at || ''}">
-      </div>` : ''}
+      </div>
     </div>
     <div class="frow">
       <div class="field">
@@ -1921,12 +1952,11 @@ function progressFieldsHtml(a) {
         <label style="display:block;font-size:12.5px"><input type="checkbox" id="edit-app-orientation-done" ${a.orientation_completed ? 'checked' : ''}> Completed</label>
       </div>
     </div>
-    ${a.orientation_completed ? `
-    <div class="field">
-      <label class="f-lab" for="edit-app-orientation-done-date">Orientation completed date</label>
-      <input class="f-in" id="edit-app-orientation-done-date" type="date" value="${a.orientation_completed_at || ''}">
-    </div>` : ''}
     <div class="frow">
+      <div class="field">
+        <label class="f-lab" for="edit-app-orientation-done-date">Orientation completed date</label>
+        <input class="f-in" id="edit-app-orientation-done-date" type="date" value="${a.orientation_completed_at || ''}">
+      </div>
       <div class="field">
         <label class="f-lab" for="edit-app-outcome">Outcome</label>
         <select class="f-in" id="edit-app-outcome">
@@ -1936,11 +1966,10 @@ function progressFieldsHtml(a) {
           ? `<button type="button" class="gh" id="edit-app-reason-btn" style="margin-top:6px;font-size:11px;padding:2px 8px">Reason (private)</button>`
           : ''}
       </div>
-      ${a.outcome === 'hired' ? `
-      <div class="field">
-        <label class="f-lab" for="edit-app-hired-date">Started date</label>
-        <input class="f-in" id="edit-app-hired-date" type="date" value="${a.hired_at || ''}">
-      </div>` : ''}
+    </div>
+    <div class="field">
+      <label class="f-lab" for="edit-app-hired-date">Started date</label>
+      <input class="f-in" id="edit-app-hired-date" type="date" value="${a.hired_at || ''}">
     </div>
   `;
 }
@@ -1979,16 +2008,16 @@ function renderEditAppProgress(applicantId) {
   // who reached that stage before this feature existed has no date on
   // file, and any auto-stamped date is only ever "today," not the real
   // day it happened. These let David fix or backfill the actual date
-  // directly, without going through interview_status etc. (so they
+  // directly, without going through dmv_pull_status etc. (so they
   // don't get re-stamped to today the next time something else changes).
-  const offerDateInp = document.getElementById('edit-app-offer-date');
-  if (offerDateInp) offerDateInp.addEventListener('change', (e) => liveUpdate({ offered_at: e.target.value || null }));
-  const physicalDateInp = document.getElementById('edit-app-physical-date');
-  if (physicalDateInp) physicalDateInp.addEventListener('change', (e) => liveUpdate({ physical_passed_at: e.target.value || null }));
-  const orientationDoneDateInp = document.getElementById('edit-app-orientation-done-date');
-  if (orientationDoneDateInp) orientationDoneDateInp.addEventListener('change', (e) => liveUpdate({ orientation_completed_at: e.target.value || null }));
-  const hiredDateInp = document.getElementById('edit-app-hired-date');
-  if (hiredDateInp) hiredDateInp.addEventListener('change', (e) => liveUpdate({ hired_at: e.target.value || null }));
+  const dmvDateInp = document.getElementById('edit-app-dmv-date');
+  if (dmvDateInp) dmvDateInp.addEventListener('change', (e) => liveUpdate({ dmv_pull_at: e.target.value || null }));
+  document.getElementById('edit-app-prescreen-date').addEventListener('change', (e) => liveUpdate({ prescreen_passed_at: e.target.value || null }));
+  document.getElementById('edit-app-vp-date').addEventListener('change', (e) => liveUpdate({ vp_review_at: e.target.value || null }));
+  document.getElementById('edit-app-offer-date').addEventListener('change', (e) => liveUpdate({ offered_at: e.target.value || null }));
+  document.getElementById('edit-app-physical-date').addEventListener('change', (e) => liveUpdate({ physical_passed_at: e.target.value || null }));
+  document.getElementById('edit-app-orientation-done-date').addEventListener('change', (e) => liveUpdate({ orientation_completed_at: e.target.value || null }));
+  document.getElementById('edit-app-hired-date').addEventListener('change', (e) => liveUpdate({ hired_at: e.target.value || null }));
   const reasonBtn = document.getElementById('edit-app-reason-btn');
   if (reasonBtn) reasonBtn.addEventListener('click', () => openRejectReason(applicantId));
 }
@@ -2044,7 +2073,7 @@ function applicantProfileRows(a) {
   const outcomeLabel = (OUTCOME_OPTIONS.find((o) => o.value === a.outcome) || {}).label || 'Active';
   const rows = [
     ['Applied', a.applied_date === 'N/A' ? 'Date unknown' : 'Received', a.applied_date && a.applied_date !== 'N/A' ? formatDate(a.applied_date) : '—'],
-    ['Application complete', a.application_complete ? 'Yes' : 'Not yet', a.application_complete_at ? formatDate(a.application_complete_at) : '—'],
+    ['Application complete', a.application_complete ? 'Yes' : 'Not yet', a.application_complete && a.applied_date && a.applied_date !== 'N/A' ? formatDate(a.applied_date) : '—'],
   ];
   if (driver) rows.push(['DMV pull', a.dmv_pull_status === 'passed' ? 'Passed' : a.dmv_pull_status === 'failed' ? 'Failed' : 'Pending', a.dmv_pull_at ? formatDate(a.dmv_pull_at) : '—']);
   rows.push(
