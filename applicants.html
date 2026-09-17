@@ -831,7 +831,7 @@ async function loadApplicants() {
 // naturally sits in whichever gate is still open rather than skipping
 // ahead on some other field's say-so. ----
 function dmvPullClear(a) {
-  return !isDriverRole(a.position_applied) || a.dmv_pull_status === 'passed';
+  return !isDriverRole(a.position_applied) || a.dmv_pull_status === 'passed' || a.dmv_pull_status === 'na';
 }
 const FUNNEL_STAGES = [
   { label: 'Applied', test: () => true },
@@ -1153,7 +1153,7 @@ function cardGateLinesHtml(a, colIndex) {
     let html = gateLineHtml('App. complete', a.application_complete ? 'ok' : 'bad', a.application_complete ? 'Done' : 'Missing');
     if (isDriverRole(a.position_applied)) {
       const s = a.dmv_pull_status;
-      html += gateLineHtml('DMV Pull', s === 'passed' ? 'ok' : s === 'failed' ? 'bad' : '', s === 'passed' ? 'Passed' : s === 'failed' ? 'Failed' : 'Pending');
+      html += gateLineHtml('DMV Pull', s === 'passed' || s === 'na' ? 'ok' : s === 'failed' ? 'bad' : '', s === 'passed' ? 'Passed' : s === 'na' ? 'N/A' : s === 'failed' ? 'Failed' : 'Pending');
     } else {
       html += gateLineHtml('DMV Pull', '', 'N/A');
     }
@@ -1405,6 +1405,7 @@ function render() {
             <option value="pending" ${a.dmv_pull_status === 'pending' || !a.dmv_pull_status ? 'selected' : ''}>Pending</option>
             <option value="passed" ${a.dmv_pull_status === 'passed' ? 'selected' : ''}>Passed</option>
             <option value="failed" ${a.dmv_pull_status === 'failed' ? 'selected' : ''}>Failed</option>
+            <option value="na" ${a.dmv_pull_status === 'na' ? 'selected' : ''}>N/A</option>
           </select>
         ` : '<span class="dim">N/A</span>'}</td>
         <td style="text-align:center"><input type="checkbox" class="app-cb prescreen-cb" data-id="${a.id}" ${a.prescreen_passed ? 'checked' : ''}></td>
@@ -1560,7 +1561,7 @@ function render() {
 // dragging a card backward) clears the date with it.
 function withMilestoneDates(fields) {
   const stamped = { ...fields };
-  if ('dmv_pull_status' in fields) stamped.dmv_pull_at = fields.dmv_pull_status && fields.dmv_pull_status !== 'pending' ? todayStr : null;
+  if ('dmv_pull_status' in fields) stamped.dmv_pull_at = (fields.dmv_pull_status === 'passed' || fields.dmv_pull_status === 'failed') ? todayStr : null;
   if ('prescreen_passed' in fields) stamped.prescreen_passed_at = fields.prescreen_passed ? todayStr : null;
   if ('vp_review_status' in fields) stamped.vp_review_at = fields.vp_review_status && fields.vp_review_status !== 'pending' ? todayStr : null;
   if ('offer_status' in fields) stamped.offered_at = fields.offer_status === 'extended' ? todayStr : null;
@@ -1828,7 +1829,7 @@ function progressSummaryHtml(a) {
   const driver = isDriverRole(a.position_applied);
   const stages = [
     { label: 'App. complete', done: !!a.application_complete },
-    ...(driver ? [{ label: 'DMV Pull', done: a.dmv_pull_status === 'passed', failed: a.dmv_pull_status === 'failed' }] : []),
+    ...(driver ? [{ label: 'DMV Pull', done: a.dmv_pull_status === 'passed' || a.dmv_pull_status === 'na', failed: a.dmv_pull_status === 'failed' }] : []),
     { label: 'Screening', done: !!a.prescreen_passed },
     { label: 'VP Review', done: a.vp_review_status === 'approved', failed: a.vp_review_status === 'declined' },
     { label: 'Interview', done: a.interview_status === 'passed', failed: a.interview_status === 'not_passed' },
@@ -1871,7 +1872,8 @@ function progressFieldsHtml(a) {
               <option value="pending" ${a.dmv_pull_status === 'pending' || !a.dmv_pull_status ? 'selected' : ''}>Pending</option>
               <option value="passed" ${a.dmv_pull_status === 'passed' ? 'selected' : ''}>Passed</option>
               <option value="failed" ${a.dmv_pull_status === 'failed' ? 'selected' : ''}>Failed</option>
-            </select>`, dateCtl('edit-app-dmv-date', a.dmv_pull_at))}
+              <option value="na" ${a.dmv_pull_status === 'na' ? 'selected' : ''}>N/A</option>
+            </select>`, a.dmv_pull_status === 'na' ? '<span class="dim" style="font-size:12px">No date needed</span>' : dateCtl('edit-app-dmv-date', a.dmv_pull_at))}
           ${row('Screening', checkboxCtl('edit-app-prescreen', a.prescreen_passed, 'Passed'), dateCtl('edit-app-prescreen-date', a.prescreen_passed_at))}
           ${row('VP Review', `<select class="inp" id="edit-app-vp" style="width:100%">
               <option value="pending" ${a.vp_review_status === 'pending' || !a.vp_review_status ? 'selected' : ''}>Awaiting</option>
@@ -1937,7 +1939,8 @@ function renderEditAppProgress(applicantId) {
   // day it happened. These let David fix or backfill the actual date
   // directly, without going through dmv_pull_status etc. (so they
   // don't get re-stamped to today the next time something else changes).
-  document.getElementById('edit-app-dmv-date').addEventListener('change', (e) => liveUpdate({ dmv_pull_at: e.target.value || null }));
+  const dmvDateInp = document.getElementById('edit-app-dmv-date');
+  if (dmvDateInp) dmvDateInp.addEventListener('change', (e) => liveUpdate({ dmv_pull_at: e.target.value || null }));
   document.getElementById('edit-app-prescreen-date').addEventListener('change', (e) => liveUpdate({ prescreen_passed_at: e.target.value || null }));
   document.getElementById('edit-app-vp-date').addEventListener('change', (e) => liveUpdate({ vp_review_at: e.target.value || null }));
   document.getElementById('edit-app-offer-date').addEventListener('change', (e) => liveUpdate({ offered_at: e.target.value || null }));
@@ -1999,7 +2002,7 @@ function applicantProfileRows(a) {
   const rows = [
     ['Applied', a.applied_date === 'N/A' ? 'Date unknown' : 'Received', a.applied_date && a.applied_date !== 'N/A' ? formatDate(a.applied_date) : '—'],
     ['Application complete', a.application_complete ? 'Yes' : 'Not yet', a.application_complete && a.applied_date && a.applied_date !== 'N/A' ? formatDate(a.applied_date) : '—'],
-    ['DMV pull', a.dmv_pull_status === 'passed' ? 'Passed' : a.dmv_pull_status === 'failed' ? 'Failed' : 'Pending', a.dmv_pull_at ? formatDate(a.dmv_pull_at) : '—'],
+    ['DMV pull', a.dmv_pull_status === 'passed' ? 'Passed' : a.dmv_pull_status === 'failed' ? 'Failed' : a.dmv_pull_status === 'na' ? 'N/A' : 'Pending', a.dmv_pull_at ? formatDate(a.dmv_pull_at) : '—'],
     ['Screening', a.prescreen_passed ? 'Passed' : 'Pending', a.prescreen_passed_at ? formatDate(a.prescreen_passed_at) : '—'],
     ['VP Review', a.vp_review_status === 'approved' ? 'Approved' : a.vp_review_status === 'declined' ? 'Declined' : 'Awaiting', a.vp_review_at ? formatDate(a.vp_review_at) : '—'],
     ['Interview', a.interview_status === 'passed' ? 'Passed' : a.interview_status === 'not_passed' ? 'Did not pass' : 'Pending', a.interview_booked_date ? formatDate(a.interview_booked_date) : '—'],
