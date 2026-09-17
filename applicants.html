@@ -1032,6 +1032,31 @@ const KANBAN_COLUMNS = [
   { label: 'Orientation', color: '#0E5D3C', tx: '#FFFFFF' },
   { label: 'Started', color: '#154733', tx: '#FFFFFF' },
 ];
+
+// Candidate's division color tag, read from the open job opening
+// they're linked to (open_jobs.division is free text, matched loosely
+// by branch abbreviation/keyword). Trees uses the ACTUAL Oregon green
+// rather than a second invented green -- this app's style rule is
+// "Oregon green is the only green" everywhere, not just the org chart.
+// Applicants not tied to a specific opening get no tag at all, rather
+// than a guessed one.
+const DIVISION_COLOR_RULES = [
+  { test: /\bla\b/i, label: 'LA', color: '#2E5AA8' },
+  { test: /\boc\b/i, label: 'OC', color: '#C2703A' },
+  { test: /\bie\b/i, label: 'IE', color: '#6B7280' },
+  { test: /tree/i, label: 'Trees', color: '#154733' },
+  { test: /enhancement/i, label: 'Enhancements', color: '#6B4C9A' },
+];
+function applicantDivisionColor(a) {
+  if (!a.applied_job_id) return null;
+  const job = openJobs.find((j) => j.id === a.applied_job_id);
+  if (!job || !job.division) return null;
+  return DIVISION_COLOR_RULES.find((r) => r.test.test(job.division)) || null;
+}
+function cardDivisionTagHtml(a) {
+  const d = applicantDivisionColor(a);
+  return d ? `<div class="meta" style="margin-top:2px;color:${d.color};font-weight:600;font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.04em">${escapeHtml(d.label)}</div>` : '';
+}
 function kanbanColumnIndex(a) {
   if (a.outcome === 'hired') return 7;
   for (let i = FUNNEL_STAGES.length - 1; i >= 0; i--) {
@@ -1153,9 +1178,10 @@ function renderKanban() {
           <div class="kanban-col-h"${c.color ? ` style="--stage-bg:${c.color};--stage-tx:${c.tx}"` : ''}><span>${c.label}</span><span>${byCol[i].length}</span></div>
           <div class="kanban-col-body">
             ${byCol[i].map((a) => `
-              <div class="kanban-card${cardGateClass(a, i) ? ' ' + cardGateClass(a, i) : ''}" draggable="true" data-id="${a.id}">
+              <div class="kanban-card${cardGateClass(a, i) ? ' ' + cardGateClass(a, i) : ''}"${applicantDivisionColor(a) ? ` style="border-top:3px solid ${applicantDivisionColor(a).color}"` : ''} draggable="true" data-id="${a.id}">
                 <div class="nm">${escapeHtml(a.name)}</div>
                 <div class="meta">${escapeHtml(a.position_applied) || '—'}</div>
+                ${cardDivisionTagHtml(a)}
                 ${cardGateLinesHtml(a, i)}
                 ${cardDateHtml(a, i)}
                 <div class="meta" style="margin-top:2px">Last touched ${formatDateTime(a.updated_at)}</div>
