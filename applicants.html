@@ -444,6 +444,7 @@
       <div id="edit-app-progress-fields"></div>
     </div>
     <div class="modal-actions">
+      <button type="button" class="gh" id="edit-app-remove-btn" style="margin-right:auto">Remove candidate</button>
       <button type="button" class="gh" id="edit-app-cancel-btn">Cancel</button>
       <button type="button" class="gh solid" id="edit-app-save-btn">Save</button>
     </div>
@@ -1615,14 +1616,16 @@ async function maybeCloseLinkedJob(a) {
 
 async function removeApplicant(id) {
   const a = applicants.find((x) => x.id === id);
-  if (!a || !confirm(`Remove ${a.name} from the tracker? This can't be undone.`)) return;
+  if (!a || !confirm(`Remove ${a.name} from the tracker? This can't be undone.`)) return false;
   try {
     await deleteDoc(doc(db, 'applicants', id));
     showToast('Removed.');
     await loadApplicants();
+    return true;
   } catch (err) {
     console.error(err);
     showToast('Could not remove — ' + err.message, 'error');
+    return false;
   }
 }
 
@@ -1993,6 +1996,11 @@ function closeEditApplicant() {
 }
 document.getElementById('edit-app-close').addEventListener('click', closeEditApplicant);
 document.getElementById('edit-app-cancel-btn').addEventListener('click', closeEditApplicant);
+document.getElementById('edit-app-remove-btn').addEventListener('click', async () => {
+  if (!editTargetApplicantId) return;
+  const removed = await removeApplicant(editTargetApplicantId);
+  if (removed) closeEditApplicant();
+});
 
 // Read-only history for one candidate -- every gate they've passed
 // through and the actual date it happened, at a glance, without
