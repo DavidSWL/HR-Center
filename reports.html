@@ -258,6 +258,7 @@ function candidateStatusLabel(a) {
   if (a.interview_status === 'not_passed') return 'did not pass interview';
   if (a.orientation_completed) return 'orientation done';
   if (a.physical_passed) return 'physical passed';
+  if (a.offer_status === 'extended') return 'offer extended';
   if (a.interview_status === 'passed') return 'interview passed';
   if (a.prescreen_passed) return 'pre-screen passed';
   return 'applied';
@@ -831,6 +832,7 @@ async function renderReport(key) {
       ['Applied', apps.length],
       ['Pre-screen passed', apps.filter((a) => a.prescreen_passed).length],
       ['Interview passed', apps.filter((a) => a.interview_status === 'passed').length],
+      ['Offer extended', apps.filter((a) => a.offer_status === 'extended').length],
       ['Physical / drug exam passed', apps.filter((a) => a.physical_passed).length],
       ['Orientation completed', apps.filter((a) => a.orientation_completed).length],
       ['Hired', hired],
