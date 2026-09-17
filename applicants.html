@@ -841,7 +841,7 @@ const FUNNEL_STAGES = [
   { label: 'Interview passed', test: (a) => a.interview_status === 'passed' },
   { label: 'Offer extended', test: (a) => a.offer_status === 'extended' },
   { label: 'Clinic passed', test: (a) => !!a.physical_passed },
-  { label: 'Orientation completed', test: (a) => !!a.orientation_completed },
+  { label: 'Orientation booked', test: (a) => !!a.orientation_booked_date },
 ];
 let resumePoolOpen = false;
 
@@ -1119,8 +1119,8 @@ function applyKanbanMove(applicantId, targetIndex) {
       { interview_status: 'passed' },
       { offer_status: 'extended' },
       { physical_passed: true },
-      { orientation_completed: true },
-      { outcome: 'hired', hired: true, hired_at: todayStr },
+      { orientation_booked_date: a.orientation_booked_date || todayStr },
+      { outcome: 'hired', hired: true, hired_at: todayStr, orientation_completed: true },
     ];
     updateApplicant(applicantId, forwardFields[targetIndex]);
     return;
@@ -1130,7 +1130,8 @@ function applyKanbanMove(applicantId, targetIndex) {
   if (!confirm(`Move ${a.name} back to "${label}"? This clears any later progress.`)) return;
   const clearFields = {};
   if (currentIndex === 8) { clearFields.outcome = ''; clearFields.hired = false; clearFields.hired_at = null; }
-  if (targetIndex < 7) clearFields.orientation_completed = false;
+  if (targetIndex < 8) clearFields.orientation_completed = false;
+  if (targetIndex < 7) clearFields.orientation_booked_date = '';
   if (targetIndex < 6) clearFields.physical_passed = false;
   if (targetIndex < 5) clearFields.offer_status = 'pending';
   if (targetIndex < 4) clearFields.interview_status = 'pending';
@@ -1178,10 +1179,12 @@ function cardDateHtml(a, colIndex) {
   if (colIndex === 4) {
     return a.interview_booked_date ? `<div class="meta" style="margin-top:2px">Interview booked: ${formatDate(a.interview_booked_date)}</div>` : '';
   }
+  if (colIndex === 7) {
+    return a.orientation_booked_date ? `<div class="meta" style="margin-top:2px">Orientation booked: ${formatDate(a.orientation_booked_date)}</div>` : '';
+  }
   const byCol = {
     5: ['Offered', a.offered_at],
     6: ['Clinic', a.physical_passed_at],
-    7: ['Orientation', a.orientation_completed_at],
     8: ['Started', a.hired_at],
   };
   const entry = byCol[colIndex];
