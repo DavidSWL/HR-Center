@@ -185,6 +185,10 @@
               <option value="">— Not tied to a specific opening —</option>
             </select>
           </div>
+          <div class="field" style="margin-top:2px">
+            <label class="f-lab" for="new-app-team">Team</label>
+            <select class="f-in" id="new-app-team"></select>
+          </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:2px">
             <div class="field" id="new-app-referrer-field" hidden>
               <label class="f-lab" for="new-app-referrer-search">Referred by</label>
@@ -404,6 +408,10 @@
         <select class="f-in" id="edit-app-job">
           <option value="">— Not tied to a specific opening —</option>
         </select>
+      </div>
+      <div class="field">
+        <label class="f-lab" for="edit-app-team">Team</label>
+        <select class="f-in" id="edit-app-team"></select>
       </div>
       <div class="frow">
         <div class="field">
@@ -1033,25 +1041,26 @@ const KANBAN_COLUMNS = [
   { label: 'Started', color: '#154733', tx: '#FFFFFF' },
 ];
 
-// Candidate's division color tag, read from the open job opening
-// they're linked to (open_jobs.division is free text, matched loosely
-// by branch abbreviation/keyword). Trees uses the ACTUAL Oregon green
-// rather than a second invented green -- this app's style rule is
-// "Oregon green is the only green" everywhere, not just the org chart.
-// Applicants not tied to a specific opening get no tag at all, rather
-// than a guessed one.
-const DIVISION_COLOR_RULES = [
-  { test: /\bla\b/i, label: 'LA', color: '#2E5AA8' },
-  { test: /\boc\b/i, label: 'OC', color: '#C2703A' },
-  { test: /\bie\b/i, label: 'IE', color: '#6B7280' },
-  { test: /tree/i, label: 'Trees', color: '#154733' },
-  { test: /enhancement/i, label: 'Enhancements', color: '#6B4C9A' },
-];
+// Candidate's team, assigned directly (not derived/guessed from a
+// linked job posting -- that turned out not to be reliable enough).
+// Trees uses the ACTUAL Oregon green rather than a second invented
+// green -- this app's style rule is "Oregon green is the only green"
+// everywhere, not just the org chart.
+const TEAM_COLORS = {
+  LA: '#2E5AA8',
+  OC: '#C2703A',
+  IE: '#6B7280',
+  Trees: '#154733',
+  Enhancements: '#6B4C9A',
+};
+const TEAMS = Object.keys(TEAM_COLORS);
+function teamOptionsHtml(current) {
+  return `<option value="">— None —</option>${TEAMS.map((t) =>
+    `<option value="${t}" ${current === t ? 'selected' : ''}>${t}</option>`
+  ).join('')}`;
+}
 function applicantDivisionColor(a) {
-  if (!a.applied_job_id) return null;
-  const job = openJobs.find((j) => j.id === a.applied_job_id);
-  if (!job || !job.division) return null;
-  return DIVISION_COLOR_RULES.find((r) => r.test.test(job.division)) || null;
+  return a.team && TEAM_COLORS[a.team] ? { label: a.team, color: TEAM_COLORS[a.team] } : null;
 }
 function cardDivisionTagHtml(a) {
   const d = applicantDivisionColor(a);
@@ -1563,6 +1572,7 @@ async function removeApplicant(id) {
 
 document.getElementById('new-app-position').innerHTML = roleOptionsHtml('');
 wirePositionToggle('new-app-position', 'new-app-position-other', 'new-app-position-other-field');
+document.getElementById('new-app-team').innerHTML = teamOptionsHtml('');
 
 document.getElementById('add-applicant-btn').addEventListener('click', async () => {
   const name = document.getElementById('new-app-name').value.trim();
@@ -1577,6 +1587,7 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
       referred_by_emp_id: source === 'referral' ? referredByEmpId : '',
       position_applied: readPositionField('new-app-position', 'new-app-position-other'),
       applied_job_id: document.getElementById('new-app-job').value || null,
+      team: document.getElementById('new-app-team').value || null,
       applied_date: appliedDate,
       application_complete: false,
       dmv_pull_status: 'pending',
@@ -1603,6 +1614,7 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
     document.getElementById('new-app-position-other').value = '';
     document.getElementById('new-app-position-other-field').hidden = true;
     document.getElementById('new-app-job').value = '';
+    document.getElementById('new-app-team').value = '';
     setAppliedDate('new-app-applied-date', 'new-app-applied-na', todayStr);
     showToast('Applicant added.');
     await loadApplicants();
@@ -1934,6 +1946,7 @@ function openEditApplicant(applicantId) {
     jobSel.appendChild(opt);
   }
   jobSel.value = a.applied_job_id || '';
+  document.getElementById('edit-app-team').innerHTML = teamOptionsHtml(a.team || '');
   document.getElementById('edit-app-has-experience').checked = !!a.has_landscape_experience;
   document.getElementById('edit-app-years-field').hidden = !a.has_landscape_experience;
   document.getElementById('edit-app-years-experience').value = a.years_experience ?? '';
@@ -2179,6 +2192,7 @@ document.getElementById('edit-app-save-btn').addEventListener('click', async () 
     referred_by_emp_id: source === 'referral' ? referredByEmpId : '',
     position_applied: readPositionField('edit-app-position', 'edit-app-position-other'),
     applied_job_id: document.getElementById('edit-app-job').value || null,
+    team: document.getElementById('edit-app-team').value || null,
     has_landscape_experience: hasExperience,
     years_experience: hasExperience && yearsExperience !== '' ? Number(yearsExperience) : null,
   });
