@@ -259,7 +259,8 @@
               <th>DMV Pull</th>
               <th>Screening</th>
               <th>VP Review</th>
-              <th>Interview / Offer</th>
+              <th>Interview</th>
+              <th>Offer</th>
               <th>Clinic</th>
               <th>Orientation booked</th>
               <th>Orientation done</th>
@@ -819,7 +820,8 @@ const FUNNEL_STAGES = [
   { label: 'Considered', test: (a) => !!a.application_complete && dmvPullClear(a) },
   { label: 'Screening passed', test: (a) => !!a.prescreen_passed },
   { label: 'VP Review approved', test: (a) => a.vp_review_status === 'approved' },
-  { label: 'Interview / Offer', test: (a) => a.interview_status === 'passed' },
+  { label: 'Interview passed', test: (a) => a.interview_status === 'passed' },
+  { label: 'Offer extended', test: (a) => a.offer_status === 'extended' },
   { label: 'Clinic passed', test: (a) => !!a.physical_passed },
   { label: 'Orientation completed', test: (a) => !!a.orientation_completed },
 ];
@@ -1029,15 +1031,17 @@ document.querySelectorAll('#ats-tab-strip .tab').forEach((btn) => {
 // (nothing's happened yet). One hue read as progress, rather than a
 // different color per stage, so it doesn't compete with the existing
 // red/green gate-blocked and gate-clear card borders. Values are a
-// validated OKLCH ramp off the Oregon-green brand color, not eyeballed.
+// validated OKLCH ramp off the Oregon-green brand color (8 steps, one
+// per column from Considered through Started), not eyeballed.
 const KANBAN_COLUMNS = [
   { label: 'Applied' },
-  { label: 'Considered', gate: true, color: '#79C09A', tx: '#12150F' },
-  { label: 'Screening', color: '#65AB87', tx: '#12150F' },
-  { label: 'VP Review', gate: true, color: '#519773', tx: '#FFFFFF' },
-  { label: 'Interview / Offer', color: '#3D8360', tx: '#FFFFFF' },
-  { label: 'Clinic', gate: true, color: '#276F4E', tx: '#FFFFFF' },
-  { label: 'Orientation', color: '#0E5D3C', tx: '#FFFFFF' },
+  { label: 'Considered', gate: true, color: '#7ECAA2', tx: '#12150F' },
+  { label: 'Screening', color: '#6FB690', tx: '#12150F' },
+  { label: 'VP Review', gate: true, color: '#60A27F', tx: '#12150F' },
+  { label: 'Interview', color: '#518F6F', tx: '#12150F' },
+  { label: 'Offer', gate: true, color: '#427C5F', tx: '#FFFFFF' },
+  { label: 'Clinic', gate: true, color: '#346A4F', tx: '#FFFFFF' },
+  { label: 'Orientation', color: '#26583F', tx: '#FFFFFF' },
   { label: 'Started', color: '#154733', tx: '#FFFFFF' },
 ];
 
@@ -1067,7 +1071,7 @@ function cardDivisionTagHtml(a) {
   return d ? `<div class="meta" style="margin-top:2px;color:${d.color};font-weight:600;font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.04em">${escapeHtml(d.label)}</div>` : '';
 }
 function kanbanColumnIndex(a) {
-  if (a.outcome === 'hired') return 7;
+  if (a.outcome === 'hired') return 8;
   for (let i = FUNNEL_STAGES.length - 1; i >= 0; i--) {
     if (FUNNEL_STAGES[i].test(a)) return i;
   }
@@ -1095,6 +1099,7 @@ function applyKanbanMove(applicantId, targetIndex) {
       { prescreen_passed: true },
       { vp_review_status: 'approved' },
       { interview_status: 'passed' },
+      { offer_status: 'extended' },
       { physical_passed: true },
       { orientation_completed: true },
       { outcome: 'hired', hired: true, hired_at: todayStr },
@@ -1106,9 +1111,10 @@ function applyKanbanMove(applicantId, targetIndex) {
   const label = KANBAN_COLUMNS[targetIndex].label;
   if (!confirm(`Move ${a.name} back to "${label}"? This clears any later progress.`)) return;
   const clearFields = {};
-  if (currentIndex === 7) { clearFields.outcome = ''; clearFields.hired = false; clearFields.hired_at = null; }
-  if (targetIndex < 6) clearFields.orientation_completed = false;
-  if (targetIndex < 5) clearFields.physical_passed = false;
+  if (currentIndex === 8) { clearFields.outcome = ''; clearFields.hired = false; clearFields.hired_at = null; }
+  if (targetIndex < 7) clearFields.orientation_completed = false;
+  if (targetIndex < 6) clearFields.physical_passed = false;
+  if (targetIndex < 5) clearFields.offer_status = 'pending';
   if (targetIndex < 4) clearFields.interview_status = 'pending';
   if (targetIndex < 3) clearFields.vp_review_status = 'pending';
   if (targetIndex < 2) clearFields.prescreen_passed = false;
@@ -1140,28 +1146,25 @@ function cardGateLinesHtml(a, colIndex) {
     return gateLineHtml('VP sign-off', s === 'approved' ? 'ok' : s === 'declined' ? 'bad' : '', s === 'approved' ? 'Approved' : s === 'declined' ? 'Declined' : 'Awaiting');
   }
   if (colIndex === 4) return gateLineHtml('Interview', a.interview_status === 'passed' ? 'ok' : '', a.interview_status === 'passed' ? 'Passed' : (a.interview_booked_date ? formatDate(a.interview_booked_date) : 'Not booked'));
-  if (colIndex === 5) return gateLineHtml('Clinic', a.physical_passed ? 'ok' : '', a.physical_passed ? 'Passed' : 'Pending');
-  if (colIndex === 6) return gateLineHtml('Orientation', a.orientation_completed ? 'ok' : '', a.orientation_completed ? 'Done' : (a.orientation_booked_date ? formatDate(a.orientation_booked_date) : 'Not booked'));
+  if (colIndex === 5) return gateLineHtml('Offer', a.offer_status === 'extended' ? 'ok' : a.offer_status === 'declined' ? 'bad' : '', a.offer_status === 'extended' ? 'Extended' : a.offer_status === 'declined' ? 'Declined' : 'Not yet extended');
+  if (colIndex === 6) return gateLineHtml('Clinic', a.physical_passed ? 'ok' : '', a.physical_passed ? 'Passed' : 'Pending');
+  if (colIndex === 7) return gateLineHtml('Orientation', a.orientation_completed ? 'ok' : '', a.orientation_completed ? 'Done' : (a.orientation_booked_date ? formatDate(a.orientation_booked_date) : 'Not booked'));
   return '';
 }
-// The actual date each of these four milestones happened, not just
-// whatever the card's status pill says -- separate from "last touched"
-// below, since other unrelated edits (a flag, a note) also bump that.
-// Interview booked and Offer extended are two separate facts, not one
-// or the other -- a candidate can have an interview on the books
-// without an offer yet, or (once marked Passed) both a booked date and
-// an offer date at once. Shown as independent lines.
+// The actual date each of these milestones happened, not just whatever
+// the card's status pill says -- separate from "last touched" below,
+// since other unrelated edits (a flag, a note) also bump that. Interview
+// and Offer are separate columns now, each with its own date, rather
+// than one combined fact.
 function cardDateHtml(a, colIndex) {
   if (colIndex === 4) {
-    return [
-      a.interview_booked_date ? `<div class="meta" style="margin-top:2px">Interview booked: ${formatDate(a.interview_booked_date)}</div>` : '',
-      a.offered_at ? `<div class="meta" style="margin-top:2px">Offered: ${formatDate(a.offered_at)}</div>` : '',
-    ].join('');
+    return a.interview_booked_date ? `<div class="meta" style="margin-top:2px">Interview booked: ${formatDate(a.interview_booked_date)}</div>` : '';
   }
   const byCol = {
-    5: ['Clinic', a.physical_passed_at],
-    6: ['Orientation', a.orientation_completed_at],
-    7: ['Started', a.hired_at],
+    5: ['Offered', a.offered_at],
+    6: ['Clinic', a.physical_passed_at],
+    7: ['Orientation', a.orientation_completed_at],
+    8: ['Started', a.hired_at],
   };
   const entry = byCol[colIndex];
   if (!entry || !entry[1]) return '';
@@ -1392,6 +1395,13 @@ function render() {
             <option value="not_passed" ${a.interview_status === 'not_passed' ? 'selected' : ''}>Did not pass</option>
           </select>
         </td>
+        <td>
+          <select class="inp offer-select" data-id="${a.id}" style="height:32px;font-size:12.5px">
+            <option value="pending" ${a.offer_status === 'pending' || !a.offer_status ? 'selected' : ''}>Not yet</option>
+            <option value="extended" ${a.offer_status === 'extended' ? 'selected' : ''}>Extended</option>
+            <option value="declined" ${a.offer_status === 'declined' ? 'selected' : ''}>Declined</option>
+          </select>
+        </td>
         <td style="text-align:center"><input type="checkbox" class="app-cb physical-cb" data-id="${a.id}" ${a.physical_passed ? 'checked' : ''} ${grayed ? 'disabled' : ''}></td>
         <td><input class="inp orientation-date-in" data-id="${a.id}" type="date" value="${a.orientation_booked_date || ''}" style="height:32px" ${grayed ? 'disabled' : ''}></td>
         <td style="text-align:center"><input type="checkbox" class="app-cb orientation-cb" data-id="${a.id}" ${a.orientation_completed ? 'checked' : ''} ${grayed ? 'disabled' : ''}></td>
@@ -1422,7 +1432,7 @@ function render() {
         <td style="text-align:right;white-space:nowrap"><button class="gh edit-app-btn" data-id="${a.id}" type="button">Edit</button> <button class="gh remove-btn" data-id="${a.id}" type="button">Remove</button></td>
       </tr>
     `;
-  }).join('') : '<tr><td colspan="20" class="dim">No applicants match.</td></tr>';
+  }).join('') : '<tr><td colspan="21" class="dim">No applicants match.</td></tr>';
 
   document.querySelectorAll('.hired-cb').forEach((cb) => {
     cb.addEventListener('change', () => {
@@ -1474,6 +1484,9 @@ function render() {
   document.querySelectorAll('.interview-select').forEach((sel) => {
     sel.addEventListener('change', () => updateApplicant(sel.dataset.id, { interview_status: sel.value }));
   });
+  document.querySelectorAll('.offer-select').forEach((sel) => {
+    sel.addEventListener('change', () => updateApplicant(sel.dataset.id, { offer_status: sel.value }));
+  });
   document.querySelectorAll('.physical-cb').forEach((cb) => {
     cb.addEventListener('change', () => updateApplicant(cb.dataset.id, { physical_passed: cb.checked }));
   });
@@ -1509,7 +1522,7 @@ function render() {
   });
 }
 
-// Interview/Offer, Clinic, Orientation and Started each get their own
+// Offer, Clinic, Orientation and Started each get their own
 // date -- the actual day that milestone happened, not just "whenever
 // this record was last edited" -- stamped centrally here so it's
 // correct no matter which entry point sets the underlying field
@@ -1517,7 +1530,7 @@ function render() {
 // the field (e.g. dragging a card backward) clears the date with it.
 function withMilestoneDates(fields) {
   const stamped = { ...fields };
-  if ('interview_status' in fields) stamped.offered_at = fields.interview_status === 'passed' ? todayStr : null;
+  if ('offer_status' in fields) stamped.offered_at = fields.offer_status === 'extended' ? todayStr : null;
   if ('physical_passed' in fields) stamped.physical_passed_at = fields.physical_passed ? todayStr : null;
   if ('orientation_completed' in fields) stamped.orientation_completed_at = fields.orientation_completed ? todayStr : null;
   return stamped;
@@ -1604,6 +1617,7 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
       vp_review_status: 'pending',
       interview_status: 'pending',
       interview_booked_date: '',
+      offer_status: 'pending',
       offered_at: null,
       physical_passed: false,
       orientation_booked_date: '',
@@ -1782,6 +1796,7 @@ function progressSummaryHtml(a) {
     { label: 'Screening', done: !!a.prescreen_passed },
     { label: 'VP Review', done: a.vp_review_status === 'approved', failed: a.vp_review_status === 'declined' },
     { label: 'Interview', done: a.interview_status === 'passed', failed: a.interview_status === 'not_passed' },
+    { label: 'Offer', done: a.offer_status === 'extended', failed: a.offer_status === 'declined' },
     { label: 'Clinic', done: !!a.physical_passed },
     { label: 'Orientation', done: !!a.orientation_completed },
     { label: 'Started', done: a.outcome === 'hired' },
@@ -1826,23 +1841,33 @@ function progressFieldsHtml(a) {
     </div>
     <div class="frow">
       <div class="field">
-        <label class="f-lab" for="edit-app-interview-booked-date">Interview booked</label>
-        <input class="f-in" id="edit-app-interview-booked-date" type="date" value="${a.interview_booked_date || ''}">
-      </div>
-      <div class="field">
-        <label class="f-lab" for="edit-app-interview">Interview / Offer</label>
+        <label class="f-lab" for="edit-app-interview">Interview</label>
         <select class="f-in" id="edit-app-interview">
           <option value="pending" ${a.interview_status === 'pending' || !a.interview_status ? 'selected' : ''}>Pending</option>
-          <option value="passed" ${a.interview_status === 'passed' ? 'selected' : ''}>Passed / offer extended</option>
+          <option value="passed" ${a.interview_status === 'passed' ? 'selected' : ''}>Passed</option>
           <option value="not_passed" ${a.interview_status === 'not_passed' ? 'selected' : ''}>Did not pass</option>
         </select>
       </div>
+      <div class="field">
+        <label class="f-lab" for="edit-app-interview-booked-date">Interview booked</label>
+        <input class="f-in" id="edit-app-interview-booked-date" type="date" value="${a.interview_booked_date || ''}">
+      </div>
     </div>
-    ${a.interview_status === 'passed' ? `
-    <div class="field">
-      <label class="f-lab" for="edit-app-offer-date">Offer date</label>
-      <input class="f-in" id="edit-app-offer-date" type="date" value="${a.offered_at || ''}">
-    </div>` : ''}
+    <div class="frow">
+      <div class="field">
+        <label class="f-lab" for="edit-app-offer">Offer</label>
+        <select class="f-in" id="edit-app-offer">
+          <option value="pending" ${a.offer_status === 'pending' || !a.offer_status ? 'selected' : ''}>Not yet extended</option>
+          <option value="extended" ${a.offer_status === 'extended' ? 'selected' : ''}>Extended</option>
+          <option value="declined" ${a.offer_status === 'declined' ? 'selected' : ''}>Declined</option>
+        </select>
+      </div>
+      ${a.offer_status === 'extended' ? `
+      <div class="field">
+        <label class="f-lab" for="edit-app-offer-date">Offer date</label>
+        <input class="f-in" id="edit-app-offer-date" type="date" value="${a.offered_at || ''}">
+      </div>` : ''}
+    </div>
     <div class="frow">
       <div class="field">
         <label class="f-lab">Clinic</label>
@@ -1906,6 +1931,7 @@ function renderEditAppProgress(applicantId) {
   document.getElementById('edit-app-vp').addEventListener('change', (e) => liveUpdate({ vp_review_status: e.target.value }));
   document.getElementById('edit-app-interview').addEventListener('change', (e) => liveUpdate({ interview_status: e.target.value }));
   document.getElementById('edit-app-interview-booked-date').addEventListener('change', (e) => liveUpdate({ interview_booked_date: e.target.value }));
+  document.getElementById('edit-app-offer').addEventListener('change', (e) => liveUpdate({ offer_status: e.target.value }));
   document.getElementById('edit-app-physical').addEventListener('change', (e) => liveUpdate({ physical_passed: e.target.checked }));
   document.getElementById('edit-app-orientation-date').addEventListener('change', (e) => liveUpdate({ orientation_booked_date: e.target.value }));
   document.getElementById('edit-app-orientation-done').addEventListener('change', (e) => liveUpdate({ orientation_completed: e.target.checked }));
