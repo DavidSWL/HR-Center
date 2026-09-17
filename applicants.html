@@ -61,9 +61,9 @@
 .card-h.clickable{cursor:pointer;user-select:none}
 .card-h.clickable:hover{background:var(--hover)}
 .card-h .chevron{font-family:var(--mono);font-size:11px;color:var(--faint);width:14px;text-align:center;flex-shrink:0}
-/* This modal alone gets extra width -- it's grown a long, two-column
-   list of stage/date pairs that the shared 480px modal size crowds. */
-#edit-app-overlay .modal{width:720px}
+/* This modal alone gets extra width -- the stage/date table needs more
+   room than the shared 480px modal size gives it. */
+#edit-app-overlay .modal{width:600px}
 </style>
 </head>
 <body>
@@ -1839,137 +1839,62 @@ function progressSummaryHtml(a) {
   `).join('')}</div>`;
 }
 
-// Every stage is the same shape -- status control on the left, its
-// date on the right, always both visible -- so the layout is a stable
-// grid instead of fields popping in and out as statuses change.
-// Application complete is the one exception: it's never a separate
-// event from receiving the application, so that date is computed from
-// Applied rather than given its own field to fill in.
+// One compact box, one row per stage -- label, status control, date --
+// instead of a stack of separate boxed fields. DMV Pull shows for
+// every candidate now, not just roles flagged as driver roles in
+// Settings, so it's never missing when someone needs to record it.
+// Application complete is the one exception with no date input of its
+// own: it's never a separate event from receiving the application, so
+// that date is computed from Applied instead.
 function progressFieldsHtml(a) {
-  const driver = isDriverRole(a.position_applied);
   const appliedDateText = a.applied_date && a.applied_date !== 'N/A' ? formatDate(a.applied_date) : 'unknown';
+  const checkboxCtl = (id, checked, label) =>
+    `<label style="display:flex;align-items:center;gap:6px;font-size:12.5px"><input type="checkbox" id="${id}" ${checked ? 'checked' : ''}> ${label}</label>`;
+  const dateCtl = (id, value) => `<input class="inp" id="${id}" type="date" style="width:100%" value="${value || ''}">`;
+  const row = (label, control, date) => `
+    <tr>
+      <td class="dim" style="padding:7px 8px;white-space:nowrap;font-size:12px">${label}</td>
+      <td style="padding:7px 8px">${control}</td>
+      <td style="padding:7px 8px">${date}</td>
+    </tr>`;
   return `
-    <div class="frow">
-      <div class="field">
-        <label class="f-lab">Application</label>
-        <label style="display:block;font-size:12.5px"><input type="checkbox" id="edit-app-complete" ${a.application_complete ? 'checked' : ''}> Complete</label>
-      </div>
-      <div class="field">
-        <label class="f-lab">Complete date</label>
-        <div class="dim" style="font-size:12.5px;padding-top:5px">${a.application_complete ? `Same as applied — ${appliedDateText}` : '—'}</div>
-      </div>
-    </div>
-    ${driver ? `
-    <div class="frow">
-      <div class="field">
-        <label class="f-lab" for="edit-app-dmv">DMV Pull</label>
-        <select class="f-in" id="edit-app-dmv">
-          <option value="pending" ${a.dmv_pull_status === 'pending' || !a.dmv_pull_status ? 'selected' : ''}>Pending</option>
-          <option value="passed" ${a.dmv_pull_status === 'passed' ? 'selected' : ''}>Passed</option>
-          <option value="failed" ${a.dmv_pull_status === 'failed' ? 'selected' : ''}>Failed</option>
-        </select>
-      </div>
-      <div class="field">
-        <label class="f-lab" for="edit-app-dmv-date">DMV pull date</label>
-        <input class="f-in" id="edit-app-dmv-date" type="date" value="${a.dmv_pull_at || ''}">
-      </div>
-    </div>
-    ` : `
-    <div class="field">
-      <label class="f-lab">DMV Pull</label>
-      <div class="dim" style="font-size:12.5px">N/A — not a driver role</div>
-    </div>
-    `}
-    <div class="frow">
-      <div class="field">
-        <label class="f-lab">Screening</label>
-        <label style="display:block;font-size:12.5px"><input type="checkbox" id="edit-app-prescreen" ${a.prescreen_passed ? 'checked' : ''}> Passed</label>
-      </div>
-      <div class="field">
-        <label class="f-lab" for="edit-app-prescreen-date">Screening date</label>
-        <input class="f-in" id="edit-app-prescreen-date" type="date" value="${a.prescreen_passed_at || ''}">
-      </div>
-    </div>
-    <div class="frow">
-      <div class="field">
-        <label class="f-lab" for="edit-app-vp">VP Review</label>
-        <select class="f-in" id="edit-app-vp">
-          <option value="pending" ${a.vp_review_status === 'pending' || !a.vp_review_status ? 'selected' : ''}>Awaiting</option>
-          <option value="approved" ${a.vp_review_status === 'approved' ? 'selected' : ''}>Approved — green light</option>
-          <option value="declined" ${a.vp_review_status === 'declined' ? 'selected' : ''}>Declined</option>
-        </select>
-      </div>
-      <div class="field">
-        <label class="f-lab" for="edit-app-vp-date">VP Review date</label>
-        <input class="f-in" id="edit-app-vp-date" type="date" value="${a.vp_review_at || ''}">
-      </div>
-    </div>
-    <div class="frow">
-      <div class="field">
-        <label class="f-lab" for="edit-app-interview">Interview</label>
-        <select class="f-in" id="edit-app-interview">
-          <option value="pending" ${a.interview_status === 'pending' || !a.interview_status ? 'selected' : ''}>Pending</option>
-          <option value="passed" ${a.interview_status === 'passed' ? 'selected' : ''}>Passed</option>
-          <option value="not_passed" ${a.interview_status === 'not_passed' ? 'selected' : ''}>Did not pass</option>
-        </select>
-      </div>
-      <div class="field">
-        <label class="f-lab" for="edit-app-interview-booked-date">Interview booked</label>
-        <input class="f-in" id="edit-app-interview-booked-date" type="date" value="${a.interview_booked_date || ''}">
-      </div>
-    </div>
-    <div class="frow">
-      <div class="field">
-        <label class="f-lab" for="edit-app-offer">Offer</label>
-        <select class="f-in" id="edit-app-offer">
-          <option value="pending" ${a.offer_status === 'pending' || !a.offer_status ? 'selected' : ''}>Not yet extended</option>
-          <option value="extended" ${a.offer_status === 'extended' ? 'selected' : ''}>Extended</option>
-          <option value="declined" ${a.offer_status === 'declined' ? 'selected' : ''}>Declined</option>
-        </select>
-      </div>
-      <div class="field">
-        <label class="f-lab" for="edit-app-offer-date">Offer date</label>
-        <input class="f-in" id="edit-app-offer-date" type="date" value="${a.offered_at || ''}">
-      </div>
-    </div>
-    <div class="frow">
-      <div class="field">
-        <label class="f-lab">Clinic</label>
-        <label style="display:block;font-size:12.5px"><input type="checkbox" id="edit-app-physical" ${a.physical_passed ? 'checked' : ''}> Passed</label>
-      </div>
-      <div class="field">
-        <label class="f-lab" for="edit-app-physical-date">Clinic date</label>
-        <input class="f-in" id="edit-app-physical-date" type="date" value="${a.physical_passed_at || ''}">
-      </div>
-    </div>
-    <div class="frow">
-      <div class="field">
-        <label class="f-lab" for="edit-app-orientation-date">Orientation booked</label>
-        <input class="f-in" id="edit-app-orientation-date" type="date" value="${a.orientation_booked_date || ''}">
-      </div>
-      <div class="field">
-        <label class="f-lab">Orientation</label>
-        <label style="display:block;font-size:12.5px"><input type="checkbox" id="edit-app-orientation-done" ${a.orientation_completed ? 'checked' : ''}> Completed</label>
-      </div>
-    </div>
-    <div class="frow">
-      <div class="field">
-        <label class="f-lab" for="edit-app-orientation-done-date">Orientation completed date</label>
-        <input class="f-in" id="edit-app-orientation-done-date" type="date" value="${a.orientation_completed_at || ''}">
-      </div>
-      <div class="field">
-        <label class="f-lab" for="edit-app-outcome">Outcome</label>
-        <select class="f-in" id="edit-app-outcome">
-          ${outcomeOptionsHtml(a.outcome)}
-        </select>
-        ${HAS_REASON_OUTCOMES.includes(a.outcome) && profile.role === 'david'
-          ? `<button type="button" class="gh" id="edit-app-reason-btn" style="margin-top:6px;font-size:11px;padding:2px 8px">Reason (private)</button>`
-          : ''}
-      </div>
-    </div>
-    <div class="field">
-      <label class="f-lab" for="edit-app-hired-date">Started date</label>
-      <input class="f-in" id="edit-app-hired-date" type="date" value="${a.hired_at || ''}">
+    <div style="border:1px solid var(--line)">
+      <table style="width:100%;border-collapse:collapse">
+        <colgroup><col style="width:118px"><col><col style="width:160px"></colgroup>
+        <tbody>
+          ${row('Application', checkboxCtl('edit-app-complete', a.application_complete, 'Complete'),
+            `<span class="dim" style="font-size:12px">${a.application_complete ? `Same as applied — ${appliedDateText}` : '—'}</span>`)}
+          ${row('DMV Pull', `<select class="inp" id="edit-app-dmv" style="width:100%">
+              <option value="pending" ${a.dmv_pull_status === 'pending' || !a.dmv_pull_status ? 'selected' : ''}>Pending</option>
+              <option value="passed" ${a.dmv_pull_status === 'passed' ? 'selected' : ''}>Passed</option>
+              <option value="failed" ${a.dmv_pull_status === 'failed' ? 'selected' : ''}>Failed</option>
+            </select>`, dateCtl('edit-app-dmv-date', a.dmv_pull_at))}
+          ${row('Screening', checkboxCtl('edit-app-prescreen', a.prescreen_passed, 'Passed'), dateCtl('edit-app-prescreen-date', a.prescreen_passed_at))}
+          ${row('VP Review', `<select class="inp" id="edit-app-vp" style="width:100%">
+              <option value="pending" ${a.vp_review_status === 'pending' || !a.vp_review_status ? 'selected' : ''}>Awaiting</option>
+              <option value="approved" ${a.vp_review_status === 'approved' ? 'selected' : ''}>Approved</option>
+              <option value="declined" ${a.vp_review_status === 'declined' ? 'selected' : ''}>Declined</option>
+            </select>`, dateCtl('edit-app-vp-date', a.vp_review_at))}
+          ${row('Interview', `<select class="inp" id="edit-app-interview" style="width:100%">
+              <option value="pending" ${a.interview_status === 'pending' || !a.interview_status ? 'selected' : ''}>Pending</option>
+              <option value="passed" ${a.interview_status === 'passed' ? 'selected' : ''}>Passed</option>
+              <option value="not_passed" ${a.interview_status === 'not_passed' ? 'selected' : ''}>Did not pass</option>
+            </select>`, dateCtl('edit-app-interview-booked-date', a.interview_booked_date))}
+          ${row('Offer', `<select class="inp" id="edit-app-offer" style="width:100%">
+              <option value="pending" ${a.offer_status === 'pending' || !a.offer_status ? 'selected' : ''}>Not yet extended</option>
+              <option value="extended" ${a.offer_status === 'extended' ? 'selected' : ''}>Extended</option>
+              <option value="declined" ${a.offer_status === 'declined' ? 'selected' : ''}>Declined</option>
+            </select>`, dateCtl('edit-app-offer-date', a.offered_at))}
+          ${row('Clinic', checkboxCtl('edit-app-physical', a.physical_passed, 'Passed'), dateCtl('edit-app-physical-date', a.physical_passed_at))}
+          ${row('Orientation booked', dateCtl('edit-app-orientation-date', a.orientation_booked_date), '')}
+          ${row('Orientation completed', checkboxCtl('edit-app-orientation-done', a.orientation_completed, 'Completed'), dateCtl('edit-app-orientation-done-date', a.orientation_completed_at))}
+          ${row('Outcome', `<select class="inp" id="edit-app-outcome" style="width:100%">${outcomeOptionsHtml(a.outcome)}</select>
+              ${HAS_REASON_OUTCOMES.includes(a.outcome) && profile.role === 'david'
+                ? `<button type="button" class="gh" id="edit-app-reason-btn" style="margin-top:5px;font-size:11px;padding:2px 8px">Reason (private)</button>`
+                : ''}`, '')}
+          ${row('Started', '', dateCtl('edit-app-hired-date', a.hired_at))}
+        </tbody>
+      </table>
     </div>
   `;
 }
@@ -1986,8 +1911,7 @@ function renderEditAppProgress(applicantId) {
 
   const liveUpdate = (fields) => updateApplicant(applicantId, fields).then(() => renderEditAppProgress(applicantId));
   document.getElementById('edit-app-complete').addEventListener('change', (e) => liveUpdate({ application_complete: e.target.checked }));
-  const dmvSel = document.getElementById('edit-app-dmv');
-  if (dmvSel) dmvSel.addEventListener('change', (e) => liveUpdate({ dmv_pull_status: e.target.value }));
+  document.getElementById('edit-app-dmv').addEventListener('change', (e) => liveUpdate({ dmv_pull_status: e.target.value }));
   document.getElementById('edit-app-prescreen').addEventListener('change', (e) => liveUpdate({ prescreen_passed: e.target.checked }));
   document.getElementById('edit-app-vp').addEventListener('change', (e) => liveUpdate({ vp_review_status: e.target.value }));
   document.getElementById('edit-app-interview').addEventListener('change', (e) => liveUpdate({ interview_status: e.target.value }));
@@ -2010,8 +1934,7 @@ function renderEditAppProgress(applicantId) {
   // day it happened. These let David fix or backfill the actual date
   // directly, without going through dmv_pull_status etc. (so they
   // don't get re-stamped to today the next time something else changes).
-  const dmvDateInp = document.getElementById('edit-app-dmv-date');
-  if (dmvDateInp) dmvDateInp.addEventListener('change', (e) => liveUpdate({ dmv_pull_at: e.target.value || null }));
+  document.getElementById('edit-app-dmv-date').addEventListener('change', (e) => liveUpdate({ dmv_pull_at: e.target.value || null }));
   document.getElementById('edit-app-prescreen-date').addEventListener('change', (e) => liveUpdate({ prescreen_passed_at: e.target.value || null }));
   document.getElementById('edit-app-vp-date').addEventListener('change', (e) => liveUpdate({ vp_review_at: e.target.value || null }));
   document.getElementById('edit-app-offer-date').addEventListener('change', (e) => liveUpdate({ offered_at: e.target.value || null }));
@@ -2069,14 +1992,11 @@ document.getElementById('edit-app-cancel-btn').addEventListener('click', closeEd
 // through and the actual date it happened, at a glance, without
 // opening the editable fields (that's still the card/Edit button).
 function applicantProfileRows(a) {
-  const driver = isDriverRole(a.position_applied);
   const outcomeLabel = (OUTCOME_OPTIONS.find((o) => o.value === a.outcome) || {}).label || 'Active';
   const rows = [
     ['Applied', a.applied_date === 'N/A' ? 'Date unknown' : 'Received', a.applied_date && a.applied_date !== 'N/A' ? formatDate(a.applied_date) : '—'],
     ['Application complete', a.application_complete ? 'Yes' : 'Not yet', a.application_complete && a.applied_date && a.applied_date !== 'N/A' ? formatDate(a.applied_date) : '—'],
-  ];
-  if (driver) rows.push(['DMV pull', a.dmv_pull_status === 'passed' ? 'Passed' : a.dmv_pull_status === 'failed' ? 'Failed' : 'Pending', a.dmv_pull_at ? formatDate(a.dmv_pull_at) : '—']);
-  rows.push(
+    ['DMV pull', a.dmv_pull_status === 'passed' ? 'Passed' : a.dmv_pull_status === 'failed' ? 'Failed' : 'Pending', a.dmv_pull_at ? formatDate(a.dmv_pull_at) : '—'],
     ['Screening', a.prescreen_passed ? 'Passed' : 'Pending', a.prescreen_passed_at ? formatDate(a.prescreen_passed_at) : '—'],
     ['VP Review', a.vp_review_status === 'approved' ? 'Approved' : a.vp_review_status === 'declined' ? 'Declined' : 'Awaiting', a.vp_review_at ? formatDate(a.vp_review_at) : '—'],
     ['Interview', a.interview_status === 'passed' ? 'Passed' : a.interview_status === 'not_passed' ? 'Did not pass' : 'Pending', a.interview_booked_date ? formatDate(a.interview_booked_date) : '—'],
@@ -2084,7 +2004,7 @@ function applicantProfileRows(a) {
     ['Clinic', a.physical_passed ? 'Passed' : 'Pending', a.physical_passed_at ? formatDate(a.physical_passed_at) : '—'],
     ['Orientation', a.orientation_completed ? 'Completed' : (a.orientation_booked_date ? 'Booked' : 'Not yet'), a.orientation_completed_at ? formatDate(a.orientation_completed_at) : (a.orientation_booked_date ? formatDate(a.orientation_booked_date) : '—')],
     ['Outcome', outcomeLabel, a.outcome === 'hired' && a.hired_at ? formatDate(a.hired_at) : '—'],
-  );
+  ];
   return rows;
 }
 function openApplicantProfile(applicantId) {
