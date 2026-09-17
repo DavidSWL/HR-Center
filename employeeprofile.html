@@ -223,11 +223,13 @@ async function countWhere(collectionName, field, value) {
   return snap.size;
 }
 
-const [attendanceCount, disciplineCount, notesCount, reviewsSnap] = await Promise.all([
+const [attendanceCount, disciplineCount, notesCount, reviewsSnap, harassmentSnap, managersSnap] = await Promise.all([
   countWhere('attendance', 'emp_id', emp.id),
   isDavid ? countWhere('disciplinary_actions', 'emp_id', emp.id) : Promise.resolve(null),
   countWhere('notes_to_file', 'emp_id', emp.id),
   getDocs(collection(db, 'employees', emp.id, 'reviews')),
+  getDoc(doc(db, 'employees', emp.id, 'harassment_training', 'current')),
+  getDoc(doc(db, 'settings', 'managers')),
 ]);
 
 const reviews = reviewsSnap.docs.map((d) => d.data()).sort((a, b) => a.milestone - b.milestone);
@@ -236,13 +238,39 @@ const reviewsValue = reviews.length === 0 ? 'None scheduled'
   : nextReview ? `${nextReview.milestone}-day due ${formatDate(nextReview.due_date)}`
   : 'All complete';
 
+// California SB 1343: 2-hr for supervisors, 1-hr otherwise, renewed
+// every 2 years -- a new hire's first cycle is due within 6 months of
+// hire. Same computation harassmenttraining.html uses, so this row and
+// that module's table never disagree about who's overdue.
+function addMonths(dateStr, months) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().slice(0, 10);
+}
+const todayStr = new Date().toISOString().slice(0, 10);
+const dueSoonCutoff = (() => {
+  const d = new Date();
+  d.setDate(d.getDate() + 60);
+  return d.toISOString().slice(0, 10);
+})();
+const isManager = new Set(managersSnap.exists() ? (managersSnap.data().employee_ids || []) : []).has(emp.id);
+const harassmentRec = harassmentSnap.exists() ? harassmentSnap.data() : null;
+const harassmentDue = harassmentRec?.due_date || (emp.hire_date ? addMonths(emp.hire_date, 6) : null);
+const harassmentStatus = !harassmentDue ? null
+  : harassmentDue < todayStr ? 'overdue'
+  : harassmentDue <= dueSoonCutoff ? 'duesoon'
+  : 'ontrack';
+const harassmentValue = !harassmentDue ? 'No hire date on file'
+  : `${harassmentStatus === 'overdue' ? '<span class="pill bad">Overdue</span> ' : harassmentStatus === 'duesoon' ? '<span class="pill mid">Due soon</span> ' : ''}${formatDate(harassmentDue)}`;
+
 document.getElementById('tab-records').innerHTML = `
   <div class="card-h"><h3>Records</h3><span>Everything on file, linked to where it actually lives</span></div>
   <a class="rec-row" href="attendance.html"><div class="l"><b>Attendance</b><small>Occurrences on file</small></div><div class="v">${attendanceCount} occurrence${attendanceCount === 1 ? '' : 's'}</div><div class="go">&rarr;</div></a>
   ${isDavid ? `<a class="rec-row" href="discipline.html"><div class="l"><b>Disciplinary actions</b><small>Write-ups and PIPs</small></div><div class="v">${disciplineCount ? `${disciplineCount} on file` : 'None on file'}</div><div class="go">&rarr;</div></a>` : ''}
   <a class="rec-row" href="notes.html"><div class="l"><b>Notes to file</b><small>Informal notes from managers</small></div><div class="v">${notesCount ? `${notesCount} note${notesCount === 1 ? '' : 's'}` : 'None on file'}</div><div class="go">&rarr;</div></a>
   <a class="rec-row" href="reviews.html"><div class="l"><b>Reviews</b><small>30/60/90-day new hire reviews</small></div><div class="v">${reviewsValue}</div><div class="go">&rarr;</div></a>
-  <a class="rec-row" href="compliance.html"><div class="l"><b>Policy &amp; training compliance</b><small>Acknowledgments and harassment training</small></div><div class="v"></div><div class="go">&rarr;</div></a>
+  <a class="rec-row" href="harassmenttraining.html"><div class="l"><b>Harassment training</b><small>${isManager ? '2-hour' : '1-hour'} requirement (SB 1343) &mdash; ${harassmentRec?.completed_date ? `last completed ${formatDate(harassmentRec.completed_date)}` : 'never completed in this system'}</small></div><div class="v">${harassmentValue}</div><div class="go">&rarr;</div></a>
+  <a class="rec-row" href="compliance.html"><div class="l"><b>Policy &amp; training compliance</b><small>Handbook and policy acknowledgments</small></div><div class="v"></div><div class="go">&rarr;</div></a>
 `;
 
 // Documents — every document this employee has actually SIGNED (not

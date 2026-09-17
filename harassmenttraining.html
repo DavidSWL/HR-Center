@@ -63,6 +63,7 @@
         <div class="tools" id="bulk-bar" hidden style="border-top:0">
           <span class="dim" id="bulk-count" style="font-size:12.5px"></span>
           <input class="inp" id="bulk-date" type="date">
+          <span class="dim" id="bulk-expires" style="font-size:12.5px"></span>
           <button class="gh solid" id="bulk-complete-btn" type="button">Mark checked as completed</button>
         </div>
         <div style="overflow-x:auto">
@@ -103,6 +104,10 @@
       <div class="field">
         <label class="f-lab" for="modal-date">Completed on</label>
         <input class="f-in" id="modal-date" type="date">
+      </div>
+      <div class="field">
+        <label class="f-lab">Expires (California requires renewal every 2 years)</label>
+        <div style="font-size:14px" id="modal-expires">—</div>
       </div>
     </div>
     <div class="modal-actions">
@@ -211,6 +216,22 @@ function statusFor(dueDate) {
   return 'ontrack';
 }
 
+// Live preview of the expiration a completion date on the form would
+// produce -- 2 years out per SB 1343 -- so the date entered and the
+// consequence of entering it are on screen together, not just the old
+// due date from before this entry. A backdated completion can compute
+// an expiration that's already overdue or due soon, so it's flagged
+// the same way the table itself flags anyone else.
+function expiresPreviewHtml(completedDate) {
+  if (!completedDate) return '<span class="dim">Pick a completion date</span>';
+  const due = addYears(completedDate, 2);
+  const status = statusFor(due);
+  const pill = status === 'overdue' ? '<span class="pill bad">Overdue</span>'
+    : status === 'duesoon' ? '<span class="pill mid">Due soon</span>'
+    : '<span class="pill ok">On track</span>';
+  return `${formatDate(due)} ${pill}`;
+}
+
 function render() {
   const q = document.getElementById('search').value.trim().toLowerCase();
   const roleFilter = document.getElementById('role-filter').value;
@@ -310,6 +331,10 @@ function syncBulkBar() {
 }
 
 document.getElementById('bulk-date').value = todayStr;
+document.getElementById('bulk-expires').innerHTML = expiresPreviewHtml(todayStr);
+document.getElementById('bulk-date').addEventListener('input', (e) => {
+  document.getElementById('bulk-expires').innerHTML = expiresPreviewHtml(e.target.value);
+});
 document.getElementById('bulk-complete-btn').addEventListener('click', async () => {
   const ids = [...document.querySelectorAll('.row-cb:checked')].map((cb) => cb.dataset.id);
   const completedDate = document.getElementById('bulk-date').value;
@@ -358,8 +383,12 @@ function openModal(empId) {
     lastField.hidden = true;
   }
   document.getElementById('modal-date').value = todayStr;
+  document.getElementById('modal-expires').innerHTML = expiresPreviewHtml(todayStr);
   document.getElementById('modal-overlay').hidden = false;
 }
+document.getElementById('modal-date').addEventListener('input', (e) => {
+  document.getElementById('modal-expires').innerHTML = expiresPreviewHtml(e.target.value);
+});
 function closeModal() { document.getElementById('modal-overlay').hidden = true; modalEmpId = null; }
 document.getElementById('modal-close').addEventListener('click', closeModal);
 document.getElementById('modal-cancel').addEventListener('click', closeModal);
