@@ -447,6 +447,21 @@
   </div>
 </div>
 
+<!-- Read-only candidate summary -- click a name to see the whole
+     history at a glance without opening the editable fields. -->
+<div class="modal-overlay" id="app-profile-overlay" hidden>
+  <div class="modal">
+    <div class="modal-h">
+      <h3 id="app-profile-name">Candidate</h3>
+      <button class="modal-close" id="app-profile-close" type="button">&times;</button>
+    </div>
+    <div class="modal-body" id="app-profile-body"></div>
+    <div class="modal-actions">
+      <button type="button" class="gh" id="app-profile-close-btn">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- Application page zoom viewer — click-to-zoom/drag, since a phone
      photo of a handwritten page is often only readable zoomed in. -->
 <div class="modal-overlay" id="page-zoom-overlay" hidden style="z-index:200">
@@ -1200,7 +1215,7 @@ function renderKanban() {
           <div class="kanban-col-body">
             ${byCol[i].map((a) => `
               <div class="kanban-card${cardGateClass(a, i) ? ' ' + cardGateClass(a, i) : ''}"${applicantDivisionColor(a) ? ` style="border-top:3px solid ${applicantDivisionColor(a).color}"` : ''} draggable="true" data-id="${a.id}">
-                <div class="nm">${escapeHtml(a.name)}</div>
+                <div class="nm kanban-card-name" data-id="${a.id}" style="cursor:pointer" title="View summary">${escapeHtml(a.name)}</div>
                 <div class="meta">${escapeHtml(a.position_applied) || '—'}</div>
                 ${cardDivisionTagHtml(a)}
                 ${cardGateLinesHtml(a, i)}
@@ -1227,6 +1242,12 @@ function renderKanban() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation(); // don't also trigger the card's own click-to-edit
       openFlagMenu(btn.dataset.id);
+    });
+  });
+  document.querySelectorAll('.kanban-card-name').forEach((nm) => {
+    nm.addEventListener('click', (e) => {
+      e.stopPropagation(); // don't also trigger the card's own click-to-edit
+      openApplicantProfile(nm.dataset.id);
     });
   });
   document.querySelectorAll('.kanban-col').forEach((col) => {
@@ -1368,7 +1389,7 @@ function render() {
     const overdue = bonusDue && !bothPaid && bonusDue < todayStr;
     return `
       <tr class="app-row${grayed ? ' grayed' : ''}" data-id="${a.id}">
-        <td class="app-name-cell"><button type="button" class="app-name-btn edit-app-btn" data-id="${a.id}">${escapeHtml(a.name)}</button></td>
+        <td class="app-name-cell"><button type="button" class="app-name-btn view-app-profile-btn" data-id="${a.id}">${escapeHtml(a.name)}</button></td>
         <td class="dim">${SOURCE_LABELS[a.source] || a.source}</td>
         <td class="dim">${escapeHtml(a.position_applied) || '—'}</td>
         <td class="mono dim">${a.applied_date === 'N/A' ? 'N/A' : formatDate(a.applied_date)}</td>
@@ -1454,6 +1475,9 @@ function render() {
   document.querySelectorAll('.edit-app-btn').forEach((btn) => {
     btn.addEventListener('click', () => openEditApplicant(btn.dataset.id));
   });
+  document.querySelectorAll('.view-app-profile-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openApplicantProfile(btn.dataset.id));
+  });
   document.querySelectorAll('.reject-reason-btn').forEach((btn) => {
     btn.addEventListener('click', () => openRejectReason(btn.dataset.id));
   });
@@ -1522,14 +1546,18 @@ function render() {
   });
 }
 
-// Offer, Clinic, Orientation and Started each get their own
-// date -- the actual day that milestone happened, not just "whenever
-// this record was last edited" -- stamped centrally here so it's
-// correct no matter which entry point sets the underlying field
-// (Kanban drag, the table's checkboxes, or the edit modal). Clearing
-// the field (e.g. dragging a card backward) clears the date with it.
+// Every gate on the pipeline gets its own date -- the actual day that
+// milestone happened, not just "whenever this record was last edited"
+// -- stamped centrally here so it's correct no matter which entry
+// point sets the underlying field (Kanban drag, the table's
+// checkboxes/selects, or the edit modal). Clearing the field (e.g.
+// dragging a card backward) clears the date with it.
 function withMilestoneDates(fields) {
   const stamped = { ...fields };
+  if ('application_complete' in fields) stamped.application_complete_at = fields.application_complete ? todayStr : null;
+  if ('dmv_pull_status' in fields) stamped.dmv_pull_at = fields.dmv_pull_status && fields.dmv_pull_status !== 'pending' ? todayStr : null;
+  if ('prescreen_passed' in fields) stamped.prescreen_passed_at = fields.prescreen_passed ? todayStr : null;
+  if ('vp_review_status' in fields) stamped.vp_review_at = fields.vp_review_status && fields.vp_review_status !== 'pending' ? todayStr : null;
   if ('offer_status' in fields) stamped.offered_at = fields.offer_status === 'extended' ? todayStr : null;
   if ('physical_passed' in fields) stamped.physical_passed_at = fields.physical_passed ? todayStr : null;
   if ('orientation_completed' in fields) stamped.orientation_completed_at = fields.orientation_completed ? todayStr : null;
@@ -1612,9 +1640,13 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
       team: document.getElementById('new-app-team').value || null,
       applied_date: appliedDate,
       application_complete: false,
+      application_complete_at: null,
       dmv_pull_status: 'pending',
+      dmv_pull_at: null,
       prescreen_passed: false,
+      prescreen_passed_at: null,
       vp_review_status: 'pending',
+      vp_review_at: null,
       interview_status: 'pending',
       interview_booked_date: '',
       offer_status: 'pending',
@@ -2003,6 +2035,57 @@ function closeEditApplicant() {
 }
 document.getElementById('edit-app-close').addEventListener('click', closeEditApplicant);
 document.getElementById('edit-app-cancel-btn').addEventListener('click', closeEditApplicant);
+
+// Read-only history for one candidate -- every gate they've passed
+// through and the actual date it happened, at a glance, without
+// opening the editable fields (that's still the card/Edit button).
+function applicantProfileRows(a) {
+  const driver = isDriverRole(a.position_applied);
+  const outcomeLabel = (OUTCOME_OPTIONS.find((o) => o.value === a.outcome) || {}).label || 'Active';
+  const rows = [
+    ['Applied', a.applied_date === 'N/A' ? 'Date unknown' : 'Received', a.applied_date && a.applied_date !== 'N/A' ? formatDate(a.applied_date) : '—'],
+    ['Application complete', a.application_complete ? 'Yes' : 'Not yet', a.application_complete_at ? formatDate(a.application_complete_at) : '—'],
+  ];
+  if (driver) rows.push(['DMV pull', a.dmv_pull_status === 'passed' ? 'Passed' : a.dmv_pull_status === 'failed' ? 'Failed' : 'Pending', a.dmv_pull_at ? formatDate(a.dmv_pull_at) : '—']);
+  rows.push(
+    ['Screening', a.prescreen_passed ? 'Passed' : 'Pending', a.prescreen_passed_at ? formatDate(a.prescreen_passed_at) : '—'],
+    ['VP Review', a.vp_review_status === 'approved' ? 'Approved' : a.vp_review_status === 'declined' ? 'Declined' : 'Awaiting', a.vp_review_at ? formatDate(a.vp_review_at) : '—'],
+    ['Interview', a.interview_status === 'passed' ? 'Passed' : a.interview_status === 'not_passed' ? 'Did not pass' : 'Pending', a.interview_booked_date ? formatDate(a.interview_booked_date) : '—'],
+    ['Offer', a.offer_status === 'extended' ? 'Extended' : a.offer_status === 'declined' ? 'Declined' : 'Not yet extended', a.offered_at ? formatDate(a.offered_at) : '—'],
+    ['Clinic', a.physical_passed ? 'Passed' : 'Pending', a.physical_passed_at ? formatDate(a.physical_passed_at) : '—'],
+    ['Orientation', a.orientation_completed ? 'Completed' : (a.orientation_booked_date ? 'Booked' : 'Not yet'), a.orientation_completed_at ? formatDate(a.orientation_completed_at) : (a.orientation_booked_date ? formatDate(a.orientation_booked_date) : '—')],
+    ['Outcome', outcomeLabel, a.outcome === 'hired' && a.hired_at ? formatDate(a.hired_at) : '—'],
+  );
+  return rows;
+}
+function openApplicantProfile(applicantId) {
+  const a = applicants.find((x) => x.id === applicantId);
+  if (!a) return;
+  document.getElementById('app-profile-name').textContent = a.name;
+  const rows = applicantProfileRows(a);
+  document.getElementById('app-profile-body').innerHTML = `
+    <div class="dim" style="font-size:12.5px;margin-bottom:12px">
+      ${escapeHtml(a.position_applied) || 'Position not specified'} · ${SOURCE_LABELS[a.source] || a.source}${a.source === 'referral' && a.referred_by_emp_id ? ` (${escapeHtml(empName(a.referred_by_emp_id) || 'former employee')})` : ''}${a.team ? ` · ${escapeHtml(a.team)}` : ''}
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <tbody>
+        ${rows.map(([label, status, date]) => `
+          <tr style="border-top:1px solid var(--line)">
+            <td style="padding:6px 4px" class="dim">${label}</td>
+            <td style="padding:6px 4px">${status}</td>
+            <td style="padding:6px 4px;text-align:right" class="mono dim">${date}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+  document.getElementById('app-profile-overlay').hidden = false;
+}
+function closeApplicantProfile() {
+  document.getElementById('app-profile-overlay').hidden = true;
+}
+document.getElementById('app-profile-close').addEventListener('click', closeApplicantProfile);
+document.getElementById('app-profile-close-btn').addEventListener('click', closeApplicantProfile);
 document.getElementById('edit-app-source').addEventListener('change', (e) => {
   document.getElementById('edit-app-referrer-field').hidden = e.target.value !== 'referral';
 });
