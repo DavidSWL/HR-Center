@@ -95,6 +95,27 @@
       <div class="card" style="margin-bottom:16px">
         <div class="card-h"><h3>Pipeline</h3><span id="pipeline-summary">—</span></div>
         <div class="card-body" id="pipeline-board"></div>
+        <div class="card-h clickable" id="pipeline-guide-toggle" style="border-top:1px solid var(--line)">
+          <span class="dim" style="font-size:12.5px">Pipeline guide — what each stage means</span>
+          <span class="chevron" id="pipeline-guide-chevron">▼</span>
+        </div>
+        <div class="card-body" id="pipeline-guide-body" hidden>
+          <table>
+            <thead><tr><th>Stage</th><th>What it means</th><th>Moves forward when</th></tr></thead>
+            <tbody>
+              <tr><td>Applied</td><td>Just entered into the tracker.</td><td>Always the starting point — nothing required.</td></tr>
+              <tr><td>Considered</td><td>Application is actually complete and worth reviewing.</td><td>Application marked Complete, and — for driver roles only — DMV Pull comes back Passed or N/A.</td></tr>
+              <tr><td>Screening</td><td>Initial phone or in-person screening.</td><td>Screening marked Passed.</td></tr>
+              <tr><td>VP Review</td><td>The VP over that division reviews the candidate.</td><td>VP Review marked Approved — green light.</td></tr>
+              <tr><td>Interview</td><td>Formal interview with the hiring manager.</td><td>Interview marked Passed.</td></tr>
+              <tr><td>Offer</td><td>An offer has gone out.</td><td>Offer marked Extended.</td></tr>
+              <tr><td>Clinic</td><td>Post-offer physical / drug screen.</td><td>Clinic marked Passed.</td></tr>
+              <tr><td>Orientation</td><td>Orientation is on the books — not completed yet.</td><td>An orientation date is entered. Orientation only counts as actually done once the candidate starts.</td></tr>
+              <tr><td>Started</td><td>Hired and on the roster.</td><td>The last step — moving a card here logs the hire, sets the start date, and marks orientation completed.</td></tr>
+            </tbody>
+          </table>
+          <p class="dim" style="font-size:11.5px;margin-top:10px">Drag a card forward to advance it, or backward to undo progress — you'll be asked to confirm, since moving back clears anything later. Click a card to open and edit it; click just the name for a quick read-only summary. The colored stripe across the top of a card is the candidate's assigned team (set in their Team field).</p>
+        </div>
         <div class="card-h clickable" id="resume-pool-toggle" style="border-top:1px solid var(--line)">
           <h3>Resume on file pool</h3>
           <span style="display:flex;align-items:center;gap:10px">
@@ -883,6 +904,11 @@ function renderPipeline() {
 document.getElementById('resume-pool-toggle').addEventListener('click', () => {
   resumePoolOpen = !resumePoolOpen;
   renderPipeline();
+});
+document.getElementById('pipeline-guide-toggle').addEventListener('click', () => {
+  const body = document.getElementById('pipeline-guide-body');
+  body.hidden = !body.hidden;
+  document.getElementById('pipeline-guide-chevron').textContent = body.hidden ? '▼' : '▲';
 });
 document.getElementById('outcome-cheatsheet-toggle').addEventListener('click', () => {
   const body = document.getElementById('outcome-cheatsheet-body');
