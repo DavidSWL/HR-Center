@@ -93,7 +93,7 @@
 
       <div id="ats-tab-pipeline">
       <div class="card" style="margin-bottom:16px">
-        <div class="card-h"><h3>Pipeline</h3><span id="pipeline-summary">—</span></div>
+        <div class="card-h"><h3>Pipeline</h3><span style="display:flex;align-items:center;gap:10px"><span id="pipeline-summary">—</span><button class="gh" id="pipeline-report-btn" type="button">Full report</button></span></div>
         <div class="card-body" id="pipeline-board"></div>
         <div class="card-h clickable" id="pipeline-guide-toggle" style="border-top:1px solid var(--line)">
           <span class="dim" style="font-size:12.5px">Pipeline guide — what each stage means</span>
@@ -320,6 +320,20 @@
         <button class="gh solid" id="resume-report-print-btn" type="button">Print whole packet</button>
       </div>
       <div id="resume-report-body"></div>
+    </div>
+
+    <!-- Full pipeline report -- one printable snapshot for HR: who's
+         where in the pipeline, open roles (hiring needs) and how long
+         each has been open, and roles filled with their time-to-fill.
+         Everyone currently on file, no date filter -- Reports -> Time
+         to fill covers trends over a chosen range; this is "where do
+         things stand right now." -->
+    <div class="form-doc" id="pipeline-report" hidden>
+      <div class="acts no-print" style="margin-bottom:16px">
+        <button class="gh" id="pipeline-report-back-btn" type="button">&larr; Back to pipeline</button>
+        <button class="gh solid" id="pipeline-report-print-btn" type="button">Print</button>
+      </div>
+      <div id="pipeline-report-body"></div>
     </div>
   </div>
 </div>
@@ -1049,6 +1063,112 @@ window.addEventListener('afterprint', () => {
   if (summary) summary.style.display = '';
   document.querySelectorAll('.resume-candidate-block').forEach((block) => { block.style.display = ''; });
 });
+
+// ---- Full pipeline report -- one printable page answering "where do
+// things stand right now": headcount by stage (same active set and
+// same column math the Kanban board itself uses, so the two never
+// disagree), headcount by team, every open role with days open (stale
+// ones flagged the same red the Open roles tab already uses), and
+// every filled role with its actual days-to-fill. No date range to
+// pick -- it's everything currently on file, and says so on screen.
+function renderPipelineReport() {
+  const active = applicants.filter((a) => a.interview_status !== 'not_passed'
+    && ![...REJECTED_OUTCOMES, 'not_selected', 'resume_on_file', 'not_interested', 'no_experience', 'needs_review'].includes(a.outcome));
+  const byCol = KANBAN_COLUMNS.map(() => 0);
+  active.forEach((a) => { byCol[kanbanColumnIndex(a)]++; });
+
+  const byTeam = {};
+  TEAMS.forEach((t) => { byTeam[t] = 0; });
+  let noTeam = 0;
+  active.forEach((a) => {
+    if (a.team && TEAM_COLORS[a.team]) byTeam[a.team]++;
+    else noTeam++;
+  });
+
+  const openRoles = openJobs.filter((j) => j.status === 'open')
+    .map((j) => ({ j, days: jobDaysOpen(j), candidates: applicants.filter((a) => a.applied_job_id === j.id).length }))
+    .sort((x, y) => y.days - x.days);
+
+  const closedRoles = openJobs.filter((j) => j.status === 'filled' && j.filled_date && j.opened_date)
+    .map((j) => ({ j, daysToFill: Math.round((new Date(j.filled_date + 'T00:00:00') - new Date(j.opened_date + 'T00:00:00')) / 86400000) }))
+    .sort((x, y) => (y.j.filled_date || '').localeCompare(x.j.filled_date || ''));
+  const avgDaysToFill = closedRoles.length
+    ? Math.round(closedRoles.reduce((sum, r) => sum + r.daysToFill, 0) / closedRoles.length)
+    : null;
+
+  document.getElementById('pipeline-report-body').innerHTML = `
+    <div class="form-page-break">
+      <div class="form-doc-inner">
+        <div class="form-section">ATS Pipeline Report</div>
+        <p class="dim" style="font-size:11.5px;margin:0 0 14px">Printed ${formatDate(todayStr)} — everyone and every role currently on file, no date range filter. ${active.length} active candidate${active.length === 1 ? '' : 's'}, ${openRoles.length} open role${openRoles.length === 1 ? '' : 's'}, ${closedRoles.length} filled role${closedRoles.length === 1 ? '' : 's'} on record.</p>
+
+        <div class="form-section">Who's Where — Active Pipeline</div>
+        <table class="form-notice-table">
+          <thead><tr><th>Stage</th><th style="text-align:right">Candidates</th></tr></thead>
+          <tbody>
+            ${KANBAN_COLUMNS.map((c, i) => `<tr><td>${escapeHtml(c.label)}</td><td style="text-align:right" class="mono">${byCol[i]}</td></tr>`).join('')}
+            <tr style="font-weight:600"><td>Total active</td><td style="text-align:right" class="mono">${active.length}</td></tr>
+          </tbody>
+        </table>
+
+        <div class="form-section">By Team</div>
+        <table class="form-notice-table">
+          <thead><tr><th>Team</th><th style="text-align:right">Candidates</th></tr></thead>
+          <tbody>
+            ${TEAMS.map((t) => `<tr><td>${escapeHtml(t)}</td><td style="text-align:right" class="mono">${byTeam[t]}</td></tr>`).join('')}
+            <tr><td>Unassigned</td><td style="text-align:right" class="mono">${noTeam}</td></tr>
+          </tbody>
+        </table>
+
+        <div class="form-section">Hiring Needs — Open Roles</div>
+        ${openRoles.length ? `
+        <table class="form-notice-table">
+          <thead><tr><th>Role</th><th>Division</th><th>Location</th><th style="text-align:right">Days Open</th><th style="text-align:right">In Pipeline</th></tr></thead>
+          <tbody>
+            ${openRoles.map(({ j, days, candidates }) => `
+              <tr>
+                <td>${escapeHtml(j.title) || 'Unspecified'}</td>
+                <td>${escapeHtml(j.division) || '—'}</td>
+                <td>${escapeHtml(j.location) || '—'}</td>
+                <td style="text-align:right${days > STALE_DAYS ? ';color:var(--alertTx);font-weight:700' : ''}" class="mono">${days}${days > STALE_DAYS ? ' — stale' : ''}</td>
+                <td style="text-align:right" class="mono">${candidates}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        ` : '<div class="form-box">No open roles right now.</div>'}
+
+        <div class="form-section">Recently Filled Roles</div>
+        ${closedRoles.length ? `
+        <table class="form-notice-table">
+          <thead><tr><th>Role</th><th>Division</th><th>Opened</th><th>Filled</th><th style="text-align:right">Days to Fill</th></tr></thead>
+          <tbody>
+            ${closedRoles.map(({ j, daysToFill }) => `
+              <tr>
+                <td>${escapeHtml(j.title) || 'Unspecified'}</td>
+                <td>${escapeHtml(j.division) || '—'}</td>
+                <td class="mono">${formatDate(j.opened_date)}</td>
+                <td class="mono">${formatDate(j.filled_date)}</td>
+                <td style="text-align:right" class="mono">${daysToFill}</td>
+              </tr>
+            `).join('')}
+            <tr style="font-weight:600"><td colspan="4">Average days to fill</td><td style="text-align:right" class="mono">${avgDaysToFill ?? '—'}</td></tr>
+          </tbody>
+        </table>
+        ` : '<div class="form-box">No filled roles on file yet.</div>'}
+      </div>
+    </div>
+  `;
+  document.getElementById('pipeline-view').hidden = true;
+  document.getElementById('pipeline-report').hidden = false;
+  window.scrollTo(0, 0);
+}
+document.getElementById('pipeline-report-btn').addEventListener('click', renderPipelineReport);
+document.getElementById('pipeline-report-back-btn').addEventListener('click', () => {
+  document.getElementById('pipeline-report').hidden = true;
+  document.getElementById('pipeline-view').hidden = false;
+});
+document.getElementById('pipeline-report-print-btn').addEventListener('click', () => window.print());
 
 // ---- Top-level tabs -- Pipeline / Open roles / Tracker, replacing
 // what used to be one long scrolling page. ----
