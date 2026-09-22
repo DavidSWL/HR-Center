@@ -61,9 +61,6 @@
 .card-h.clickable{cursor:pointer;user-select:none}
 .card-h.clickable:hover{background:var(--hover)}
 .card-h .chevron{font-family:var(--mono);font-size:11px;color:var(--faint);width:14px;text-align:center;flex-shrink:0}
-/* This modal alone gets extra width -- the stage/date table needs more
-   room than the shared 480px modal size gives it. */
-#edit-app-overlay .modal{width:600px}
 </style>
 </head>
 <body>
@@ -93,29 +90,8 @@
 
       <div id="ats-tab-pipeline">
       <div class="card" style="margin-bottom:16px">
-        <div class="card-h"><h3>Pipeline</h3><span style="display:flex;align-items:center;gap:10px"><span id="pipeline-summary">—</span><button class="gh" id="pipeline-report-btn" type="button">Full report</button></span></div>
+        <div class="card-h"><h3>Pipeline</h3><span id="pipeline-summary">—</span></div>
         <div class="card-body" id="pipeline-board"></div>
-        <div class="card-h clickable" id="pipeline-guide-toggle" style="border-top:1px solid var(--line)">
-          <span class="dim" style="font-size:12.5px">Pipeline guide — what each stage means</span>
-          <span class="chevron" id="pipeline-guide-chevron">▼</span>
-        </div>
-        <div class="card-body" id="pipeline-guide-body" hidden>
-          <table>
-            <thead><tr><th>Stage</th><th>What it means</th><th>Moves forward when</th></tr></thead>
-            <tbody>
-              <tr><td>Applied</td><td>Just entered into the tracker.</td><td>Always the starting point — nothing required.</td></tr>
-              <tr><td>Considered</td><td>Application is actually complete and worth reviewing.</td><td>Application marked Complete, and — for driver roles only — DMV Pull comes back Passed or N/A.</td></tr>
-              <tr><td>Screening</td><td>Initial phone or in-person screening.</td><td>Screening marked Passed.</td></tr>
-              <tr><td>VP Review</td><td>The VP over that division reviews the candidate.</td><td>VP Review marked Approved — green light.</td></tr>
-              <tr><td>Interview</td><td>Formal interview with the hiring manager.</td><td>Interview marked Passed.</td></tr>
-              <tr><td>Offer</td><td>An offer has gone out.</td><td>Offer marked Extended.</td></tr>
-              <tr><td>Clinic</td><td>Post-offer physical / drug screen.</td><td>Clinic marked Passed.</td></tr>
-              <tr><td>Orientation</td><td>Orientation is on the books — not completed yet.</td><td>An orientation date is entered. Orientation only counts as actually done once the candidate starts.</td></tr>
-              <tr><td>Started</td><td>Hired and on the roster.</td><td>The last step — moving a card here logs the hire, sets the start date, and marks orientation completed.</td></tr>
-            </tbody>
-          </table>
-          <p class="dim" style="font-size:11.5px;margin-top:10px">Drag a card forward to advance it, or backward to undo progress — you'll be asked to confirm, since moving back clears anything later. Click a card to open and edit it; click just the name for a quick read-only summary. The colored stripe across the top of a card is the candidate's assigned team (set in their Team field).</p>
-        </div>
         <div class="card-h clickable" id="resume-pool-toggle" style="border-top:1px solid var(--line)">
           <h3>Resume on file pool</h3>
           <span style="display:flex;align-items:center;gap:10px">
@@ -209,10 +185,6 @@
               <option value="">— Not tied to a specific opening —</option>
             </select>
           </div>
-          <div class="field" style="margin-top:2px">
-            <label class="f-lab" for="new-app-team">Team</label>
-            <select class="f-in" id="new-app-team"></select>
-          </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:2px">
             <div class="field" id="new-app-referrer-field" hidden>
               <label class="f-lab" for="new-app-referrer-search">Referred by</label>
@@ -283,8 +255,7 @@
               <th>DMV Pull</th>
               <th>Screening</th>
               <th>VP Review</th>
-              <th>Interview</th>
-              <th>Offer</th>
+              <th>Interview / Offer</th>
               <th>Clinic</th>
               <th>Orientation booked</th>
               <th>Orientation done</th>
@@ -320,20 +291,6 @@
         <button class="gh solid" id="resume-report-print-btn" type="button">Print whole packet</button>
       </div>
       <div id="resume-report-body"></div>
-    </div>
-
-    <!-- Full pipeline report -- one printable snapshot for HR: who's
-         where in the pipeline, open roles (hiring needs) and how long
-         each has been open, and roles filled with their time-to-fill.
-         Everyone currently on file, no date filter -- Reports -> Time
-         to fill covers trends over a chosen range; this is "where do
-         things stand right now." -->
-    <div class="form-doc" id="pipeline-report" hidden>
-      <div class="acts no-print" style="margin-bottom:16px">
-        <button class="gh" id="pipeline-report-back-btn" type="button">&larr; Back to pipeline</button>
-        <button class="gh solid" id="pipeline-report-print-btn" type="button">Print</button>
-      </div>
-      <div id="pipeline-report-body"></div>
     </div>
   </div>
 </div>
@@ -448,10 +405,6 @@
           <option value="">— Not tied to a specific opening —</option>
         </select>
       </div>
-      <div class="field">
-        <label class="f-lab" for="edit-app-team">Team</label>
-        <select class="f-in" id="edit-app-team"></select>
-      </div>
       <div class="frow">
         <div class="field">
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600">
@@ -479,24 +432,8 @@
       <div id="edit-app-progress-fields"></div>
     </div>
     <div class="modal-actions">
-      <button type="button" class="gh" id="edit-app-remove-btn" style="margin-right:auto">Remove candidate</button>
       <button type="button" class="gh" id="edit-app-cancel-btn">Cancel</button>
       <button type="button" class="gh solid" id="edit-app-save-btn">Save</button>
-    </div>
-  </div>
-</div>
-
-<!-- Read-only candidate summary -- click a name to see the whole
-     history at a glance without opening the editable fields. -->
-<div class="modal-overlay" id="app-profile-overlay" hidden>
-  <div class="modal">
-    <div class="modal-h">
-      <h3 id="app-profile-name">Candidate</h3>
-      <button class="modal-close" id="app-profile-close" type="button">&times;</button>
-    </div>
-    <div class="modal-body" id="app-profile-body"></div>
-    <div class="modal-actions">
-      <button type="button" class="gh" id="app-profile-close-btn">Close</button>
     </div>
   </div>
 </div>
@@ -867,17 +804,16 @@ async function loadApplicants() {
 // naturally sits in whichever gate is still open rather than skipping
 // ahead on some other field's say-so. ----
 function dmvPullClear(a) {
-  return !isDriverRole(a.position_applied) || a.dmv_pull_status === 'passed' || a.dmv_pull_status === 'na';
+  return !isDriverRole(a.position_applied) || a.dmv_pull_status === 'passed';
 }
 const FUNNEL_STAGES = [
   { label: 'Applied', test: () => true },
   { label: 'Considered', test: (a) => !!a.application_complete && dmvPullClear(a) },
   { label: 'Screening passed', test: (a) => !!a.prescreen_passed },
   { label: 'VP Review approved', test: (a) => a.vp_review_status === 'approved' },
-  { label: 'Interview passed', test: (a) => a.interview_status === 'passed' },
-  { label: 'Offer extended', test: (a) => a.offer_status === 'extended' },
+  { label: 'Interview / Offer', test: (a) => a.interview_status === 'passed' },
   { label: 'Clinic passed', test: (a) => !!a.physical_passed },
-  { label: 'Orientation booked', test: (a) => !!a.orientation_booked_date },
+  { label: 'Orientation completed', test: (a) => !!a.orientation_completed },
 ];
 let resumePoolOpen = false;
 
@@ -918,11 +854,6 @@ function renderPipeline() {
 document.getElementById('resume-pool-toggle').addEventListener('click', () => {
   resumePoolOpen = !resumePoolOpen;
   renderPipeline();
-});
-document.getElementById('pipeline-guide-toggle').addEventListener('click', () => {
-  const body = document.getElementById('pipeline-guide-body');
-  body.hidden = !body.hidden;
-  document.getElementById('pipeline-guide-chevron').textContent = body.hidden ? '▼' : '▲';
 });
 document.getElementById('outcome-cheatsheet-toggle').addEventListener('click', () => {
   const body = document.getElementById('outcome-cheatsheet-body');
@@ -1064,112 +995,6 @@ window.addEventListener('afterprint', () => {
   document.querySelectorAll('.resume-candidate-block').forEach((block) => { block.style.display = ''; });
 });
 
-// ---- Full pipeline report -- one printable page answering "where do
-// things stand right now": headcount by stage (same active set and
-// same column math the Kanban board itself uses, so the two never
-// disagree), headcount by team, every open role with days open (stale
-// ones flagged the same red the Open roles tab already uses), and
-// every filled role with its actual days-to-fill. No date range to
-// pick -- it's everything currently on file, and says so on screen.
-function renderPipelineReport() {
-  const active = applicants.filter((a) => a.interview_status !== 'not_passed'
-    && ![...REJECTED_OUTCOMES, 'not_selected', 'resume_on_file', 'not_interested', 'no_experience', 'needs_review'].includes(a.outcome));
-  const byCol = KANBAN_COLUMNS.map(() => 0);
-  active.forEach((a) => { byCol[kanbanColumnIndex(a)]++; });
-
-  const byTeam = {};
-  TEAMS.forEach((t) => { byTeam[t] = 0; });
-  let noTeam = 0;
-  active.forEach((a) => {
-    if (a.team && TEAM_COLORS[a.team]) byTeam[a.team]++;
-    else noTeam++;
-  });
-
-  const openRoles = openJobs.filter((j) => j.status === 'open')
-    .map((j) => ({ j, days: jobDaysOpen(j), candidates: applicants.filter((a) => a.applied_job_id === j.id).length }))
-    .sort((x, y) => y.days - x.days);
-
-  const closedRoles = openJobs.filter((j) => j.status === 'filled' && j.filled_date && j.opened_date)
-    .map((j) => ({ j, daysToFill: Math.round((new Date(j.filled_date + 'T00:00:00') - new Date(j.opened_date + 'T00:00:00')) / 86400000) }))
-    .sort((x, y) => (y.j.filled_date || '').localeCompare(x.j.filled_date || ''));
-  const avgDaysToFill = closedRoles.length
-    ? Math.round(closedRoles.reduce((sum, r) => sum + r.daysToFill, 0) / closedRoles.length)
-    : null;
-
-  document.getElementById('pipeline-report-body').innerHTML = `
-    <div class="form-page-break">
-      <div class="form-doc-inner">
-        <div class="form-section">ATS Pipeline Report</div>
-        <p class="dim" style="font-size:11.5px;margin:0 0 14px">Printed ${formatDate(todayStr)} — everyone and every role currently on file, no date range filter. ${active.length} active candidate${active.length === 1 ? '' : 's'}, ${openRoles.length} open role${openRoles.length === 1 ? '' : 's'}, ${closedRoles.length} filled role${closedRoles.length === 1 ? '' : 's'} on record.</p>
-
-        <div class="form-section">Who's Where — Active Pipeline</div>
-        <table class="form-notice-table">
-          <thead><tr><th>Stage</th><th style="text-align:right">Candidates</th></tr></thead>
-          <tbody>
-            ${KANBAN_COLUMNS.map((c, i) => `<tr><td>${escapeHtml(c.label)}</td><td style="text-align:right" class="mono">${byCol[i]}</td></tr>`).join('')}
-            <tr style="font-weight:600"><td>Total active</td><td style="text-align:right" class="mono">${active.length}</td></tr>
-          </tbody>
-        </table>
-
-        <div class="form-section">By Team</div>
-        <table class="form-notice-table">
-          <thead><tr><th>Team</th><th style="text-align:right">Candidates</th></tr></thead>
-          <tbody>
-            ${TEAMS.map((t) => `<tr><td>${escapeHtml(t)}</td><td style="text-align:right" class="mono">${byTeam[t]}</td></tr>`).join('')}
-            <tr><td>Unassigned</td><td style="text-align:right" class="mono">${noTeam}</td></tr>
-          </tbody>
-        </table>
-
-        <div class="form-section">Hiring Needs — Open Roles</div>
-        ${openRoles.length ? `
-        <table class="form-notice-table">
-          <thead><tr><th>Role</th><th>Division</th><th>Location</th><th style="text-align:right">Days Open</th><th style="text-align:right">In Pipeline</th></tr></thead>
-          <tbody>
-            ${openRoles.map(({ j, days, candidates }) => `
-              <tr>
-                <td>${escapeHtml(j.title) || 'Unspecified'}</td>
-                <td>${escapeHtml(j.division) || '—'}</td>
-                <td>${escapeHtml(j.location) || '—'}</td>
-                <td style="text-align:right${days > STALE_DAYS ? ';color:var(--alertTx);font-weight:700' : ''}" class="mono">${days}${days > STALE_DAYS ? ' — stale' : ''}</td>
-                <td style="text-align:right" class="mono">${candidates}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-        ` : '<div class="form-box">No open roles right now.</div>'}
-
-        <div class="form-section">Recently Filled Roles</div>
-        ${closedRoles.length ? `
-        <table class="form-notice-table">
-          <thead><tr><th>Role</th><th>Division</th><th>Opened</th><th>Filled</th><th style="text-align:right">Days to Fill</th></tr></thead>
-          <tbody>
-            ${closedRoles.map(({ j, daysToFill }) => `
-              <tr>
-                <td>${escapeHtml(j.title) || 'Unspecified'}</td>
-                <td>${escapeHtml(j.division) || '—'}</td>
-                <td class="mono">${formatDate(j.opened_date)}</td>
-                <td class="mono">${formatDate(j.filled_date)}</td>
-                <td style="text-align:right" class="mono">${daysToFill}</td>
-              </tr>
-            `).join('')}
-            <tr style="font-weight:600"><td colspan="4">Average days to fill</td><td style="text-align:right" class="mono">${avgDaysToFill ?? '—'}</td></tr>
-          </tbody>
-        </table>
-        ` : '<div class="form-box">No filled roles on file yet.</div>'}
-      </div>
-    </div>
-  `;
-  document.getElementById('pipeline-view').hidden = true;
-  document.getElementById('pipeline-report').hidden = false;
-  window.scrollTo(0, 0);
-}
-document.getElementById('pipeline-report-btn').addEventListener('click', renderPipelineReport);
-document.getElementById('pipeline-report-back-btn').addEventListener('click', () => {
-  document.getElementById('pipeline-report').hidden = true;
-  document.getElementById('pipeline-view').hidden = false;
-});
-document.getElementById('pipeline-report-print-btn').addEventListener('click', () => window.print());
-
 // ---- Top-level tabs -- Pipeline / Open roles / Tracker, replacing
 // what used to be one long scrolling page. ----
 document.querySelectorAll('#ats-tab-strip .tab').forEach((btn) => {
@@ -1196,47 +1021,19 @@ document.querySelectorAll('#ats-tab-strip .tab').forEach((btn) => {
 // (nothing's happened yet). One hue read as progress, rather than a
 // different color per stage, so it doesn't compete with the existing
 // red/green gate-blocked and gate-clear card borders. Values are a
-// validated OKLCH ramp off the Oregon-green brand color (8 steps, one
-// per column from Considered through Started), not eyeballed.
+// validated OKLCH ramp off the Oregon-green brand color, not eyeballed.
 const KANBAN_COLUMNS = [
   { label: 'Applied' },
-  { label: 'Considered', gate: true, color: '#7ECAA2', tx: '#12150F' },
-  { label: 'Screening', color: '#6FB690', tx: '#12150F' },
-  { label: 'VP Review', gate: true, color: '#60A27F', tx: '#12150F' },
-  { label: 'Interview', color: '#518F6F', tx: '#12150F' },
-  { label: 'Offer', gate: true, color: '#427C5F', tx: '#FFFFFF' },
-  { label: 'Clinic', gate: true, color: '#346A4F', tx: '#FFFFFF' },
-  { label: 'Orientation', color: '#26583F', tx: '#FFFFFF' },
+  { label: 'Considered', gate: true, color: '#79C09A', tx: '#12150F' },
+  { label: 'Screening', color: '#65AB87', tx: '#12150F' },
+  { label: 'VP Review', gate: true, color: '#519773', tx: '#FFFFFF' },
+  { label: 'Interview / Offer', color: '#3D8360', tx: '#FFFFFF' },
+  { label: 'Clinic', gate: true, color: '#276F4E', tx: '#FFFFFF' },
+  { label: 'Orientation', color: '#0E5D3C', tx: '#FFFFFF' },
   { label: 'Started', color: '#154733', tx: '#FFFFFF' },
 ];
-
-// Candidate's team, assigned directly (not derived/guessed from a
-// linked job posting -- that turned out not to be reliable enough).
-// Trees uses the ACTUAL Oregon green rather than a second invented
-// green -- this app's style rule is "Oregon green is the only green"
-// everywhere, not just the org chart.
-const TEAM_COLORS = {
-  LA: '#2E5AA8',
-  OC: '#C2703A',
-  IE: '#6B7280',
-  Trees: '#154733',
-  Enhancements: '#6B4C9A',
-};
-const TEAMS = Object.keys(TEAM_COLORS);
-function teamOptionsHtml(current) {
-  return `<option value="">— None —</option>${TEAMS.map((t) =>
-    `<option value="${t}" ${current === t ? 'selected' : ''}>${t}</option>`
-  ).join('')}`;
-}
-function applicantDivisionColor(a) {
-  return a.team && TEAM_COLORS[a.team] ? { label: a.team, color: TEAM_COLORS[a.team] } : null;
-}
-function cardDivisionTagHtml(a) {
-  const d = applicantDivisionColor(a);
-  return d ? `<div class="meta" style="margin-top:2px;color:${d.color};font-weight:600;font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.04em">${escapeHtml(d.label)}</div>` : '';
-}
 function kanbanColumnIndex(a) {
-  if (a.outcome === 'hired') return 8;
+  if (a.outcome === 'hired') return 7;
   for (let i = FUNNEL_STAGES.length - 1; i >= 0; i--) {
     if (FUNNEL_STAGES[i].test(a)) return i;
   }
@@ -1264,10 +1061,9 @@ function applyKanbanMove(applicantId, targetIndex) {
       { prescreen_passed: true },
       { vp_review_status: 'approved' },
       { interview_status: 'passed' },
-      { offer_status: 'extended' },
       { physical_passed: true },
-      { orientation_booked_date: a.orientation_booked_date || todayStr },
-      { outcome: 'hired', hired: true, hired_at: todayStr, orientation_completed: true },
+      { orientation_completed: true },
+      { outcome: 'hired', hired: true, hired_at: todayStr },
     ];
     updateApplicant(applicantId, forwardFields[targetIndex]);
     return;
@@ -1276,11 +1072,9 @@ function applyKanbanMove(applicantId, targetIndex) {
   const label = KANBAN_COLUMNS[targetIndex].label;
   if (!confirm(`Move ${a.name} back to "${label}"? This clears any later progress.`)) return;
   const clearFields = {};
-  if (currentIndex === 8) { clearFields.outcome = ''; clearFields.hired = false; clearFields.hired_at = null; }
-  if (targetIndex < 8) clearFields.orientation_completed = false;
-  if (targetIndex < 7) clearFields.orientation_booked_date = '';
-  if (targetIndex < 6) clearFields.physical_passed = false;
-  if (targetIndex < 5) clearFields.offer_status = 'pending';
+  if (currentIndex === 7) { clearFields.outcome = ''; clearFields.hired = false; clearFields.hired_at = null; }
+  if (targetIndex < 6) clearFields.orientation_completed = false;
+  if (targetIndex < 5) clearFields.physical_passed = false;
   if (targetIndex < 4) clearFields.interview_status = 'pending';
   if (targetIndex < 3) clearFields.vp_review_status = 'pending';
   if (targetIndex < 2) clearFields.prescreen_passed = false;
@@ -1300,7 +1094,7 @@ function cardGateLinesHtml(a, colIndex) {
     let html = gateLineHtml('App. complete', a.application_complete ? 'ok' : 'bad', a.application_complete ? 'Done' : 'Missing');
     if (isDriverRole(a.position_applied)) {
       const s = a.dmv_pull_status;
-      html += gateLineHtml('DMV Pull', s === 'passed' || s === 'na' ? 'ok' : s === 'failed' ? 'bad' : '', s === 'passed' ? 'Passed' : s === 'na' ? 'N/A' : s === 'failed' ? 'Failed' : 'Pending');
+      html += gateLineHtml('DMV Pull', s === 'passed' ? 'ok' : s === 'failed' ? 'bad' : '', s === 'passed' ? 'Passed' : s === 'failed' ? 'Failed' : 'Pending');
     } else {
       html += gateLineHtml('DMV Pull', '', 'N/A');
     }
@@ -1311,28 +1105,20 @@ function cardGateLinesHtml(a, colIndex) {
     const s = a.vp_review_status;
     return gateLineHtml('VP sign-off', s === 'approved' ? 'ok' : s === 'declined' ? 'bad' : '', s === 'approved' ? 'Approved' : s === 'declined' ? 'Declined' : 'Awaiting');
   }
-  if (colIndex === 4) return gateLineHtml('Interview', a.interview_status === 'passed' ? 'ok' : '', a.interview_status === 'passed' ? 'Passed' : (a.interview_booked_date ? formatDate(a.interview_booked_date) : 'Not booked'));
-  if (colIndex === 5) return gateLineHtml('Offer', a.offer_status === 'extended' ? 'ok' : a.offer_status === 'declined' ? 'bad' : '', a.offer_status === 'extended' ? 'Extended' : a.offer_status === 'declined' ? 'Declined' : 'Not yet extended');
-  if (colIndex === 6) return gateLineHtml('Clinic', a.physical_passed ? 'ok' : '', a.physical_passed ? 'Passed' : 'Pending');
-  if (colIndex === 7) return gateLineHtml('Orientation', a.orientation_completed ? 'ok' : '', a.orientation_completed ? 'Done' : (a.orientation_booked_date ? formatDate(a.orientation_booked_date) : 'Not booked'));
+  if (colIndex === 4) return gateLineHtml('Interview', a.interview_status === 'passed' ? 'ok' : '', a.interview_status === 'passed' ? 'Passed' : 'Pending');
+  if (colIndex === 5) return gateLineHtml('Clinic', a.physical_passed ? 'ok' : '', a.physical_passed ? 'Passed' : 'Pending');
+  if (colIndex === 6) return gateLineHtml('Orientation', a.orientation_completed ? 'ok' : '', a.orientation_completed ? 'Done' : (a.orientation_booked_date ? formatDate(a.orientation_booked_date) : 'Not booked'));
   return '';
 }
-// The actual date each of these milestones happened, not just whatever
-// the card's status pill says -- separate from "last touched" below,
-// since other unrelated edits (a flag, a note) also bump that. Interview
-// and Offer are separate columns now, each with its own date, rather
-// than one combined fact.
+// The actual date each of these four milestones happened, not just
+// whatever the card's status pill says -- separate from "last touched"
+// below, since other unrelated edits (a flag, a note) also bump that.
 function cardDateHtml(a, colIndex) {
-  if (colIndex === 4) {
-    return a.interview_booked_date ? `<div class="meta" style="margin-top:2px">Interview booked: ${formatDate(a.interview_booked_date)}</div>` : '';
-  }
-  if (colIndex === 7) {
-    return a.orientation_booked_date ? `<div class="meta" style="margin-top:2px">Orientation booked: ${formatDate(a.orientation_booked_date)}</div>` : '';
-  }
   const byCol = {
-    5: ['Offered', a.offered_at],
-    6: ['Clinic', a.physical_passed_at],
-    8: ['Started', a.hired_at],
+    4: ['Offered/interviewed', a.interview_passed_at],
+    5: ['Clinic', a.physical_passed_at],
+    6: ['Orientation', a.orientation_completed_at],
+    7: ['Started', a.hired_at],
   };
   const entry = byCol[colIndex];
   if (!entry || !entry[1]) return '';
@@ -1367,10 +1153,9 @@ function renderKanban() {
           <div class="kanban-col-h"${c.color ? ` style="--stage-bg:${c.color};--stage-tx:${c.tx}"` : ''}><span>${c.label}</span><span>${byCol[i].length}</span></div>
           <div class="kanban-col-body">
             ${byCol[i].map((a) => `
-              <div class="kanban-card${cardGateClass(a, i) ? ' ' + cardGateClass(a, i) : ''}"${applicantDivisionColor(a) ? ` style="border-top:3px solid ${applicantDivisionColor(a).color}"` : ''} draggable="true" data-id="${a.id}">
-                <div class="nm kanban-card-name" data-id="${a.id}" style="cursor:pointer" title="View summary">${escapeHtml(a.name)}</div>
+              <div class="kanban-card${cardGateClass(a, i) ? ' ' + cardGateClass(a, i) : ''}" draggable="true" data-id="${a.id}">
+                <div class="nm">${escapeHtml(a.name)}</div>
                 <div class="meta">${escapeHtml(a.position_applied) || '—'}</div>
-                ${cardDivisionTagHtml(a)}
                 ${cardGateLinesHtml(a, i)}
                 ${cardDateHtml(a, i)}
                 <div class="meta" style="margin-top:2px">Last touched ${formatDateTime(a.updated_at)}</div>
@@ -1395,12 +1180,6 @@ function renderKanban() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation(); // don't also trigger the card's own click-to-edit
       openFlagMenu(btn.dataset.id);
-    });
-  });
-  document.querySelectorAll('.kanban-card-name').forEach((nm) => {
-    nm.addEventListener('click', (e) => {
-      e.stopPropagation(); // don't also trigger the card's own click-to-edit
-      openApplicantProfile(nm.dataset.id);
     });
   });
   document.querySelectorAll('.kanban-col').forEach((col) => {
@@ -1542,7 +1321,7 @@ function render() {
     const overdue = bonusDue && !bothPaid && bonusDue < todayStr;
     return `
       <tr class="app-row${grayed ? ' grayed' : ''}" data-id="${a.id}">
-        <td class="app-name-cell"><button type="button" class="app-name-btn view-app-profile-btn" data-id="${a.id}">${escapeHtml(a.name)}</button></td>
+        <td class="app-name-cell"><button type="button" class="app-name-btn edit-app-btn" data-id="${a.id}">${escapeHtml(a.name)}</button></td>
         <td class="dim">${SOURCE_LABELS[a.source] || a.source}</td>
         <td class="dim">${escapeHtml(a.position_applied) || '—'}</td>
         <td class="mono dim">${a.applied_date === 'N/A' ? 'N/A' : formatDate(a.applied_date)}</td>
@@ -1552,7 +1331,6 @@ function render() {
             <option value="pending" ${a.dmv_pull_status === 'pending' || !a.dmv_pull_status ? 'selected' : ''}>Pending</option>
             <option value="passed" ${a.dmv_pull_status === 'passed' ? 'selected' : ''}>Passed</option>
             <option value="failed" ${a.dmv_pull_status === 'failed' ? 'selected' : ''}>Failed</option>
-            <option value="na" ${a.dmv_pull_status === 'na' ? 'selected' : ''}>N/A</option>
           </select>
         ` : '<span class="dim">N/A</span>'}</td>
         <td style="text-align:center"><input type="checkbox" class="app-cb prescreen-cb" data-id="${a.id}" ${a.prescreen_passed ? 'checked' : ''}></td>
@@ -1568,13 +1346,6 @@ function render() {
             <option value="pending" ${a.interview_status === 'pending' || !a.interview_status ? 'selected' : ''}>Pending</option>
             <option value="passed" ${a.interview_status === 'passed' ? 'selected' : ''}>Passed</option>
             <option value="not_passed" ${a.interview_status === 'not_passed' ? 'selected' : ''}>Did not pass</option>
-          </select>
-        </td>
-        <td>
-          <select class="inp offer-select" data-id="${a.id}" style="height:32px;font-size:12.5px">
-            <option value="pending" ${a.offer_status === 'pending' || !a.offer_status ? 'selected' : ''}>Not yet</option>
-            <option value="extended" ${a.offer_status === 'extended' ? 'selected' : ''}>Extended</option>
-            <option value="declined" ${a.offer_status === 'declined' ? 'selected' : ''}>Declined</option>
           </select>
         </td>
         <td style="text-align:center"><input type="checkbox" class="app-cb physical-cb" data-id="${a.id}" ${a.physical_passed ? 'checked' : ''} ${grayed ? 'disabled' : ''}></td>
@@ -1607,7 +1378,7 @@ function render() {
         <td style="text-align:right;white-space:nowrap"><button class="gh edit-app-btn" data-id="${a.id}" type="button">Edit</button> <button class="gh remove-btn" data-id="${a.id}" type="button">Remove</button></td>
       </tr>
     `;
-  }).join('') : '<tr><td colspan="21" class="dim">No applicants match.</td></tr>';
+  }).join('') : '<tr><td colspan="20" class="dim">No applicants match.</td></tr>';
 
   document.querySelectorAll('.hired-cb').forEach((cb) => {
     cb.addEventListener('change', () => {
@@ -1628,9 +1399,6 @@ function render() {
   });
   document.querySelectorAll('.edit-app-btn').forEach((btn) => {
     btn.addEventListener('click', () => openEditApplicant(btn.dataset.id));
-  });
-  document.querySelectorAll('.view-app-profile-btn').forEach((btn) => {
-    btn.addEventListener('click', () => openApplicantProfile(btn.dataset.id));
   });
   document.querySelectorAll('.reject-reason-btn').forEach((btn) => {
     btn.addEventListener('click', () => openRejectReason(btn.dataset.id));
@@ -1661,9 +1429,6 @@ function render() {
   });
   document.querySelectorAll('.interview-select').forEach((sel) => {
     sel.addEventListener('change', () => updateApplicant(sel.dataset.id, { interview_status: sel.value }));
-  });
-  document.querySelectorAll('.offer-select').forEach((sel) => {
-    sel.addEventListener('change', () => updateApplicant(sel.dataset.id, { offer_status: sel.value }));
   });
   document.querySelectorAll('.physical-cb').forEach((cb) => {
     cb.addEventListener('change', () => updateApplicant(cb.dataset.id, { physical_passed: cb.checked }));
@@ -1700,18 +1465,15 @@ function render() {
   });
 }
 
-// Every gate on the pipeline gets its own date -- the actual day that
-// milestone happened, not just "whenever this record was last edited"
-// -- stamped centrally here so it's correct no matter which entry
-// point sets the underlying field (Kanban drag, the table's
-// checkboxes/selects, or the edit modal). Clearing the field (e.g.
-// dragging a card backward) clears the date with it.
+// Interview/Offer, Clinic, Orientation and Started each get their own
+// date -- the actual day that milestone happened, not just "whenever
+// this record was last edited" -- stamped centrally here so it's
+// correct no matter which entry point sets the underlying field
+// (Kanban drag, the table's checkboxes, or the edit modal). Clearing
+// the field (e.g. dragging a card backward) clears the date with it.
 function withMilestoneDates(fields) {
   const stamped = { ...fields };
-  if ('dmv_pull_status' in fields) stamped.dmv_pull_at = (fields.dmv_pull_status === 'passed' || fields.dmv_pull_status === 'failed') ? todayStr : null;
-  if ('prescreen_passed' in fields) stamped.prescreen_passed_at = fields.prescreen_passed ? todayStr : null;
-  if ('vp_review_status' in fields) stamped.vp_review_at = fields.vp_review_status && fields.vp_review_status !== 'pending' ? todayStr : null;
-  if ('offer_status' in fields) stamped.offered_at = fields.offer_status === 'extended' ? todayStr : null;
+  if ('interview_status' in fields) stamped.interview_passed_at = fields.interview_status === 'passed' ? todayStr : null;
   if ('physical_passed' in fields) stamped.physical_passed_at = fields.physical_passed ? todayStr : null;
   if ('orientation_completed' in fields) stamped.orientation_completed_at = fields.orientation_completed ? todayStr : null;
   return stamped;
@@ -1762,22 +1524,19 @@ async function maybeCloseLinkedJob(a) {
 
 async function removeApplicant(id) {
   const a = applicants.find((x) => x.id === id);
-  if (!a || !confirm(`Remove ${a.name} from the tracker? This can't be undone.`)) return false;
+  if (!a || !confirm(`Remove ${a.name} from the tracker? This can't be undone.`)) return;
   try {
     await deleteDoc(doc(db, 'applicants', id));
     showToast('Removed.');
     await loadApplicants();
-    return true;
   } catch (err) {
     console.error(err);
     showToast('Could not remove — ' + err.message, 'error');
-    return false;
   }
 }
 
 document.getElementById('new-app-position').innerHTML = roleOptionsHtml('');
 wirePositionToggle('new-app-position', 'new-app-position-other', 'new-app-position-other-field');
-document.getElementById('new-app-team').innerHTML = teamOptionsHtml('');
 
 document.getElementById('add-applicant-btn').addEventListener('click', async () => {
   const name = document.getElementById('new-app-name').value.trim();
@@ -1792,19 +1551,12 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
       referred_by_emp_id: source === 'referral' ? referredByEmpId : '',
       position_applied: readPositionField('new-app-position', 'new-app-position-other'),
       applied_job_id: document.getElementById('new-app-job').value || null,
-      team: document.getElementById('new-app-team').value || null,
       applied_date: appliedDate,
       application_complete: false,
       dmv_pull_status: 'pending',
-      dmv_pull_at: null,
       prescreen_passed: false,
-      prescreen_passed_at: null,
       vp_review_status: 'pending',
-      vp_review_at: null,
       interview_status: 'pending',
-      interview_booked_date: '',
-      offer_status: 'pending',
-      offered_at: null,
       physical_passed: false,
       orientation_booked_date: '',
       orientation_completed: false,
@@ -1825,7 +1577,6 @@ document.getElementById('add-applicant-btn').addEventListener('click', async () 
     document.getElementById('new-app-position-other').value = '';
     document.getElementById('new-app-position-other-field').hidden = true;
     document.getElementById('new-app-job').value = '';
-    document.getElementById('new-app-team').value = '';
     setAppliedDate('new-app-applied-date', 'new-app-applied-na', todayStr);
     showToast('Applicant added.');
     await loadApplicants();
@@ -1978,11 +1729,10 @@ function progressSummaryHtml(a) {
   const driver = isDriverRole(a.position_applied);
   const stages = [
     { label: 'App. complete', done: !!a.application_complete },
-    ...(driver ? [{ label: 'DMV Pull', done: a.dmv_pull_status === 'passed' || a.dmv_pull_status === 'na', failed: a.dmv_pull_status === 'failed' }] : []),
+    ...(driver ? [{ label: 'DMV Pull', done: a.dmv_pull_status === 'passed', failed: a.dmv_pull_status === 'failed' }] : []),
     { label: 'Screening', done: !!a.prescreen_passed },
     { label: 'VP Review', done: a.vp_review_status === 'approved', failed: a.vp_review_status === 'declined' },
     { label: 'Interview', done: a.interview_status === 'passed', failed: a.interview_status === 'not_passed' },
-    { label: 'Offer', done: a.offer_status === 'extended', failed: a.offer_status === 'declined' },
     { label: 'Clinic', done: !!a.physical_passed },
     { label: 'Orientation', done: !!a.orientation_completed },
     { label: 'Started', done: a.outcome === 'hired' },
@@ -1992,63 +1742,95 @@ function progressSummaryHtml(a) {
   `).join('')}</div>`;
 }
 
-// One compact box, one row per stage -- label, status control, date --
-// instead of a stack of separate boxed fields. DMV Pull shows for
-// every candidate now, not just roles flagged as driver roles in
-// Settings, so it's never missing when someone needs to record it.
-// Application complete is the one exception with no date input of its
-// own: it's never a separate event from receiving the application, so
-// that date is computed from Applied instead.
 function progressFieldsHtml(a) {
-  const appliedDateText = a.applied_date && a.applied_date !== 'N/A' ? formatDate(a.applied_date) : 'unknown';
-  const checkboxCtl = (id, checked, label) =>
-    `<label style="display:flex;align-items:center;gap:6px;font-size:12.5px"><input type="checkbox" id="${id}" ${checked ? 'checked' : ''}> ${label}</label>`;
-  const dateCtl = (id, value) => `<input class="inp" id="${id}" type="date" style="width:100%" value="${value || ''}">`;
-  const row = (label, control, date) => `
-    <tr>
-      <td class="dim" style="padding:7px 8px;white-space:nowrap;font-size:12px">${label}</td>
-      <td style="padding:7px 8px">${control}</td>
-      <td style="padding:7px 8px">${date}</td>
-    </tr>`;
+  const driver = isDriverRole(a.position_applied);
   return `
-    <div style="border:1px solid var(--line)">
-      <table style="width:100%;border-collapse:collapse">
-        <colgroup><col style="width:118px"><col><col style="width:160px"></colgroup>
-        <tbody>
-          ${row('Application', checkboxCtl('edit-app-complete', a.application_complete, 'Complete'),
-            `<span class="dim" style="font-size:12px">${a.application_complete ? `Same as applied — ${appliedDateText}` : '—'}</span>`)}
-          ${row('DMV Pull', `<select class="inp" id="edit-app-dmv" style="width:100%">
-              <option value="pending" ${a.dmv_pull_status === 'pending' || !a.dmv_pull_status ? 'selected' : ''}>Pending</option>
-              <option value="passed" ${a.dmv_pull_status === 'passed' ? 'selected' : ''}>Passed</option>
-              <option value="failed" ${a.dmv_pull_status === 'failed' ? 'selected' : ''}>Failed</option>
-              <option value="na" ${a.dmv_pull_status === 'na' ? 'selected' : ''}>N/A</option>
-            </select>`, a.dmv_pull_status === 'na' ? '<span class="dim" style="font-size:12px">No date needed</span>' : dateCtl('edit-app-dmv-date', a.dmv_pull_at))}
-          ${row('Screening', checkboxCtl('edit-app-prescreen', a.prescreen_passed, 'Passed'), dateCtl('edit-app-prescreen-date', a.prescreen_passed_at))}
-          ${row('VP Review', `<select class="inp" id="edit-app-vp" style="width:100%">
-              <option value="pending" ${a.vp_review_status === 'pending' || !a.vp_review_status ? 'selected' : ''}>Awaiting</option>
-              <option value="approved" ${a.vp_review_status === 'approved' ? 'selected' : ''}>Approved</option>
-              <option value="declined" ${a.vp_review_status === 'declined' ? 'selected' : ''}>Declined</option>
-            </select>`, dateCtl('edit-app-vp-date', a.vp_review_at))}
-          ${row('Interview', `<select class="inp" id="edit-app-interview" style="width:100%">
-              <option value="pending" ${a.interview_status === 'pending' || !a.interview_status ? 'selected' : ''}>Pending</option>
-              <option value="passed" ${a.interview_status === 'passed' ? 'selected' : ''}>Passed</option>
-              <option value="not_passed" ${a.interview_status === 'not_passed' ? 'selected' : ''}>Did not pass</option>
-            </select>`, dateCtl('edit-app-interview-booked-date', a.interview_booked_date))}
-          ${row('Offer', `<select class="inp" id="edit-app-offer" style="width:100%">
-              <option value="pending" ${a.offer_status === 'pending' || !a.offer_status ? 'selected' : ''}>Not yet extended</option>
-              <option value="extended" ${a.offer_status === 'extended' ? 'selected' : ''}>Extended</option>
-              <option value="declined" ${a.offer_status === 'declined' ? 'selected' : ''}>Declined</option>
-            </select>`, dateCtl('edit-app-offer-date', a.offered_at))}
-          ${row('Clinic', checkboxCtl('edit-app-physical', a.physical_passed, 'Passed'), dateCtl('edit-app-physical-date', a.physical_passed_at))}
-          ${row('Orientation booked', dateCtl('edit-app-orientation-date', a.orientation_booked_date), '')}
-          ${row('Orientation completed', checkboxCtl('edit-app-orientation-done', a.orientation_completed, 'Completed'), dateCtl('edit-app-orientation-done-date', a.orientation_completed_at))}
-          ${row('Outcome', `<select class="inp" id="edit-app-outcome" style="width:100%">${outcomeOptionsHtml(a.outcome)}</select>
-              ${HAS_REASON_OUTCOMES.includes(a.outcome) && profile.role === 'david'
-                ? `<button type="button" class="gh" id="edit-app-reason-btn" style="margin-top:5px;font-size:11px;padding:2px 8px">Reason (private)</button>`
-                : ''}`, '')}
-          ${row('Started', '', dateCtl('edit-app-hired-date', a.hired_at))}
-        </tbody>
-      </table>
+    <div class="frow">
+      <div class="field">
+        <label class="f-lab">Application</label>
+        <label style="display:block;font-size:12.5px"><input type="checkbox" id="edit-app-complete" ${a.application_complete ? 'checked' : ''}> Complete</label>
+      </div>
+      <div class="field">
+        ${driver ? `
+          <label class="f-lab" for="edit-app-dmv">DMV Pull</label>
+          <select class="f-in" id="edit-app-dmv">
+            <option value="pending" ${a.dmv_pull_status === 'pending' || !a.dmv_pull_status ? 'selected' : ''}>Pending</option>
+            <option value="passed" ${a.dmv_pull_status === 'passed' ? 'selected' : ''}>Passed</option>
+            <option value="failed" ${a.dmv_pull_status === 'failed' ? 'selected' : ''}>Failed</option>
+          </select>
+        ` : `<label class="f-lab">DMV Pull</label><div class="dim" style="font-size:12.5px;padding-top:5px">N/A — not a driver role</div>`}
+      </div>
+    </div>
+    <div class="frow">
+      <div class="field">
+        <label class="f-lab">Screening</label>
+        <label style="display:block;font-size:12.5px"><input type="checkbox" id="edit-app-prescreen" ${a.prescreen_passed ? 'checked' : ''}> Passed</label>
+      </div>
+      <div class="field">
+        <label class="f-lab" for="edit-app-vp">VP Review</label>
+        <select class="f-in" id="edit-app-vp">
+          <option value="pending" ${a.vp_review_status === 'pending' || !a.vp_review_status ? 'selected' : ''}>Awaiting</option>
+          <option value="approved" ${a.vp_review_status === 'approved' ? 'selected' : ''}>Approved — green light</option>
+          <option value="declined" ${a.vp_review_status === 'declined' ? 'selected' : ''}>Declined</option>
+        </select>
+      </div>
+    </div>
+    <div class="frow">
+      <div class="field">
+        <label class="f-lab" for="edit-app-interview">Interview / Offer</label>
+        <select class="f-in" id="edit-app-interview">
+          <option value="pending" ${a.interview_status === 'pending' || !a.interview_status ? 'selected' : ''}>Pending</option>
+          <option value="passed" ${a.interview_status === 'passed' ? 'selected' : ''}>Passed / offer extended</option>
+          <option value="not_passed" ${a.interview_status === 'not_passed' ? 'selected' : ''}>Did not pass</option>
+        </select>
+      </div>
+      ${a.interview_status === 'passed' ? `
+      <div class="field">
+        <label class="f-lab" for="edit-app-interview-date">Interview/offer date</label>
+        <input class="f-in" id="edit-app-interview-date" type="date" value="${a.interview_passed_at || ''}">
+      </div>` : ''}
+    </div>
+    <div class="frow">
+      <div class="field">
+        <label class="f-lab">Clinic</label>
+        <label style="display:block;font-size:12.5px"><input type="checkbox" id="edit-app-physical" ${a.physical_passed ? 'checked' : ''}> Passed</label>
+      </div>
+      ${a.physical_passed ? `
+      <div class="field">
+        <label class="f-lab" for="edit-app-physical-date">Clinic date</label>
+        <input class="f-in" id="edit-app-physical-date" type="date" value="${a.physical_passed_at || ''}">
+      </div>` : ''}
+    </div>
+    <div class="frow">
+      <div class="field">
+        <label class="f-lab" for="edit-app-orientation-date">Orientation booked</label>
+        <input class="f-in" id="edit-app-orientation-date" type="date" value="${a.orientation_booked_date || ''}">
+      </div>
+      <div class="field">
+        <label class="f-lab">Orientation</label>
+        <label style="display:block;font-size:12.5px"><input type="checkbox" id="edit-app-orientation-done" ${a.orientation_completed ? 'checked' : ''}> Completed</label>
+      </div>
+    </div>
+    ${a.orientation_completed ? `
+    <div class="field">
+      <label class="f-lab" for="edit-app-orientation-done-date">Orientation completed date</label>
+      <input class="f-in" id="edit-app-orientation-done-date" type="date" value="${a.orientation_completed_at || ''}">
+    </div>` : ''}
+    <div class="frow">
+      <div class="field">
+        <label class="f-lab" for="edit-app-outcome">Outcome</label>
+        <select class="f-in" id="edit-app-outcome">
+          ${outcomeOptionsHtml(a.outcome)}
+        </select>
+        ${HAS_REASON_OUTCOMES.includes(a.outcome) && profile.role === 'david'
+          ? `<button type="button" class="gh" id="edit-app-reason-btn" style="margin-top:6px;font-size:11px;padding:2px 8px">Reason (private)</button>`
+          : ''}
+      </div>
+      ${a.outcome === 'hired' ? `
+      <div class="field">
+        <label class="f-lab" for="edit-app-hired-date">Started date</label>
+        <input class="f-in" id="edit-app-hired-date" type="date" value="${a.hired_at || ''}">
+      </div>` : ''}
     </div>
   `;
 }
@@ -2065,12 +1847,11 @@ function renderEditAppProgress(applicantId) {
 
   const liveUpdate = (fields) => updateApplicant(applicantId, fields).then(() => renderEditAppProgress(applicantId));
   document.getElementById('edit-app-complete').addEventListener('change', (e) => liveUpdate({ application_complete: e.target.checked }));
-  document.getElementById('edit-app-dmv').addEventListener('change', (e) => liveUpdate({ dmv_pull_status: e.target.value }));
+  const dmvSel = document.getElementById('edit-app-dmv');
+  if (dmvSel) dmvSel.addEventListener('change', (e) => liveUpdate({ dmv_pull_status: e.target.value }));
   document.getElementById('edit-app-prescreen').addEventListener('change', (e) => liveUpdate({ prescreen_passed: e.target.checked }));
   document.getElementById('edit-app-vp').addEventListener('change', (e) => liveUpdate({ vp_review_status: e.target.value }));
   document.getElementById('edit-app-interview').addEventListener('change', (e) => liveUpdate({ interview_status: e.target.value }));
-  document.getElementById('edit-app-interview-booked-date').addEventListener('change', (e) => liveUpdate({ interview_booked_date: e.target.value }));
-  document.getElementById('edit-app-offer').addEventListener('change', (e) => liveUpdate({ offer_status: e.target.value }));
   document.getElementById('edit-app-physical').addEventListener('change', (e) => liveUpdate({ physical_passed: e.target.checked }));
   document.getElementById('edit-app-orientation-date').addEventListener('change', (e) => liveUpdate({ orientation_booked_date: e.target.value }));
   document.getElementById('edit-app-orientation-done').addEventListener('change', (e) => liveUpdate({ orientation_completed: e.target.checked }));
@@ -2086,16 +1867,16 @@ function renderEditAppProgress(applicantId) {
   // who reached that stage before this feature existed has no date on
   // file, and any auto-stamped date is only ever "today," not the real
   // day it happened. These let David fix or backfill the actual date
-  // directly, without going through dmv_pull_status etc. (so they
+  // directly, without going through interview_status etc. (so they
   // don't get re-stamped to today the next time something else changes).
-  const dmvDateInp = document.getElementById('edit-app-dmv-date');
-  if (dmvDateInp) dmvDateInp.addEventListener('change', (e) => liveUpdate({ dmv_pull_at: e.target.value || null }));
-  document.getElementById('edit-app-prescreen-date').addEventListener('change', (e) => liveUpdate({ prescreen_passed_at: e.target.value || null }));
-  document.getElementById('edit-app-vp-date').addEventListener('change', (e) => liveUpdate({ vp_review_at: e.target.value || null }));
-  document.getElementById('edit-app-offer-date').addEventListener('change', (e) => liveUpdate({ offered_at: e.target.value || null }));
-  document.getElementById('edit-app-physical-date').addEventListener('change', (e) => liveUpdate({ physical_passed_at: e.target.value || null }));
-  document.getElementById('edit-app-orientation-done-date').addEventListener('change', (e) => liveUpdate({ orientation_completed_at: e.target.value || null }));
-  document.getElementById('edit-app-hired-date').addEventListener('change', (e) => liveUpdate({ hired_at: e.target.value || null }));
+  const interviewDateInp = document.getElementById('edit-app-interview-date');
+  if (interviewDateInp) interviewDateInp.addEventListener('change', (e) => liveUpdate({ interview_passed_at: e.target.value || null }));
+  const physicalDateInp = document.getElementById('edit-app-physical-date');
+  if (physicalDateInp) physicalDateInp.addEventListener('change', (e) => liveUpdate({ physical_passed_at: e.target.value || null }));
+  const orientationDoneDateInp = document.getElementById('edit-app-orientation-done-date');
+  if (orientationDoneDateInp) orientationDoneDateInp.addEventListener('change', (e) => liveUpdate({ orientation_completed_at: e.target.value || null }));
+  const hiredDateInp = document.getElementById('edit-app-hired-date');
+  if (hiredDateInp) hiredDateInp.addEventListener('change', (e) => liveUpdate({ hired_at: e.target.value || null }));
   const reasonBtn = document.getElementById('edit-app-reason-btn');
   if (reasonBtn) reasonBtn.addEventListener('click', () => openRejectReason(applicantId));
 }
@@ -2127,7 +1908,6 @@ function openEditApplicant(applicantId) {
     jobSel.appendChild(opt);
   }
   jobSel.value = a.applied_job_id || '';
-  document.getElementById('edit-app-team').innerHTML = teamOptionsHtml(a.team || '');
   document.getElementById('edit-app-has-experience').checked = !!a.has_landscape_experience;
   document.getElementById('edit-app-years-field').hidden = !a.has_landscape_experience;
   document.getElementById('edit-app-years-experience').value = a.years_experience ?? '';
@@ -2142,59 +1922,6 @@ function closeEditApplicant() {
 }
 document.getElementById('edit-app-close').addEventListener('click', closeEditApplicant);
 document.getElementById('edit-app-cancel-btn').addEventListener('click', closeEditApplicant);
-document.getElementById('edit-app-remove-btn').addEventListener('click', async () => {
-  if (!editTargetApplicantId) return;
-  const removed = await removeApplicant(editTargetApplicantId);
-  if (removed) closeEditApplicant();
-});
-
-// Read-only history for one candidate -- every gate they've passed
-// through and the actual date it happened, at a glance, without
-// opening the editable fields (that's still the card/Edit button).
-function applicantProfileRows(a) {
-  const outcomeLabel = (OUTCOME_OPTIONS.find((o) => o.value === a.outcome) || {}).label || 'Active';
-  const rows = [
-    ['Applied', a.applied_date === 'N/A' ? 'Date unknown' : 'Received', a.applied_date && a.applied_date !== 'N/A' ? formatDate(a.applied_date) : '—'],
-    ['Application complete', a.application_complete ? 'Yes' : 'Not yet', a.application_complete && a.applied_date && a.applied_date !== 'N/A' ? formatDate(a.applied_date) : '—'],
-    ['DMV pull', a.dmv_pull_status === 'passed' ? 'Passed' : a.dmv_pull_status === 'failed' ? 'Failed' : a.dmv_pull_status === 'na' ? 'N/A' : 'Pending', a.dmv_pull_at ? formatDate(a.dmv_pull_at) : '—'],
-    ['Screening', a.prescreen_passed ? 'Passed' : 'Pending', a.prescreen_passed_at ? formatDate(a.prescreen_passed_at) : '—'],
-    ['VP Review', a.vp_review_status === 'approved' ? 'Approved' : a.vp_review_status === 'declined' ? 'Declined' : 'Awaiting', a.vp_review_at ? formatDate(a.vp_review_at) : '—'],
-    ['Interview', a.interview_status === 'passed' ? 'Passed' : a.interview_status === 'not_passed' ? 'Did not pass' : 'Pending', a.interview_booked_date ? formatDate(a.interview_booked_date) : '—'],
-    ['Offer', a.offer_status === 'extended' ? 'Extended' : a.offer_status === 'declined' ? 'Declined' : 'Not yet extended', a.offered_at ? formatDate(a.offered_at) : '—'],
-    ['Clinic', a.physical_passed ? 'Passed' : 'Pending', a.physical_passed_at ? formatDate(a.physical_passed_at) : '—'],
-    ['Orientation', a.orientation_completed ? 'Completed' : (a.orientation_booked_date ? 'Booked' : 'Not yet'), a.orientation_completed_at ? formatDate(a.orientation_completed_at) : (a.orientation_booked_date ? formatDate(a.orientation_booked_date) : '—')],
-    ['Outcome', outcomeLabel, a.outcome === 'hired' && a.hired_at ? formatDate(a.hired_at) : '—'],
-  ];
-  return rows;
-}
-function openApplicantProfile(applicantId) {
-  const a = applicants.find((x) => x.id === applicantId);
-  if (!a) return;
-  document.getElementById('app-profile-name').textContent = a.name;
-  const rows = applicantProfileRows(a);
-  document.getElementById('app-profile-body').innerHTML = `
-    <div class="dim" style="font-size:12.5px;margin-bottom:12px">
-      ${escapeHtml(a.position_applied) || 'Position not specified'} · ${SOURCE_LABELS[a.source] || a.source}${a.source === 'referral' && a.referred_by_emp_id ? ` (${escapeHtml(empName(a.referred_by_emp_id) || 'former employee')})` : ''}${a.team ? ` · ${escapeHtml(a.team)}` : ''}
-    </div>
-    <table style="width:100%;border-collapse:collapse;font-size:13px">
-      <tbody>
-        ${rows.map(([label, status, date]) => `
-          <tr style="border-top:1px solid var(--line)">
-            <td style="padding:6px 4px" class="dim">${label}</td>
-            <td style="padding:6px 4px">${status}</td>
-            <td style="padding:6px 4px;text-align:right" class="mono dim">${date}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  `;
-  document.getElementById('app-profile-overlay').hidden = false;
-}
-function closeApplicantProfile() {
-  document.getElementById('app-profile-overlay').hidden = true;
-}
-document.getElementById('app-profile-close').addEventListener('click', closeApplicantProfile);
-document.getElementById('app-profile-close-btn').addEventListener('click', closeApplicantProfile);
 document.getElementById('edit-app-source').addEventListener('change', (e) => {
   document.getElementById('edit-app-referrer-field').hidden = e.target.value !== 'referral';
 });
@@ -2426,7 +2153,6 @@ document.getElementById('edit-app-save-btn').addEventListener('click', async () 
     referred_by_emp_id: source === 'referral' ? referredByEmpId : '',
     position_applied: readPositionField('edit-app-position', 'edit-app-position-other'),
     applied_job_id: document.getElementById('edit-app-job').value || null,
-    team: document.getElementById('edit-app-team').value || null,
     has_landscape_experience: hasExperience,
     years_experience: hasExperience && yearsExperience !== '' ? Number(yearsExperience) : null,
   });
