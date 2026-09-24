@@ -98,6 +98,7 @@ const REPORTS = [
   { key: 'reviews', title: 'New hires and reviews', desc: 'Onboarding volume, overdue reviews' },
   { key: 'applicants', title: 'Applicants', desc: 'Pipeline funnel, outcomes, source, and role applied for' },
   { key: 'timetofill', title: 'Time to fill', desc: 'Days open, days to fill by role and division' },
+  { key: 'openroles', title: 'Open roles', desc: 'Days on market and applicant outcomes for each open role' },
   { key: 'recurring', title: 'Recurring issues', desc: 'Employees showing up across multiple modules' },
   { key: 'output', title: 'Team output', desc: 'Completed work by person, from the activity log' },
 ];
@@ -948,6 +949,87 @@ async function renderReport(key) {
       ['By division (avg days to fill)', ''], ...byDivisionPairs,
       ['Open job', 'Division', 'Location', 'Opened', 'Days open', 'Status', 'Filled by'],
       ...data.open_jobs.map((j) => [j.title || 'Unspecified', j.division || '', j.location || '', j.opened_date || '', daysBetween(new Date((j.filled_date || todayStr) + 'T00:00:00'), new Date(j.opened_date + 'T00:00:00')), j.status, j.filled_applicant_name || '']),
+    ];
+  }
+
+  else if (key === 'openroles') {
+    await ensureLoaded(['open_jobs', 'applicants']);
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const openJobs = data.open_jobs.filter((j) => j.status === 'open');
+    const openIds = new Set(openJobs.map((j) => j.id));
+
+    // Each applicant lands in exactly one bucket so a row's columns add up
+    // to its applicant total. Precedence: hired counts as moved forward;
+    // then rejected (same definition the Applicants report uses, including
+    // "did not pass interview"); then the other ways someone leaves the
+    // pipeline without being rejected; then anyone who has passed a stage
+    // and is still active. Everyone left hasn't cleared pre-screen yet.
+    const REJECTED_OUTCOMES = ['rejected', 'hr_rejected', 'vp_rejected'];
+    const OTHER_CLOSED = ['not_selected', 'resume_on_file', 'not_interested', 'no_experience', 'needs_review'];
+    const bucketOf = (a) => {
+      if (a.outcome === 'hired') return 'forward';
+      if (REJECTED_OUTCOMES.includes(a.outcome) || a.interview_status === 'not_passed') return 'rejected';
+      if (OTHER_CLOSED.includes(a.outcome)) return 'closed';
+      if (a.prescreen_passed || a.interview_status === 'passed' || a.physical_passed || a.orientation_completed) return 'forward';
+      return 'unscreened';
+    };
+
+    const rows = openJobs.map((j) => {
+      const cands = data.applicants.filter((a) => a.applied_job_id === j.id);
+      const counts = { forward: 0, unscreened: 0, rejected: 0, closed: 0 };
+      cands.forEach((a) => { counts[bucketOf(a)]++; });
+      return { job: j, days: j.opened_date ? jobDaysOpen(j) : null, total: cands.length, ...counts };
+    }).sort((a, b) => (b.days ?? -1) - (a.days ?? -1));
+
+    const sum = (k) => rows.reduce((s, r) => s + r[k], 0);
+    const totalApplicants = sum('total');
+    const datedRows = rows.filter((r) => r.days != null);
+    const avgDays = datedRows.length ? Math.round(datedRows.reduce((s, r) => s + r.days, 0) / datedRows.length) : 0;
+    const noApplicants = rows.filter((r) => r.total === 0).length;
+    const notCounted = data.applicants.filter((a) => !openIds.has(a.applied_job_id)).length;
+
+    body.innerHTML = `<p class="dim mono" style="font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:16px">
+        As of ${formatDate(todayStr)} · snapshot of currently open roles, not date-ranged · denominator: ${openJobs.length} open roles, ${totalApplicants} applicants tied to them
+      </p>
+      <div class="big">
+        <div><div class="v n">${openJobs.length}</div><div class="k">Open roles</div></div>
+        <div><div class="v n">${avgDays}</div><div class="k">Avg days on market</div></div>
+        <div><div class="v n">${totalApplicants}</div><div class="k">Applicants</div></div>
+        <div><div class="v n">${sum('forward')}</div><div class="k">Moved forward</div></div>
+        <div><div class="v n">${sum('rejected')}</div><div class="k">Rejected</div></div>
+        <div><div class="v n">${noApplicants}</div><div class="k">Roles with no applicants</div></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Open roles — longest on market first</h3><span>${rows.length} open</span></div>
+        <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Role</th><th>Division</th><th>Location</th><th>Opened</th><th>Days on market</th><th>Applicants</th><th>Moved forward</th><th>Not yet screened</th><th>Rejected</th><th>Closed out</th></tr></thead>
+          <tbody>${rows.length ? rows.map((r) => `
+            <tr>
+              <td>${escapeHtml(r.job.title || 'Unspecified')}</td>
+              <td class="dim">${escapeHtml(r.job.division) || '—'}</td>
+              <td class="dim">${escapeHtml(r.job.location) || '—'}</td>
+              <td class="mono dim">${r.job.opened_date ? formatDate(r.job.opened_date) : '—'}</td>
+              <td class="mono" style="${r.days > 45 ? 'color:var(--alertTx);font-weight:700' : ''}">${r.days ?? '—'}</td>
+              <td class="mono">${r.total}</td>
+              <td class="mono">${r.forward}</td>
+              <td class="mono">${r.unscreened}</td>
+              <td class="mono">${r.rejected}</td>
+              <td class="mono">${r.closed}</td>
+            </tr>`).join('') : '<tr><td colspan="10" class="dim">No open roles right now.</td></tr>'}
+          </tbody>
+        </table>
+        </div>
+      </div>
+      <p class="dim" style="margin-top:10px;font-size:12px">
+        Each applicant is counted once. Moved forward = passed pre-screen, interview, physical or orientation and still in the process, including anyone hired. Rejected = rejected by HR or the VP, or did not pass the interview. Closed out = left the pipeline without being rejected (not selected, no experience, manager not interested, resume on file, needs review). Not yet screened = hasn't cleared pre-screen. Days in red are past 45 on market.
+        Applicants are counted against a role only when the opening is selected on their record; ${notCounted} applicant records are not tied to a currently open role (older applicants, filled or cancelled roles, or no opening selected) and are not counted here.
+      </p>
+    `;
+    lastCsv = [
+      ['Role', 'Division', 'Location', 'Opened', 'Days on market', 'Applicants', 'Moved forward', 'Not yet screened', 'Rejected', 'Closed out'],
+      ...rows.map((r) => [r.job.title || 'Unspecified', r.job.division || '', r.job.location || '', r.job.opened_date || '', r.days ?? '', r.total, r.forward, r.unscreened, r.rejected, r.closed]),
+      ['Total', '', '', '', '', totalApplicants, sum('forward'), sum('unscreened'), sum('rejected'), sum('closed')],
     ];
   }
 
