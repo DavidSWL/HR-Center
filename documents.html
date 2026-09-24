@@ -103,6 +103,7 @@
             <option value="job_description">Job descriptions</option>
             <option value="sop">SOPs</option>
             <option value="pay_time">Pay &amp; time</option>
+            <option value="hr_request">HR requests</option>
             <option value="safety">Safety</option>
             <option value="new_hire_offers">New hire &amp; offers</option>
             <option value="form_template">Forms / templates</option>
@@ -161,6 +162,7 @@ const CATEGORY_LABELS = {
   job_description: 'Job description', sop: 'SOP', form_template: 'Form / template',
   other: 'Other reference', policy: 'Policy', handbook: 'Handbook', notice: 'Notice',
   pay_time: 'Pay & time', safety: 'Safety', new_hire_offers: 'New hire & offers',
+  hr_request: 'HR requests',
 };
 const POLICY_CATEGORIES = new Set(['policy', 'handbook', 'notice']);
 
@@ -361,6 +363,74 @@ function renderTimecardHtml(d) {
       <div class="form-section">Supervisor or HR Electronic Signature</div>
       ${d.supervisor_signature_data_url ? `<img src="${d.supervisor_signature_data_url}" alt="Supervisor signature" style="max-height:90px;border-bottom:1px solid #333">` : '<div class="dim">Not yet signed.</div>'}
       <div class="form-fine" style="margin-top:10px">This record corrects worked time only; it does not create or change any pay rate.</div>
+      ${signedOnHtml(d.signed_at)}
+    </div>
+  `;
+}
+
+// Read-only copy of docgen.html's HR Request Form — a signed record, so
+// it shows what was saved: the fields, checkboxes, and the three
+// signatures with their dates. The Payroll Status Change figures
+// (withholding / wage / deduction) are compensation data and are never
+// saved, so that section only notes that a payroll change was requested.
+function renderHrRequestHtml(d) {
+  const isEs = d.lang === 'es';
+  const L = (en, es) => (isEs ? es : en);
+  const box = (on) => `<span style="display:inline-block;width:13px;height:13px;border:1.5px solid #333;margin-right:6px;vertical-align:-2px;position:relative;background:#fff">${on ? '<span style="position:absolute;left:3px;top:-2px;width:4px;height:9px;border:solid #154733;border-width:0 2.5px 2.5px 0;transform:rotate(40deg)"></span>' : ''}</span>`;
+  const has = (k) => (d.info_requested || []).includes(k);
+  const cell = (label, v) => `<div class="form-cell"><b>${label}</b>${escapeHtmlAttr(v)}</div>`;
+  const sigCell = (label, url, date) => `
+    <div class="form-cell" style="min-height:60px"><b>${label}</b>${url ? `<img src="${url}" alt="${label}" style="max-height:52px;display:block">` : `<span class="dim">${L('Not signed.', 'Sin firmar.')}</span>`}</div>
+    <div class="form-cell"><b>${L('Date', 'Fecha')}</b>${escapeHtmlAttr(date)}</div>`;
+  const checks = [
+    ['wage', L('Wage', 'Salario')], ['last_pay_increase', L('Last Pay Increase', 'Último Aumento de Pago')],
+    ['hire_date', L('Hire Date', 'Fecha de Contratación')], ['sick_days', L('Sick Days', 'Días de Enfermedad')],
+    ['employee_file', L('Employee File', 'Expediente del Empleado')],
+  ];
+  return `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">${L('Human Resources Request Form', 'Formulario de Solicitud de Recursos Humanos')}</h1>
+      <div class="form-section">${L('Request Information', 'Información de la Solicitud')}</div>
+      <div class="form-grid c3">
+        ${cell(L('Employee Name', 'Nombre del Empleado'), d.emp_name)}
+        ${cell(L('Employee Number', 'Número de Empleado'), d.emp_number)}
+        ${cell(L('Requesting Manager', 'Gerente Solicitante'), d.requesting_manager)}
+      </div>
+      <div class="form-grid c2">
+        ${cell(L('Date', 'Fecha'), d.request_date)}
+        ${cell(L('Copy To', 'Copia Para'), d.copy_to)}
+      </div>
+      <div class="form-section">${L('Employee Personal Information Request', 'Solicitud de Información Personal del Empleado')}</div>
+      <div class="form-checks">
+        ${checks.map(([k, label]) => `<label>${box(has(k))}${label}</label>`).join('')}
+        <label>${box(has('other'))}${L('Other', 'Otro')}${d.info_other ? ': ' + escapeHtmlAttr(d.info_other) : ''}</label>
+      </div>
+      <div class="form-box"><b style="display:block;font-size:10px;text-transform:uppercase;color:#333">${L('Reason for Request', 'Motivo de la Solicitud')}</b>${escapeHtmlAttr(d.reason)}</div>
+      <div class="form-section">${L('Human Resources Department Response', 'Respuesta del Departamento de Recursos Humanos')}</div>
+      <div class="form-box">${escapeHtmlAttr(d.hr_response)}</div>
+      <div class="form-section">${L('Personal Information Change Request', 'Solicitud de Cambio de Información Personal')}</div>
+      <div class="form-grid" style="grid-template-columns:1fr">
+        ${cell(L('Address Change', 'Cambio de Dirección'), d.address_change)}
+        ${cell(L('Name Correction', 'Corrección de Nombre'), d.name_correction)}
+        ${cell(L('Other', 'Otro'), d.personal_other)}
+      </div>
+      <div class="form-section">${L('Payroll Status Change Request', 'Solicitud de Cambio de Estado de Nómina')}</div>
+      <div class="form-box">${d.payroll_change_requested
+        ? L('A payroll status change was requested on this form. The withholding, wage and deduction figures are not stored in the HR system — see the printed original.', 'Se solicitó un cambio de estado de nómina en este formulario. Las cifras de retención, salario y deducción no se guardan en el sistema de RH — vea el original impreso.')
+        : L('None requested.', 'Ninguna solicitada.')}</div>
+      <div class="form-section">${L('Leave of Absence Request', 'Solicitud de Licencia de Ausencia')}</div>
+      <div class="form-grid c3">
+        ${cell(L('From', 'De'), d.leave_from)}
+        ${cell(L('To', 'A'), d.leave_to)}
+        ${cell(L('Reason', 'Motivo'), d.leave_reason)}
+      </div>
+      <div class="form-section">${L('Signatures', 'Firmas')}</div>
+      <div class="form-grid" style="grid-template-columns:2fr 1fr">
+        ${sigCell(L('Requesting Employee Signature', 'Firma del Empleado Solicitante'), d.signature_emp, d.date_emp)}
+        ${sigCell(L('Requesting Manager Signature', 'Firma del Gerente Solicitante'), d.signature_mgr, d.date_mgr)}
+        ${sigCell(L('Authorized by (Human Resources)', 'Autorizado por (Recursos Humanos)'), d.signature_hr, d.date_hr)}
+      </div>
       ${signedOnHtml(d.signed_at)}
     </div>
   `;
@@ -695,6 +765,7 @@ function openView(d) {
   const isLetter = d.content_type === 'letter';
   const isTermSummary = d.content_type === 'termsummary';
   const isChangeNotice = d.content_type === 'changenotice';
+  const isHrRequest = d.content_type === 'hrrequest';
   sheet.className = isSop ? 'sop-doc' : isJobDesc ? 'jd-doc' : 'form-doc';
   sheet.innerHTML = isSop
     ? renderSopHtml(d)
@@ -716,6 +787,8 @@ function openView(d) {
     ? renderTermSummaryHtml(d)
     : isChangeNotice
     ? renderChangeNoticeHtml(d)
+    : isHrRequest
+    ? renderHrRequestHtml(d)
     : `<div class="form-doc-inner"><div class="form-title">${escapeHtmlAttr(d.title)}</div>${renderBodyHtml(d.body)}</div>`;
   document.getElementById('view-overlay').hidden = false;
 }
@@ -884,7 +957,7 @@ function render() {
   document.getElementById('docs-summary').textContent = `${visible.length} of ${docs.length}`;
   document.getElementById('doc-rows').innerHTML = visible.length ? visible.map((d) => `
     <tr>
-      <td>${d.content_type === 'text' || d.content_type === 'sop' || d.content_type === 'jobdesc' || d.content_type === 'timecard' || d.content_type === 'mealpenalty' || d.content_type === 'mileage' || d.content_type === 'refusal' || d.content_type === 'mealwaiver2' || d.content_type === 'letter' || d.content_type === 'termsummary' || d.content_type === 'changenotice'
+      <td>${d.content_type === 'text' || d.content_type === 'sop' || d.content_type === 'jobdesc' || d.content_type === 'timecard' || d.content_type === 'mealpenalty' || d.content_type === 'mileage' || d.content_type === 'refusal' || d.content_type === 'mealwaiver2' || d.content_type === 'letter' || d.content_type === 'termsummary' || d.content_type === 'changenotice' || d.content_type === 'hrrequest'
         ? `<a href="#" class="view-doc-link" data-id="${d.id}">${escapeHtmlAttr(d.title)}</a>`
         : `<a href="${d.file_url}" target="_blank" rel="noopener">${escapeHtmlAttr(d.title)}</a>`
       }${d.policy_doc_id ? ' <span class="pill ok">In Policy Compliance</span>' : ''}</td>

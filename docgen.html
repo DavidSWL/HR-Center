@@ -82,6 +82,66 @@
 .accept-line{display:flex;gap:40px;margin-bottom:6px}
 .accept-line .blank{flex:1;border-bottom:1px solid #000;height:1px;margin-top:46px}
 .accept-line .blank.short{flex:0 0 30%}
+
+/* ---- HR Request Form — fillable on screen, printable for pen. The
+   .form-doc family supplies the logo header, section bars and grids;
+   these are only the bits it doesn't already have (fillable fields that
+   read as printed text, custom checkboxes drawn with borders so they
+   print without "background graphics", signature cells). ---- */
+.hrreq .form-head{margin-bottom:10px}
+.hrreq .form-title{margin:0 0 3px}
+.hrreq .form-subtitle{font-size:11px;color:#444;margin:0 0 12px}
+.hrreq .form-section{display:flex;justify-content:space-between;align-items:baseline;margin-top:12px}
+.hrreq .form-section.first{margin-top:0}
+.hrreq .form-section .sec-note{font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;opacity:.9}
+.hrreq .form-grid.c1{grid-template-columns:1fr}
+.hrreq .form-grid.c1 .form-cell{border-right:none}
+.hrreq .form-grid.c5{grid-template-columns:1.15fr 1.4fr 1.3fr 1fr 1fr}
+.hrreq .form-cell.tall{min-height:52px}
+.hrreq .form-cell.inline{display:flex;gap:10px;align-items:baseline}
+.hrreq .form-cell.inline b{flex:0 0 130px;margin:0}
+.hrreq .form-cell.inline .hr-fld{flex:1}
+.hrreq .sigdate{display:flex;gap:6px;align-items:baseline;margin-top:3px}
+.hrreq .sigdate b{margin:0}
+.hrreq .form-sub{background:#eee;border:1px solid #999;border-top:none;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding:5px 9px;color:#333}
+.hrreq .form-notice-table{table-layout:fixed}
+.hrreq .form-notice-table th,.hrreq .form-notice-table td{border-top:none;vertical-align:top}
+.hrreq .form-notice-table td{height:34px}
+.hrreq .form-notice-table td small{display:block;font-size:9.5px;color:#555}
+.hrreq .form-checks{align-items:center}
+.hrreq .form-checks .other{flex:1 1 240px;display:flex;align-items:flex-start;gap:8px}
+.hrreq .form-checks .other .hr-fld{flex:1;border-bottom:1px solid #666}
+/* Fields that grow with their text (a hidden mirror in ::after gives the
+   grid its height), so a long entry wraps and prints in full instead of
+   being clipped like a fixed-height input would be. */
+.hrreq .hr-fld{display:grid;min-height:1.4em}
+.hrreq .hr-fld::after{content:attr(data-v) " ";white-space:pre-wrap;visibility:hidden;grid-area:1/1;font:inherit;line-height:1.35;overflow-wrap:anywhere}
+.hrreq .hr-fld textarea{grid-area:1/1;width:100%;border:0;background:transparent;font:inherit;line-height:1.35;color:#111;padding:0;margin:0;resize:none;overflow:hidden;overflow-wrap:anywhere;outline:0;min-height:1.35em}
+.hrreq .hr-fld textarea:focus,.hrreq .hr-date:focus{background:#f3f8f5}
+.hrreq .hr-date{width:100%;border:0;background:transparent;font:inherit;color:#111;padding:0;outline:0}
+.hrreq .hr-cb{display:inline-flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;position:relative}
+.hrreq .hr-cb input{position:absolute;opacity:0;width:14px;height:14px;margin:0;cursor:pointer}
+.hrreq .hr-cb .box{width:14px;height:14px;border:1.5px solid #333;background:#fff;position:relative;flex:none}
+.hrreq .hr-cb input:checked + .box::after{content:"";position:absolute;left:3px;top:-2px;width:4px;height:9px;border:solid #154733;border-width:0 2.5px 2.5px 0;transform:rotate(40deg)}
+.hrreq .hr-cb input:focus-visible + .box{outline:2px solid #154733;outline-offset:2px}
+.hrreq .sigcell{position:relative}
+.hrreq canvas.hr-pad{display:block;width:100%;height:44px;cursor:crosshair;touch-action:none;border-bottom:1px solid #bbb}
+.hrreq .sigclear{margin-left:auto;flex:none;font-size:10px;padding:2px 8px}
+.hrreq .sigdate .hr-date{flex:1;min-width:0}
+.hrreq .form-notice-table th{color:#333;font-family:Arial,Helvetica,sans-serif;font-weight:700;letter-spacing:.03em}
+.hr-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+@media print{
+  .hrreq{-webkit-print-color-adjust:exact;print-color-adjust:exact;border:none !important;max-width:none}
+  .hrreq .form-doc-inner{padding:.4in .5in}
+  .hrreq .form-section{margin-top:7px;padding:3px 10px}
+  .hrreq .form-subtitle{margin-bottom:7px}
+  .hrreq .form-cell{min-height:24px;padding:3px 8px}
+  .hrreq .form-cell.tall{min-height:40px}
+  .hrreq .form-notice-table td{height:26px;padding:3px 7px}
+  .hrreq canvas.hr-pad{height:38px}
+  .hrreq .hr-fld textarea:focus,.hrreq .hr-date:focus{background:transparent}
+  .hrreq .form-checks{padding:6px 10px}
+}
 .accept-label-line{display:flex;gap:40px;font-weight:700}
 .accept-label-line .lbl{flex:1}
 .accept-label-line .lbl.short{flex:0 0 30%}
@@ -229,6 +289,7 @@ const GENERATORS = [
   { key: 'osha300a', title: 'OSHA 300A Annual Summary', desc: 'Totals computed from recordable incidents for the year — post Feb 1–Apr 30', category: 'Safety' },
 
   { key: 'employeefile', title: 'Employee file', desc: 'Everything on file for one employee — reviews, discipline, training, incidents — in one printable packet', category: 'Employee records' },
+  { key: 'hrrequest', title: 'HR request form', desc: 'Information, personal-info, payroll-status and leave requests — fill in on screen or print for pen, signed by employee, manager and HR, English or Spanish', category: 'Employee records' },
 
   { key: 'sop', title: 'SOP', desc: 'Standard Operating Procedure — matches the real SWL SOP format, saves to Documents', category: 'Reference library' },
   { key: 'jobdesc', title: 'Job description', desc: 'Matches the real SWL Job Description format — English or Spanish, saves to Documents', category: 'Reference library' },
@@ -384,7 +445,7 @@ function openGenerator(key) {
   // exactly as supplied — those forms are English-only, so the language
   // toggle only applies to PIP, Onboarding, and the letters (which manage
   // English/Spanish through their own letter-type list instead).
-  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty' || key === 'mealwaiver2' || key === 'mileage' || key === 'review' || key === 'termination' || key === 'incidentreport' || key === 'termsummary' || key === 'changenotice') ? '' : 'none';
+  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty' || key === 'mealwaiver2' || key === 'mileage' || key === 'review' || key === 'termination' || key === 'incidentreport' || key === 'termsummary' || key === 'changenotice' || key === 'hrrequest') ? '' : 'none';
   renderCurrent();
 }
 
@@ -407,6 +468,7 @@ function renderCurrent() {
   if (currentKey === 'employeefile') renderEmployeeFile();
   if (currentKey === 'termsummary') renderTermSummary(lang);
   if (currentKey === 'changenotice') renderChangeNotice(lang);
+  if (currentKey === 'hrrequest') renderHrRequest(lang);
 }
 
 // ---- PIP ----
@@ -5779,6 +5841,272 @@ function renderTimecardSheet(lang) {
   setUpSignaturePad('tc-sig-pad', 'tc-sig-clear');
   setUpSignaturePad('tc-sup-sig-pad', 'tc-sup-sig-clear');
   sheetRerender = (l) => withPreservedSignature('tc-sup-sig-pad', () => withPreservedSignature('tc-sig-pad', () => renderTimecardSheet(l)));
+}
+
+// ---- HR Request Form — the paper Human Resource Department Request Form
+// (employee-information requests, personal-information changes, payroll
+// status changes, leave of absence), fillable on screen or printable for
+// pen. Everything on the sheet is typeable/clickable, three signature
+// pads (employee, manager, HR) stamp today's date the moment they're
+// signed, and the sheet prints as its own one-page letter document. A
+// pad left unsigned simply prints as an empty box for a wet signature.
+//
+// Pay figures: the Payroll Status Change section takes withholding /
+// wage / deduction From-To values so the printout is complete, but those
+// are compensation data — they are printed and never read into anything
+// saved (see hrSaveSigned, which only records THAT a payroll change was
+// requested). ----
+
+const HR_PADS = [
+  { key: 'emp', canvas: 'hr-sig-emp', clear: 'hr-sigclr-emp', date: 'hr-date-emp' },
+  { key: 'mgr', canvas: 'hr-sig-mgr', clear: 'hr-sigclr-mgr', date: 'hr-date-mgr' },
+  { key: 'hr', canvas: 'hr-sig-hr', clear: 'hr-sigclr-hr', date: 'hr-date-hr' },
+];
+const HR_PAYROLL_FIELDS = ['wh_from', 'wh_to', 'wh_reason', 'wage_from', 'wage_to', 'wage_reason', 'ded_from', 'ded_to', 'ded_reason'];
+const HR_INFO_KEYS = [['cb_wage', 'wage'], ['cb_lastpay', 'last_pay_increase'], ['cb_hire', 'hire_date'], ['cb_sick', 'sick_days'], ['cb_file', 'employee_file'], ['cb_other', 'other']];
+let hrSavedDocId = null;
+
+function hrTodayText() { return formatDate(new Date().toISOString().slice(0, 10)); }
+
+function hrSheetHtml(L) {
+  const fld = (f) => `<div class="hr-fld" data-v=" "><textarea rows="1" data-f="${f}"></textarea></div>`;
+  const cb = (f, label) => `<label class="hr-cb"><input type="checkbox" data-f="${f}"><span class="box"></span><span>${label}</span></label>`;
+  const sigCol = (p, label) => `
+    <div class="form-cell sigcell"><b>${label}</b>
+      <canvas class="hr-pad" id="${p.canvas}"></canvas>
+      <div class="sigdate"><b>${L('Date', 'Fecha')}</b><input class="hr-date" type="text" id="${p.date}" data-f="date_${p.key}" autocomplete="off" title="${L('Fills in automatically when signed — or type a date', 'Se llena al firmar — o escriba una fecha')}"><button type="button" class="gh no-print sigclear" id="${p.clear}">${L('Clear', 'Borrar')}</button></div>
+    </div>`;
+  return `<div class="form-doc-inner">
+    <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+    <h1 class="form-title">${L('Human Resources Request Form', 'Formulario de Solicitud de Recursos Humanos')}</h1>
+    <p class="form-subtitle">${L('Southwest Landscape, Inc. — Human Resources Department', 'Southwest Landscape, Inc. — Departamento de Recursos Humanos')}</p>
+
+    <div class="form-section first"><span>${L('Request Information', 'Información de la Solicitud')}</span></div>
+    <div class="form-grid c5">
+      <div class="form-cell"><b>${L('Employee Number', 'Número de Empleado')}</b>${fld('emp_number')}</div>
+      <div class="form-cell"><b>${L('Employee Name', 'Nombre del Empleado')}</b>${fld('emp_name')}</div>
+      <div class="form-cell"><b>${L('Requesting Manager', 'Gerente Solicitante')}</b>${fld('mgr_name')}</div>
+      <div class="form-cell"><b>${L('Date', 'Fecha')}</b>${fld('req_date')}</div>
+      <div class="form-cell"><b>${L('Copy To', 'Copia Para')}</b>${fld('copy_to')}</div>
+    </div>
+
+    <div class="form-section">
+      <span>${L('Employee Personal Information Request', 'Solicitud de Información Personal del Empleado')}</span>
+      <span class="sec-note">${L('Check applicable box', 'Marque la casilla que corresponda')}</span>
+    </div>
+    <div class="form-checks">
+      ${cb('cb_wage', L('Wage', 'Salario'))}
+      ${cb('cb_lastpay', L('Last Pay Increase', 'Último Aumento de Pago'))}
+      ${cb('cb_hire', L('Hire Date', 'Fecha de Contratación'))}
+      ${cb('cb_sick', L('Sick Days', 'Días de Enfermedad'))}
+      ${cb('cb_file', L('Employee File', 'Expediente del Empleado'))}
+      <span class="other">${cb('cb_other', L('Other (please list)', 'Otro (especifique)'))}${fld('info_other')}</span>
+    </div>
+    <div class="form-grid c1"><div class="form-cell tall"><b>${L('Reason for Request', 'Motivo de la Solicitud')}</b>${fld('reason')}</div></div>
+    <div class="form-sub">${L('Human Resources Department Response', 'Respuesta del Departamento de Recursos Humanos')}</div>
+    <div class="form-box" style="min-height:56px;padding:6px 10px;white-space:normal">${fld('hr_response')}</div>
+
+    <div class="form-section"><span>${L('Personal Information Change Request', 'Solicitud de Cambio de Información Personal')}</span></div>
+    <div class="form-grid c1">
+      <div class="form-cell inline"><b>${L('Address Change', 'Cambio de Dirección')}</b>${fld('addr_change')}</div>
+      <div class="form-cell inline"><b>${L('Name Correction', 'Corrección de Nombre')}</b>${fld('name_corr')}</div>
+      <div class="form-cell inline"><b>${L('Other (please list)', 'Otro (especifique)')}</b>${fld('pi_other')}</div>
+    </div>
+
+    <div class="form-section"><span>${L('Payroll Status Change Request', 'Solicitud de Cambio de Estado de Nómina')}</span></div>
+    <table class="form-notice-table">
+      <thead><tr>
+        <th style="width:26%">${L('Change', 'Cambio')}</th>
+        <th style="width:20%">${L('From', 'De')}</th>
+        <th style="width:20%">${L('To', 'A')}</th>
+        <th>${L('Reason', 'Motivo')}</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>${L('Withholding Change', 'Cambio de Retención')}<small>${L('Attach new W-4 form', 'Adjunte nuevo formulario W-4')}</small></td><td>${fld('wh_from')}</td><td>${fld('wh_to')}</td><td>${fld('wh_reason')}</td></tr>
+        <tr><td>${L('Wage', 'Salario')}</td><td>${fld('wage_from')}</td><td>${fld('wage_to')}</td><td>${fld('wage_reason')}</td></tr>
+        <tr><td>${L('Payroll Deduction', 'Deducción de Nómina')}</td><td>${fld('ded_from')}</td><td>${fld('ded_to')}</td><td>${fld('ded_reason')}</td></tr>
+      </tbody>
+    </table>
+
+    <div class="form-section"><span>${L('Leave of Absence Request', 'Solicitud de Licencia de Ausencia')}</span></div>
+    <table class="form-notice-table">
+      <thead><tr>
+        <th style="width:26%">${L('From', 'De')}</th>
+        <th style="width:26%">${L('To', 'A')}</th>
+        <th>${L('Reason', 'Motivo')}</th>
+      </tr></thead>
+      <tbody><tr><td>${fld('leave_from')}</td><td>${fld('leave_to')}</td><td>${fld('leave_reason')}</td></tr></tbody>
+    </table>
+
+    <div class="form-section"><span>${L('Signatures', 'Firmas')}</span></div>
+    <div class="form-grid c3">
+      ${sigCol(HR_PADS[0], L('Requesting Employee Signature', 'Firma del Empleado Solicitante'))}
+      ${sigCol(HR_PADS[1], L('Requesting Manager Signature', 'Firma del Gerente Solicitante'))}
+      ${sigCol(HR_PADS[2], L('Authorized by (Human Resources)', 'Autorizado por (Recursos Humanos)'))}
+    </div>
+    <div class="form-fine"><span>${L('Original paper form revised 6/06.', 'Formulario en papel original revisado 6/06.')}</span></div>
+  </div>`;
+}
+
+function renderHrRequest(lang, state) {
+  const isEs = lang === 'es';
+  const L = (en, es) => (isEs ? es : en);
+  if (!state) hrSavedDocId = null;
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <div class="frow">
+          ${empSearchFieldHtml('hr-emp', '<label class="f-lab">Employee (fills in the top of the form)</label>')}
+        </div>
+        <div class="hr-actions">
+          <button class="gh solid" id="hr-print-btn" type="button">Print</button>
+          <button class="gh solid" id="hr-save-btn" type="button">Save signed copy to Documents</button>
+          <button class="gh" id="hr-clear-btn" type="button">Clear form</button>
+        </div>
+        <p class="dim" style="font-size:12px;margin:10px 0 0;max-width:660px">Fill it in and sign right on this screen, or print it blank or partly filled and complete it in pen. Signing a box adds today's date automatically. Wage, withholding and deduction figures print on the form but are never saved to Documents.</p>
+      </div>
+    </div>
+    <div class="form-doc hrreq" id="hr-sheet">${hrSheetHtml(L)}</div>
+  `;
+  wireEmpSearch('hr-emp');
+  const sheet = document.getElementById('hr-sheet');
+  const setVal = (f, v) => {
+    const el = sheet.querySelector(`[data-f="${f}"]`);
+    if (!el) return;
+    el.value = v;
+    if (el.parentNode.classList.contains('hr-fld')) el.parentNode.dataset.v = v || ' ';
+  };
+  // Grow-with-text mirror: the hidden ::after copy of the text is what
+  // gives each field its height, so it has to track every keystroke.
+  sheet.addEventListener('input', (e) => {
+    if (e.target.tagName === 'TEXTAREA' && e.target.parentNode.classList.contains('hr-fld')) e.target.parentNode.dataset.v = e.target.value || ' ';
+  });
+  setVal('req_date', hrTodayText());
+  document.getElementById('hr-emp').addEventListener('change', () => {
+    const emp = employees.find((e) => e.id === document.getElementById('hr-emp').value);
+    if (!emp) return;
+    const mgr = emp.manager_emp_id ? employees.find((e) => e.id === emp.manager_emp_id) : null;
+    setVal('emp_name', `${emp.first_name} ${emp.last_name}`);
+    setVal('emp_number', emp.id);
+    if (mgr) setVal('mgr_name', `${mgr.first_name} ${mgr.last_name}`);
+  });
+
+  HR_PADS.forEach((p) => {
+    setUpSignaturePad(p.canvas, p.clear);
+    const canvas = document.getElementById(p.canvas);
+    // Stamp today's date as soon as ink lands on the pad (only if the
+    // date box is still empty, so a date someone typed is never
+    // overwritten) — and take it back off if the signature is cleared.
+    const stamp = () => {
+      const st = sigPads[p.canvas];
+      const di = document.getElementById(p.date);
+      if (st && st.hasStroke && di && !di.value) { di.value = hrTodayText(); di.dataset.auto = '1'; }
+    };
+    canvas.addEventListener('mousemove', stamp);
+    canvas.addEventListener('touchmove', stamp, { passive: true });
+    document.getElementById(p.clear).addEventListener('click', () => {
+      const di = document.getElementById(p.date);
+      if (di && di.dataset.auto === '1') { di.value = ''; delete di.dataset.auto; }
+    });
+  });
+
+  document.getElementById('hr-print-btn').addEventListener('click', () => window.print());
+  document.getElementById('hr-save-btn').addEventListener('click', hrSaveSigned);
+  document.getElementById('hr-clear-btn').addEventListener('click', () => {
+    if (!confirm('Clear everything on this form, including any signatures?')) return;
+    renderHrRequest(document.getElementById('lang-select').value);
+  });
+  // Switching English/Spanish redraws the sheet, so carry over whatever's
+  // already typed, checked and signed (free text isn't translated).
+  sheetRerender = (l) => renderHrRequest(l, hrCaptureState());
+  if (state) hrRestoreState(state);
+}
+
+function hrCaptureState() {
+  const sheet = document.getElementById('hr-sheet');
+  if (!sheet) return null;
+  const fields = {};
+  sheet.querySelectorAll('[data-f]').forEach((el) => { fields[el.dataset.f] = el.type === 'checkbox' ? el.checked : el.value; });
+  const autos = {};
+  const sigs = {};
+  HR_PADS.forEach((p) => {
+    const di = document.getElementById(p.date);
+    autos[p.date] = !!(di && di.dataset.auto === '1');
+    const st = sigPads[p.canvas];
+    const c = document.getElementById(p.canvas);
+    if (st && st.hasStroke && c) sigs[p.canvas] = c.toDataURL('image/png');
+  });
+  return { fields, autos, sigs, empId: (document.getElementById('hr-emp') || {}).value || '' };
+}
+
+function hrRestoreState(s) {
+  const sheet = document.getElementById('hr-sheet');
+  Object.entries(s.fields).forEach(([f, v]) => {
+    const el = sheet.querySelector(`[data-f="${f}"]`);
+    if (!el) return;
+    if (el.type === 'checkbox') el.checked = !!v;
+    else {
+      el.value = v;
+      if (el.parentNode.classList.contains('hr-fld')) el.parentNode.dataset.v = v || ' ';
+    }
+  });
+  HR_PADS.forEach((p) => {
+    const di = document.getElementById(p.date);
+    if (di && s.autos[p.date]) di.dataset.auto = '1';
+  });
+  Object.entries(s.sigs).forEach(([id, url]) => drawExistingSignatureDataUrl(id, url));
+  if (s.empId) setEmpField('hr-emp', s.empId);
+}
+
+async function hrSaveSigned() {
+  const sheet = document.getElementById('hr-sheet');
+  if (!sheet) return;
+  const val = (f) => {
+    const el = sheet.querySelector(`[data-f="${f}"]`);
+    return el ? (el.type === 'checkbox' ? el.checked : el.value.trim()) : '';
+  };
+  const empName = val('emp_name');
+  if (!empName) { showToast('Enter the employee name first.', 'error'); return; }
+  if (!HR_PADS.some((p) => sigPads[p.canvas] && sigPads[p.canvas].hasStroke)) {
+    showToast('Get at least one signature first — all three boxes are empty.', 'error'); return;
+  }
+  const payrollFilled = HR_PAYROLL_FIELDS.some((f) => val(f));
+  const payload = {
+    content_type: 'hrrequest', category: 'hr_request',
+    title: `HR Request — ${empName} (${val('req_date') || hrTodayText()})`,
+    emp_id: document.getElementById('hr-emp').value || '', emp_name: empName, emp_number: val('emp_number'),
+    requesting_manager: val('mgr_name'), request_date: val('req_date'), copy_to: val('copy_to'),
+    info_requested: HR_INFO_KEYS.filter(([f]) => val(f)).map(([, k]) => k), info_other: val('info_other'),
+    reason: val('reason'), hr_response: val('hr_response'),
+    address_change: val('addr_change'), name_correction: val('name_corr'), personal_other: val('pi_other'),
+    // Only THAT a payroll change was requested — the withholding / wage /
+    // deduction From-To values themselves are compensation data and stay
+    // on the printout, never in the database.
+    payroll_change_requested: payrollFilled,
+    leave_from: val('leave_from'), leave_to: val('leave_to'), leave_reason: val('leave_reason'),
+    date_emp: val('date_emp'), date_mgr: val('date_mgr'), date_hr: val('date_hr'),
+    lang: document.getElementById('lang-select').value,
+    status: 'signed', signed_by: profile.uid, signed_at: serverTimestamp(),
+    entered_by: profile.uid, entered_at: serverTimestamp(),
+  };
+  HR_PADS.forEach((p) => {
+    if (sigPads[p.canvas] && sigPads[p.canvas].hasStroke) payload['signature_' + p.key] = document.getElementById(p.canvas).toDataURL('image/png');
+  });
+  try {
+    const ref = hrSavedDocId ? doc(db, 'training_documents', hrSavedDocId) : doc(collection(db, 'training_documents'));
+    await setDoc(ref, payload, { merge: true });
+    hrSavedDocId = ref.id;
+    await addDoc(collection(db, 'activity'), {
+      module: 'documents', item: `HR request form signed — ${empName}`,
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    showToast(payrollFilled
+      ? 'Saved to Documents. The wage / withholding / deduction figures were not saved — print the form if you need them on paper.'
+      : 'Saved to Documents.');
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
 }
 
 // ---- Missed meal period — documents a meal break that couldn't be taken
