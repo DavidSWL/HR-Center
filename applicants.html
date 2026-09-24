@@ -167,6 +167,7 @@
                 <option value="referral">Referral</option>
                 <option value="past_employee">Past employee</option>
                 <option value="indeed">Indeed</option>
+                <option value="linkedin">LinkedIn</option>
               </select>
             </div>
             <div class="field">
@@ -381,6 +382,7 @@
             <option value="referral">Referral</option>
             <option value="past_employee">Past employee</option>
             <option value="indeed">Indeed</option>
+            <option value="linkedin">LinkedIn</option>
           </select>
         </div>
         <div class="field">
@@ -517,7 +519,7 @@ initShell('applicants', profile);
 document.getElementById('header-date').textContent =
   new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
 
-const SOURCE_LABELS = { walk_in: 'Walk-in', referral: 'Referral', past_employee: 'Past employee', indeed: 'Indeed' };
+const SOURCE_LABELS = { walk_in: 'Walk-in', referral: 'Referral', past_employee: 'Past employee', indeed: 'Indeed', linkedin: 'LinkedIn' };
 // "rejected" is legacy -- old records may still carry it, but it's no
 // longer offered as a choice now that rejections say who rejected them
 // (HR or VP). Anywhere that needs "this person was rejected, however
