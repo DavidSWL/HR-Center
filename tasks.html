@@ -83,14 +83,20 @@
               <label class="f-lab" for="instructions">What's needed / why</label>
               <textarea class="f-in" id="instructions" rows="3" style="resize:vertical" required></textarea>
             </div>
-            <div class="field">
-              <label class="f-lab" for="recurring">Recurring</label>
-              <select class="f-in" id="recurring">
-                <option value="none">One-time</option>
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-                <option value="annual">Annual</option>
-              </select>
+            <div class="frow">
+              <div class="field">
+                <label class="f-lab" for="category">Category</label>
+                <select class="f-in" id="category"></select>
+              </div>
+              <div class="field">
+                <label class="f-lab" for="recurring">Recurring</label>
+                <select class="f-in" id="recurring">
+                  <option value="none">One-time</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="annual">Annual</option>
+                </select>
+              </div>
             </div>
             <button type="submit" class="gh solid">Assign</button>
           </form>
@@ -125,11 +131,12 @@
             <span class="dim" id="cal-progress" style="margin-left:auto;font-size:12.5px"></span>
           </div>
           <div class="trk" style="margin:0 16px 12px"><i id="cal-progress-bar"></i></div>
-          <p class="dim" style="margin:-6px 16px 10px;font-size:11px">Purple-bordered entries are 30/60/90 reviews still due — click one to open Reviews. Terminated employees' reviews don't show here.</p>
+          <div id="cal-legend" style="display:flex;flex-wrap:wrap;gap:14px;margin:-6px 16px 10px;font-size:11px"></div>
+          <p class="dim" style="margin:-6px 16px 10px;font-size:11px">Purple-bordered entries are 30/60/90 reviews still due — click one to open Reviews. Overdue entries show in red regardless of category. Terminated employees' reviews don't show here.</p>
           <div id="cal-grid"></div>
         </div>
         <table id="list-view" style="margin-top:16px" hidden>
-          <thead><tr><th>Due</th><th>Assigned to</th><th>What's needed</th><th>Recurring</th><th></th></tr></thead>
+          <thead><tr><th>Due</th><th>Assigned to</th><th>What's needed</th><th>Category</th><th>Recurring</th><th></th></tr></thead>
           <tbody id="rows"></tbody>
         </table>
       </div>
@@ -156,6 +163,26 @@ const canDeleteTasks = profile.role === 'david' || profile.role === 'tanya';
 
 document.getElementById('header-date').textContent =
   new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+// Task categories, colored like an Outlook category tag -- shown as
+// the chip's left border on the Calendar and Today views. Deliberately
+// no green or red in this palette: green is the Oregon brand accent
+// and red means overdue/at-risk specifically, both used elsewhere on
+// this same calendar, so a category color never gets confused with
+// either. 30/60/90 reviews keep their own established purple and
+// aren't part of this list -- they're a fixed type, not a pick.
+const CATEGORIES = {
+  interview: { label: 'Interview', color: '#2E5AA8' },
+  meeting: { label: 'Team meeting', color: '#A6467E' },
+  deadline: { label: 'Deadline', color: '#C2703A' },
+  general: { label: 'General', color: '#6B7280' },
+};
+function categoryOf(t) { return CATEGORIES[t.category] || CATEGORIES.general; }
+document.getElementById('category').innerHTML = Object.entries(CATEGORIES)
+  .map(([key, c]) => `<option value="${key}"${key === 'general' ? ' selected' : ''}>${c.label}</option>`).join('');
+document.getElementById('cal-legend').innerHTML = Object.values(CATEGORIES)
+  .map((c) => `<span style="display:flex;align-items:center;gap:5px"><i style="display:inline-block;width:10px;height:10px;background:${c.color}"></i>${c.label}</span>`).join('')
+  + `<span style="display:flex;align-items:center;gap:5px"><i style="display:inline-block;width:10px;height:10px;background:#7C5CBF"></i>Review</span>`;
 
 let staff = [];
 let tasks = [];
@@ -241,6 +268,7 @@ function render() {
           ? staffName(t.assigned_to)
           : `<select class="inp assignee-select" data-id="${t.id}" style="height:32px;font-size:12.5px">${staff.map((s) => `<option value="${s.id}"${s.id === t.assigned_to ? ' selected' : ''}>${s.name}</option>`).join('')}</select>`}</td>
         <td>${t.status === 'complete' ? `<span style="text-decoration:line-through;color:var(--faint)">${t.instructions}</span>` : t.instructions}</td>
+        <td><span style="display:inline-flex;align-items:center;gap:5px"><i style="display:inline-block;width:9px;height:9px;background:${categoryOf(t).color}"></i>${categoryOf(t).label}</span></td>
         <td class="dim">${t.recurring && t.recurring !== 'none' ? t.recurring : '—'}</td>
         <td style="text-align:right;white-space:nowrap">
           ${t.status === 'complete'
@@ -263,13 +291,14 @@ function render() {
         <td class="mono" style="${overdue ? 'color:var(--alertTx);font-weight:700' : ''}">${formatDate(r.due_date)}${overdue ? ' · overdue' : ''}</td>
         <td><select class="inp review-assignee-select" data-emp="${r.empId}" data-milestone="${r.milestone}" style="height:32px;font-size:12.5px"><option value="">Unassigned</option>${staff.map((s) => `<option value="${s.id}"${s.id === r.assigned_to ? ' selected' : ''}>${s.name}</option>`).join('')}</select></td>
         <td>${r.milestone}-day review — ${name}</td>
+        <td><span style="display:inline-flex;align-items:center;gap:5px"><i style="display:inline-block;width:9px;height:9px;background:#7C5CBF"></i>Review</span></td>
         <td class="dim">—</td>
         <td style="text-align:right;white-space:nowrap"><a class="gh solid" href="docgen.html?open=review&emp=${r.empId}&milestone=${r.milestone}" style="text-decoration:none;display:inline-block">Submit review →</a></td>
       </tr>
     `;
   }).join('');
 
-  document.getElementById('rows').innerHTML = (taskRows + reviewRows) || '<tr><td colspan="5" class="dim">No tasks match.</td></tr>';
+  document.getElementById('rows').innerHTML = (taskRows + reviewRows) || '<tr><td colspan="6" class="dim">No tasks match.</td></tr>';
 
   document.querySelectorAll('.complete-btn').forEach((btn) => {
     btn.addEventListener('click', () => completeTask(btn.dataset.id));
@@ -312,10 +341,10 @@ function renderToday() {
 
   function taskRow(t) {
     return `
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0 9px 8px;border-bottom:1px solid var(--line);border-left:3px solid ${categoryOf(t).color}">
         <div>
           <div style="font-size:13px">${escapeAttr(t.instructions)}</div>
-          <div class="dim" style="font-size:11px;margin-top:2px">${escapeAttr(staffName(t.assigned_to))}${t.due_date < todayStr ? ` · <span style="color:var(--alertTx);font-weight:600">overdue, was due ${formatDate(t.due_date)}</span>` : ''}</div>
+          <div class="dim" style="font-size:11px;margin-top:2px">${escapeAttr(categoryOf(t).label)} · ${escapeAttr(staffName(t.assigned_to))}${t.due_date < todayStr ? ` · <span style="color:var(--alertTx);font-weight:600">overdue, was due ${formatDate(t.due_date)}</span>` : ''}</div>
         </div>
         ${t.linked_doc_id
           ? `<button class="gh solid today-open-doc-btn" data-id="${t.id}" data-doc="${t.linked_doc_id}" data-type="${t.linked_doc_type}" type="button" style="flex-shrink:0">Open document</button>`
@@ -536,7 +565,8 @@ function renderCalendar() {
       const style = t.status === 'complete'
         ? 'text-decoration:line-through;color:var(--faint)'
         : overdue ? 'color:var(--alertTx);font-weight:600' : 'color:var(--text)';
-      return `<div class="cal-task" data-id="${t.id}" style="${style};cursor:pointer;font-size:11px;padding:2px 4px;margin-top:2px;border-left:2px solid ${t.status === 'complete' ? 'var(--faint)' : overdue ? 'var(--alertTx)' : 'var(--accent)'}" title="${escapeAttr(staffName(t.assigned_to))} — click to ${t.linked_doc_id ? 'open the document' : t.status === 'complete' ? 'reopen' : 'complete'}">${escapeAttr(t.instructions).slice(0, 40)}${t.instructions.length > 40 ? '…' : ''}</div>`;
+      const borderColor = t.status === 'complete' ? 'var(--faint)' : categoryOf(t).color;
+      return `<div class="cal-task" data-id="${t.id}" style="${style};cursor:pointer;font-size:11px;padding:2px 4px;margin-top:2px;border-left:2px solid ${borderColor}" title="${escapeAttr(staffName(t.assigned_to))} — ${escapeAttr(categoryOf(t).label)} — click to ${t.linked_doc_id ? 'open the document' : t.status === 'complete' ? 'reopen' : 'complete'}">${escapeAttr(t.instructions).slice(0, 40)}${t.instructions.length > 40 ? '…' : ''}</div>`;
     }).join('');
     const dayReviews = reviewsByDay[day] || [];
     const reviewChips = dayReviews.map((r) => {
@@ -679,6 +709,7 @@ document.getElementById('task-form').addEventListener('submit', async (e) => {
       assigned_to: document.getElementById('assignee').value,
       due_date: document.getElementById('due-date').value,
       instructions: document.getElementById('instructions').value.trim(),
+      category: document.getElementById('category').value,
       recurring: document.getElementById('recurring').value,
       status: 'open',
       entered_by: profile.uid,
