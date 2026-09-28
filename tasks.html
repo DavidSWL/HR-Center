@@ -40,6 +40,7 @@
         <div class="tab active" data-tab="open">Open tasks</div>
         <div class="tab" data-tab="weekly">Weekly focus</div>
         <div class="tab" data-tab="assign">Assign task</div>
+        <div class="tab" data-tab="appt">Add appointment</div>
       </div>
 
       <div id="top-tab-weekly" hidden>
@@ -87,6 +88,7 @@
               <div class="field">
                 <label class="f-lab" for="category">Category</label>
                 <select class="f-in" id="category"></select>
+                <button type="button" class="gh" id="manage-categories-toggle" style="margin-top:6px;font-size:11px;padding:3px 8px">Manage categories</button>
               </div>
               <div class="field">
                 <label class="f-lab" for="recurring">Recurring</label>
@@ -99,6 +101,56 @@
               </div>
             </div>
             <button type="submit" class="gh solid">Assign</button>
+          </form>
+          <div id="manage-categories-panel" hidden style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line)">
+            <div style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:8px">Categories</div>
+            <div id="category-manage-rows"></div>
+            <div class="frow" style="margin-top:10px;align-items:flex-end">
+              <div class="field">
+                <label class="f-lab" for="new-category-label">New category</label>
+                <input class="f-in" id="new-category-label" placeholder="e.g. Seminar">
+              </div>
+              <div class="field" style="max-width:90px">
+                <label class="f-lab" for="new-category-color">Color</label>
+                <input type="color" id="new-category-color" value="#6B7280" style="width:100%;height:38px;padding:2px;border:1px solid var(--edge);background:var(--bg)">
+              </div>
+            </div>
+            <button type="button" class="gh" id="add-category-btn" style="margin-top:8px">Add category</button>
+          </div>
+        </div>
+      </div>
+      </div>
+
+      <div id="top-tab-appt" hidden>
+      <div class="card">
+        <div class="card-h"><h3>Add a calendar appointment</h3><span>Interviews, meetings — anything time-based that isn't a task someone completes</span></div>
+        <div class="card-body">
+          <form id="appt-form">
+            <div class="field">
+              <label class="f-lab" for="appt-title">Title</label>
+              <input class="f-in" id="appt-title" required placeholder="e.g. Interview — Landscaper 2 candidate">
+            </div>
+            <div class="frow">
+              <div class="field">
+                <label class="f-lab" for="appt-date">Date</label>
+                <input class="f-in" id="appt-date" type="date" required>
+              </div>
+              <div class="field">
+                <label class="f-lab" for="appt-time">Time (optional)</label>
+                <input class="f-in" id="appt-time" type="time">
+              </div>
+            </div>
+            <div class="frow">
+              <div class="field">
+                <label class="f-lab" for="appt-category">Category</label>
+                <select class="f-in" id="appt-category"></select>
+              </div>
+              <div class="field">
+                <label class="f-lab" for="appt-who">Who (optional)</label>
+                <select class="f-in" id="appt-who"><option value="">Unassigned</option></select>
+              </div>
+            </div>
+            <button type="submit" class="gh solid">Add appointment</button>
           </form>
         </div>
       </div>
@@ -150,7 +202,7 @@ import { requireAuth } from './auth.js';
 import { initShell, showToast, formatDate } from './app.js';
 import { db } from './firebaseconfig.js';
 import {
-  collection, collectionGroup, doc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, serverTimestamp,
+  collection, collectionGroup, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const profile = await requireAuth();
@@ -164,30 +216,146 @@ const canDeleteTasks = profile.role === 'david' || profile.role === 'tanya';
 document.getElementById('header-date').textContent =
   new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
 
-// Task categories, colored like an Outlook category tag -- shown as
-// the chip's left border on the Calendar and Today views. Deliberately
-// no green or red in this palette: green is the Oregon brand accent
-// and red means overdue/at-risk specifically, both used elsewhere on
-// this same calendar, so a category color never gets confused with
-// either. 30/60/90 reviews keep their own established purple and
-// aren't part of this list -- they're a fixed type, not a pick.
-const CATEGORIES = {
-  interview: { label: 'Interview', color: '#2E5AA8' },
-  meeting: { label: 'Team meeting', color: '#A6467E' },
-  deadline: { label: 'Deadline', color: '#C2703A' },
-  general: { label: 'General', color: '#6B7280' },
-};
-function categoryOf(t) { return CATEGORIES[t.category] || CATEGORIES.general; }
-document.getElementById('category').innerHTML = Object.entries(CATEGORIES)
-  .map(([key, c]) => `<option value="${key}"${key === 'general' ? ' selected' : ''}>${c.label}</option>`).join('');
-document.getElementById('cal-legend').innerHTML = Object.values(CATEGORIES)
-  .map((c) => `<span style="display:flex;align-items:center;gap:5px"><i style="display:inline-block;width:10px;height:10px;background:${c.color}"></i>${c.label}</span>`).join('')
-  + `<span style="display:flex;align-items:center;gap:5px"><i style="display:inline-block;width:10px;height:10px;background:#7C5CBF"></i>Review</span>`;
+// Task categories -- colored like an Outlook category tag, filled solid
+// (not just a border) on the Calendar and Today views, same as Outlook's
+// own agenda. User-managed (add/retire, own color) via "Manage
+// categories" on the Assign task tab, backed by settings/task_categories
+// -- same shape every other managed list in Settings already uses
+// (values: [{label, active}]), just with a color added. Seeded once
+// with four defaults the first time this loads.
+let taskCategories = [];
+const DEFAULT_CATEGORIES = [
+  { label: 'Interview', color: '#2E5AA8', active: true },
+  { label: 'Team meeting', color: '#A6467E', active: true },
+  { label: 'Deadline', color: '#C2703A', active: true },
+  { label: 'General', color: '#6B7280', active: true },
+];
+
+// Readable text color for a solid-filled chip -- simple perceived-
+// brightness check, not full contrast math, but enough for a filled
+// chip with its own border.
+function textColorFor(hex) {
+  const h = (hex || '#6B7280').replace('#', '');
+  const r = parseInt(h.substr(0, 2), 16), g = parseInt(h.substr(2, 2), 16), b = parseInt(h.substr(4, 2), 16);
+  const brightness = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return brightness > 0.6 ? '#12150F' : '#FFFFFF';
+}
+// Blocks a category color from landing in the two reserved hue bands --
+// red (overdue/at-risk, used nowhere else in this app) and green (the
+// Oregon brand accent, used nowhere else) -- so a category swatch can
+// never be mistaken for either. Grays/near-neutrals always pass.
+function hueOf(hex) {
+  const h = (hex || '').replace('#', '');
+  const r = parseInt(h.substr(0, 2), 16) / 255, g = parseInt(h.substr(2, 2), 16) / 255, b = parseInt(h.substr(4, 2), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  if (d < 0.08) return null;
+  let hue;
+  if (max === r) hue = ((g - b) / d + (g < b ? 6 : 0));
+  else if (max === g) hue = (b - r) / d + 2;
+  else hue = (r - g) / d + 4;
+  return hue * 60;
+}
+function isReservedHue(hex) {
+  const hue = hueOf(hex);
+  return hue !== null && (hue <= 15 || hue >= 345 || (hue >= 85 && hue <= 155));
+}
+
+function categoryByLabel(label) {
+  return taskCategories.find((c) => c.label === label);
+}
+function categoryOf(t) {
+  const c = categoryByLabel(t.category) || { label: t.category || 'Uncategorized', color: '#6B7280' };
+  return { ...c, tx: textColorFor(c.color) };
+}
+const REVIEW_COLOR = '#7C5CBF';
+
+async function loadTaskCategories() {
+  const snap = await getDoc(doc(db, 'settings', 'task_categories'));
+  if (snap.exists() && (snap.data().values || []).length) {
+    taskCategories = snap.data().values;
+  } else {
+    taskCategories = DEFAULT_CATEGORIES.map((c) => ({ ...c }));
+    await setDoc(doc(db, 'settings', 'task_categories'), { values: taskCategories, entered_by: profile.uid, updated_at: serverTimestamp() });
+  }
+  populateCategorySelects();
+  renderCategoryLegend();
+  renderManageCategories();
+}
+async function saveTaskCategories() {
+  await setDoc(doc(db, 'settings', 'task_categories'), { values: taskCategories, entered_by: profile.uid, updated_at: serverTimestamp() });
+}
+function populateCategorySelects() {
+  const options = taskCategories.filter((c) => c.active !== false)
+    .map((c) => `<option value="${escapeAttr(c.label)}"${c.label === 'General' ? ' selected' : ''}>${escapeAttr(c.label)}</option>`).join('');
+  ['category', 'appt-category'].forEach((id) => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = options;
+    if (taskCategories.some((c) => c.label === current)) sel.value = current;
+  });
+}
+function renderCategoryLegend() {
+  document.getElementById('cal-legend').innerHTML = taskCategories.filter((c) => c.active !== false)
+    .map((c) => `<span style="display:flex;align-items:center;gap:5px"><i style="display:inline-block;width:10px;height:10px;background:${c.color}"></i>${escapeAttr(c.label)}</span>`).join('')
+    + `<span style="display:flex;align-items:center;gap:5px"><i style="display:inline-block;width:10px;height:10px;background:${REVIEW_COLOR}"></i>Review</span>`;
+}
+function renderManageCategories() {
+  document.getElementById('category-manage-rows').innerHTML = taskCategories.map((c, i) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)">
+      <i style="display:inline-block;width:14px;height:14px;background:${c.color};flex-shrink:0"></i>
+      <span style="flex:1;font-size:12.5px;${c.active === false ? 'color:var(--faint);text-decoration:line-through' : ''}">${escapeAttr(c.label)}</span>
+      <button type="button" class="gh toggle-category-btn" data-i="${i}" style="font-size:11px;padding:2px 8px">${c.active === false ? 'Reactivate' : 'Retire'}</button>
+    </div>
+  `).join('');
+  document.querySelectorAll('.toggle-category-btn').forEach((btn) => {
+    btn.addEventListener('click', () => toggleCategoryActive(parseInt(btn.dataset.i, 10)));
+  });
+}
+async function toggleCategoryActive(i) {
+  taskCategories[i].active = taskCategories[i].active === false ? true : false;
+  try {
+    await saveTaskCategories();
+    populateCategorySelects();
+    renderCategoryLegend();
+    renderManageCategories();
+    renderCalendar();
+    renderToday();
+    showToast('Updated.');
+  } catch (err) {
+    console.error(err);
+    showToast('Could not update — ' + err.message, 'error');
+  }
+}
+document.getElementById('manage-categories-toggle').addEventListener('click', () => {
+  const panel = document.getElementById('manage-categories-panel');
+  panel.hidden = !panel.hidden;
+});
+document.getElementById('add-category-btn').addEventListener('click', async () => {
+  const label = document.getElementById('new-category-label').value.trim();
+  const color = document.getElementById('new-category-color').value;
+  if (!label) { showToast('Enter a name.', 'error'); return; }
+  if (taskCategories.some((c) => c.label.toLowerCase() === label.toLowerCase())) { showToast('That category already exists.', 'error'); return; }
+  if (isReservedHue(color)) { showToast('Pick a different color — red means overdue and green is the Oregon brand color, so neither is available for a category.', 'error'); return; }
+  taskCategories.push({ label, color, active: true });
+  try {
+    await saveTaskCategories();
+    document.getElementById('new-category-label').value = '';
+    populateCategorySelects();
+    renderCategoryLegend();
+    renderManageCategories();
+    showToast('Category added.');
+  } catch (err) {
+    console.error(err);
+    showToast('Could not add — ' + err.message, 'error');
+  }
+});
 
 let staff = [];
 let tasks = [];
 let employees = [];
 let pendingReviews = []; // 30/60/90 reviews still due — shown on the calendar and mixed into the tasks list below, but never written as their own task doc
+let calendarEvents = []; // plain time-based entries -- interviews, meetings -- no assignee/completion workflow of their own
 const todayStr = new Date().toISOString().slice(0, 10);
 
 function staffName(uid) {
@@ -226,6 +394,7 @@ async function loadStaff() {
   const options = staff.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
   document.getElementById('assignee').innerHTML = options;
   document.getElementById('person-filter').innerHTML = '<option value="">Everyone</option>' + options;
+  document.getElementById('appt-who').innerHTML = '<option value="">Unassigned</option>' + options;
 }
 
 async function loadTasks() {
@@ -236,6 +405,50 @@ async function loadTasks() {
   render();
   renderCalendar();
   renderToday();
+}
+
+async function loadCalendarEvents() {
+  const snap = await getDocs(collection(db, 'calendar_events'));
+  calendarEvents = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.time || '').localeCompare(b.time || ''));
+  renderCalendar();
+  renderToday();
+}
+
+document.getElementById('appt-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await addDoc(collection(db, 'calendar_events'), {
+      title: document.getElementById('appt-title').value.trim(),
+      date: document.getElementById('appt-date').value,
+      time: document.getElementById('appt-time').value || null,
+      category: document.getElementById('appt-category').value,
+      who: document.getElementById('appt-who').value || null,
+      entered_by: profile.uid,
+      entered_at: serverTimestamp(),
+    });
+    document.getElementById('appt-form').reset();
+    showToast('Appointment added.');
+    await loadCalendarEvents();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not add — ' + err.message, 'error');
+  }
+});
+
+async function deleteCalendarEvent(id) {
+  const ev = calendarEvents.find((x) => x.id === id);
+  if (!ev) return;
+  if (!confirm(`Remove this appointment?\n\n"${ev.title}"`)) return;
+  try {
+    await deleteDoc(doc(db, 'calendar_events', id));
+    showToast('Removed.');
+    await loadCalendarEvents();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not remove — ' + err.message, 'error');
+  }
 }
 
 function render() {
@@ -336,41 +549,67 @@ function renderToday() {
     .sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''));
   const dueTodayReviews = reviewsFiltered.filter((r) => r.due_date === todayStr);
 
+  const todaysEvents = calendarEvents.filter((ev) => ev.date === todayStr && (!personFilter || !ev.who || ev.who === personFilter));
+
   const todayCount = dueTodayTasks.length + dueTodayReviews.length;
   const overdueCount = overdueTasks.length + overdueReviews.length;
 
+  // Full-color chip, same look as Outlook's own day agenda -- the fill
+  // is the category (or the review purple), overdue adds a red ring
+  // around the whole chip rather than recoloring it, so red still only
+  // ever means "late," never a category.
   function taskRow(t) {
+    const overdue = t.due_date < todayStr;
+    const cat = categoryOf(t);
     return `
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0 9px 8px;border-bottom:1px solid var(--line);border-left:3px solid ${categoryOf(t).color}">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;margin-top:6px;border-radius:3px;background:${cat.color};color:${cat.tx};${overdue ? 'box-shadow:inset 0 0 0 2px var(--alertTx)' : ''}">
         <div>
           <div style="font-size:13px">${escapeAttr(t.instructions)}</div>
-          <div class="dim" style="font-size:11px;margin-top:2px">${escapeAttr(categoryOf(t).label)} · ${escapeAttr(staffName(t.assigned_to))}${t.due_date < todayStr ? ` · <span style="color:var(--alertTx);font-weight:600">overdue, was due ${formatDate(t.due_date)}</span>` : ''}</div>
+          <div style="font-size:11px;margin-top:2px;opacity:.85">${escapeAttr(cat.label)} · ${escapeAttr(staffName(t.assigned_to))}${overdue ? ` · overdue, was due ${formatDate(t.due_date)}` : ''}</div>
         </div>
         ${t.linked_doc_id
           ? `<button class="gh solid today-open-doc-btn" data-id="${t.id}" data-doc="${t.linked_doc_id}" data-type="${t.linked_doc_type}" type="button" style="flex-shrink:0">Open document</button>`
-          : `<button class="gh today-complete-btn" data-id="${t.id}" type="button" style="flex-shrink:0">Complete</button>`}
+          : `<button class="gh today-complete-btn" data-id="${t.id}" type="button" style="flex-shrink:0;background:var(--bg)">Complete</button>`}
       </div>
     `;
   }
   function reviewRow(r) {
     const emp = empById(r.empId);
     const name = emp ? `${emp.first_name} ${emp.last_name}` : r.empId;
+    const overdue = r.due_date < todayStr;
+    const tx = textColorFor(REVIEW_COLOR);
     return `
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0 9px 8px;border-bottom:1px solid var(--line);border-left:3px solid #7C5CBF">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;margin-top:6px;border-radius:3px;background:${REVIEW_COLOR};color:${tx};${overdue ? 'box-shadow:inset 0 0 0 2px var(--alertTx)' : ''}">
         <div>
           <div style="font-size:13px">${r.milestone}-day review — ${escapeAttr(name)}</div>
-          <div class="dim" style="font-size:11px;margin-top:2px">${escapeAttr(staffName(r.assigned_to))}${r.due_date < todayStr ? ` · <span style="color:var(--alertTx);font-weight:600">overdue, was due ${formatDate(r.due_date)}</span>` : ''}</div>
+          <div style="font-size:11px;margin-top:2px;opacity:.85">${escapeAttr(staffName(r.assigned_to))}${overdue ? ` · overdue, was due ${formatDate(r.due_date)}` : ''}</div>
         </div>
-        <a class="gh solid" href="docgen.html?open=review&emp=${r.empId}&milestone=${r.milestone}" style="text-decoration:none;flex-shrink:0">Submit review &rarr;</a>
+        <a class="gh solid" href="docgen.html?open=review&emp=${r.empId}&milestone=${r.milestone}" style="text-decoration:none;flex-shrink:0;background:var(--bg)">Submit review &rarr;</a>
+      </div>
+    `;
+  }
+  function eventRow(ev) {
+    const cat = categoryOf(ev);
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;margin-top:6px;border-radius:3px;background:${cat.color};color:${cat.tx}">
+        <div>
+          <div style="font-size:13px">${ev.time ? `${formatTime(ev.time)} — ` : ''}${escapeAttr(ev.title)}</div>
+          <div style="font-size:11px;margin-top:2px;opacity:.85">${escapeAttr(cat.label)}${ev.who ? ' · ' + escapeAttr(staffName(ev.who)) : ''}</div>
+        </div>
+        ${canDeleteTasks ? `<button class="gh today-delete-event-btn" data-id="${ev.id}" type="button" style="flex-shrink:0;background:var(--bg)">Remove</button>` : ''}
       </div>
     `;
   }
 
   const parts = [];
-  parts.push(`<p class="dim" style="font-size:12.5px;margin:0 0 12px">${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} — ${todayCount} due today${overdueCount ? `, ${overdueCount} overdue` : ''}.</p>`);
+  parts.push(`<p class="dim" style="font-size:12.5px;margin:0 0 12px">${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} — ${todayCount} due today${overdueCount ? `, ${overdueCount} overdue` : ''}${todaysEvents.length ? `, ${todaysEvents.length} appointment${todaysEvents.length === 1 ? '' : 's'}` : ''}.</p>`);
   if (overdueCount) {
     parts.push(`<div style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--alertTx);margin-bottom:2px">Overdue</div>`);
     parts.push(overdueTasks.map(taskRow).join('') + overdueReviews.map(reviewRow).join(''));
+  }
+  if (todaysEvents.length) {
+    parts.push(`<div style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin:14px 0 2px">Today's appointments</div>`);
+    parts.push(todaysEvents.map(eventRow).join(''));
   }
   parts.push(`<div style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin:14px 0 2px">Due today</div>`);
   parts.push(todayCount
@@ -385,6 +624,9 @@ function renderToday() {
     btn.addEventListener('click', () => {
       window.location.href = linkedDocUrl(btn.dataset.type, btn.dataset.doc, btn.dataset.id);
     });
+  });
+  document.querySelectorAll('.today-delete-event-btn').forEach((btn) => {
+    btn.addEventListener('click', () => deleteCalendarEvent(btn.dataset.id));
   });
 }
 
@@ -468,6 +710,7 @@ document.querySelectorAll('#top-tabs .tab').forEach((btn) => {
     document.getElementById('top-tab-open').hidden = btn.dataset.tab !== 'open';
     document.getElementById('top-tab-weekly').hidden = btn.dataset.tab !== 'weekly';
     document.getElementById('top-tab-assign').hidden = btn.dataset.tab !== 'assign';
+    document.getElementById('top-tab-appt').hidden = btn.dataset.tab !== 'appt';
   });
 });
 document.querySelectorAll('#view-tabs .tab').forEach((btn) => {
@@ -537,6 +780,13 @@ function renderCalendar() {
     return y === year && (m - 1) === month;
   });
 
+  const monthEvents = calendarEvents.filter((ev) => {
+    if (personFilter && ev.who && ev.who !== personFilter) return false;
+    if (!ev.date) return false;
+    const [y, m] = ev.date.split('-').map(Number);
+    return y === year && (m - 1) === month;
+  });
+
   const byDay = {};
   monthTasks.forEach((t) => {
     const day = Number(t.due_date.split('-')[2]);
@@ -546,6 +796,11 @@ function renderCalendar() {
   monthReviews.forEach((r) => {
     const day = Number(r.due_date.split('-')[2]);
     (reviewsByDay[day] = reviewsByDay[day] || []).push(r);
+  });
+  const eventsByDay = {};
+  monthEvents.forEach((ev) => {
+    const day = Number(ev.date.split('-')[2]);
+    (eventsByDay[day] = eventsByDay[day] || []).push(ev);
   });
 
   const firstWeekday = new Date(year, month, 1).getDay();
@@ -562,11 +817,11 @@ function renderCalendar() {
     const dayTasks = byDay[day] || [];
     const chips = dayTasks.map((t) => {
       const overdue = t.status !== 'complete' && t.due_date < todayStr;
-      const style = t.status === 'complete'
-        ? 'text-decoration:line-through;color:var(--faint)'
-        : overdue ? 'color:var(--alertTx);font-weight:600' : 'color:var(--text)';
-      const borderColor = t.status === 'complete' ? 'var(--faint)' : categoryOf(t).color;
-      return `<div class="cal-task" data-id="${t.id}" style="${style};cursor:pointer;font-size:11px;padding:2px 4px;margin-top:2px;border-left:2px solid ${borderColor}" title="${escapeAttr(staffName(t.assigned_to))} — ${escapeAttr(categoryOf(t).label)} — click to ${t.linked_doc_id ? 'open the document' : t.status === 'complete' ? 'reopen' : 'complete'}">${escapeAttr(t.instructions).slice(0, 40)}${t.instructions.length > 40 ? '…' : ''}</div>`;
+      const cat = categoryOf(t);
+      const fill = t.status === 'complete'
+        ? `background:var(--panel);color:var(--faint);text-decoration:line-through`
+        : `background:${cat.color};color:${cat.tx};${overdue ? 'box-shadow:inset 0 0 0 2px var(--alertTx)' : ''}`;
+      return `<div class="cal-task" data-id="${t.id}" style="${fill};cursor:pointer;font-size:11px;padding:2px 5px;margin-top:2px;border-radius:2px" title="${escapeAttr(staffName(t.assigned_to))} — ${escapeAttr(cat.label)}${overdue ? ' — overdue' : ''} — click to ${t.linked_doc_id ? 'open the document' : t.status === 'complete' ? 'reopen' : 'complete'}">${escapeAttr(t.instructions).slice(0, 40)}${t.instructions.length > 40 ? '…' : ''}</div>`;
     }).join('');
     const dayReviews = reviewsByDay[day] || [];
     const reviewChips = dayReviews.map((r) => {
@@ -574,13 +829,21 @@ function renderCalendar() {
       const overdue = r.due_date < todayStr;
       const name = emp ? `${emp.first_name} ${emp.last_name}` : r.empId;
       const label = `${r.milestone}-day review — ${name}`;
-      return `<div class="cal-review" style="color:${overdue ? 'var(--alertTx)' : 'var(--text)'};font-weight:${overdue ? 600 : 400};cursor:pointer;font-size:11px;padding:2px 4px;margin-top:2px;border-left:2px solid #7C5CBF" title="${escapeAttr(staffName(r.assigned_to))} — click to open Reviews">${escapeAttr(label).slice(0, 40)}${label.length > 40 ? '…' : ''}</div>`;
+      return `<div class="cal-review" style="background:${REVIEW_COLOR};color:${textColorFor(REVIEW_COLOR)};${overdue ? 'box-shadow:inset 0 0 0 2px var(--alertTx)' : ''};cursor:pointer;font-size:11px;padding:2px 5px;margin-top:2px;border-radius:2px" title="${escapeAttr(staffName(r.assigned_to))}${overdue ? ' — overdue' : ''} — click to open Reviews">${escapeAttr(label).slice(0, 40)}${label.length > 40 ? '…' : ''}</div>`;
+    }).join('');
+    const dayEvents = eventsByDay[day] || [];
+    const eventChips = dayEvents.map((ev) => {
+      const cat = categoryOf(ev);
+      const timeLabel = ev.time ? formatTime(ev.time) + ' — ' : '';
+      const label = `${timeLabel}${ev.title}`;
+      return `<div class="cal-event" data-id="${ev.id}" style="background:${cat.color};color:${cat.tx};cursor:${canDeleteTasks ? 'pointer' : 'default'};font-size:11px;padding:2px 5px;margin-top:2px;border-radius:2px" title="${escapeAttr(cat.label)}${ev.who ? ' — ' + escapeAttr(staffName(ev.who)) : ''}${canDeleteTasks ? ' — click to remove' : ''}">${escapeAttr(label).slice(0, 40)}${label.length > 40 ? '…' : ''}</div>`;
     }).join('');
     cells.push(`
       <div style="background:var(--raise);border:1px solid var(--line);min-height:88px;padding:5px 6px;${isToday ? 'box-shadow:inset 0 0 0 2px var(--accent)' : ''}">
         <div style="font-family:var(--mono);font-size:11px;color:${isToday ? 'var(--accentTx)' : 'var(--faint)'};font-weight:${isToday ? 700 : 400}">${day}</div>
         ${chips}
         ${reviewChips}
+        ${eventChips}
       </div>
     `);
   }
@@ -596,6 +859,20 @@ function renderCalendar() {
   document.querySelectorAll('.cal-review').forEach((el) => {
     el.addEventListener('click', () => { window.location.href = 'reviews.html'; });
   });
+  if (canDeleteTasks) {
+    document.querySelectorAll('.cal-event').forEach((el) => {
+      el.addEventListener('click', () => deleteCalendarEvent(el.dataset.id));
+    });
+  }
+}
+
+// "14:30" -> "2:30 PM" -- appointments are stored 24-hour (native
+// <input type="time">), shown 12-hour everywhere they're read.
+function formatTime(t) {
+  const [h, m] = t.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
 }
 
 function escapeAttr(str) {
@@ -726,8 +1003,10 @@ document.getElementById('task-form').addEventListener('submit', async (e) => {
 
 await loadStaff();
 await loadEmployees();
+await loadTaskCategories();
 await loadPendingReviews();
 await loadTasks();
+await loadCalendarEvents();
 await loadWeeklyUpdates();
 </script>
 </body>

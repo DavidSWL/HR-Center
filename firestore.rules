@@ -389,6 +389,16 @@ service cloud.firestore {
       }
     }
 
+    // ---- calendar appointments -------------------------------------------
+    // Plain time-based entries (interviews, meetings) shown on the Tasks
+    // calendar alongside tasks and reviews -- no assignee/completion
+    // workflow of their own, just a title, date, and optional time.
+    match /calendar_events/{eventId} {
+      allow read: if isHrUser();
+      allow create, update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if canDeleteTasks();
+    }
+
     // ---- weekly focus / recap -------------------------------------------
     // One shared doc per week (id = that week's Monday), so David and Tanya
     // always have a place to see where the other left off. The current
