@@ -152,6 +152,21 @@
             </div>
             <button type="submit" class="gh solid">Add appointment</button>
           </form>
+          <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line)">
+            <div style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:4px">Import from Outlook</div>
+            <p style="font-size:12px;color:var(--faint);margin:0 0 10px">No live sync — export an .ics file from Outlook and upload it here whenever you want the calendar refreshed. Re-uploading updates anything that changed and removes upcoming events that are no longer on your Outlook calendar. Past events are left alone.</p>
+            <div class="frow" style="align-items:flex-end">
+              <div class="field">
+                <label class="f-lab" for="ics-file-input">Outlook file (.ics)</label>
+                <input class="f-in" id="ics-file-input" type="file" accept=".ics">
+              </div>
+              <div class="field">
+                <label class="f-lab" for="ics-category">Category</label>
+                <select class="f-in" id="ics-category"></select>
+              </div>
+            </div>
+            <button type="button" class="gh" id="ics-import-btn" style="margin-top:8px">Import</button>
+          </div>
         </div>
       </div>
       </div>
@@ -287,7 +302,7 @@ async function saveTaskCategories() {
 function populateCategorySelects() {
   const options = taskCategories.filter((c) => c.active !== false)
     .map((c) => `<option value="${escapeAttr(c.label)}"${c.label === 'General' ? ' selected' : ''}>${escapeAttr(c.label)}</option>`).join('');
-  ['category', 'appt-category'].forEach((id) => {
+  ['category', 'appt-category', 'ics-category'].forEach((id) => {
     const sel = document.getElementById(id);
     if (!sel) return;
     const current = sel.value;
@@ -450,6 +465,94 @@ async function deleteCalendarEvent(id) {
     showToast('Could not remove — ' + err.message, 'error');
   }
 }
+
+// ---- Outlook .ics import -----------------------------------------------
+// No Cloud Function, no live sync -- David uploads an exported .ics file
+// by hand whenever he wants the calendar refreshed. Deterministic doc IDs
+// (from the event's ICS UID) mean re-importing updates existing events
+// instead of duplicating them, and upcoming events dropped from the file
+// get removed. Past events are never touched.
+function unfoldICS(text) {
+  return text.replace(/\r\n/g, '\n').replace(/\n[ \t]/g, '');
+}
+function unescapeICSText(s) {
+  return s.replace(/\\n/gi, ' ').replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\\\/g, '\\');
+}
+function parseICSDate(raw, allDay) {
+  const m = raw.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?/);
+  if (!m) return { date: null, time: null };
+  const [, y, mo, d, h, mi, s, z] = m;
+  if (allDay || !h) return { date: `${y}-${mo}-${d}`, time: null };
+  if (z) {
+    const dt = new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +(s || 0)));
+    return { date: dt.toISOString().slice(0, 10), time: dt.toTimeString().slice(0, 5) };
+  }
+  return { date: `${y}-${mo}-${d}`, time: `${h}:${mi}` }; // floating/local time, taken literally
+}
+function parseICS(text) {
+  const lines = unfoldICS(text).split('\n');
+  const raws = [];
+  let cur = null;
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (line === 'BEGIN:VEVENT') { cur = {}; continue; }
+    if (line === 'END:VEVENT') { if (cur) raws.push(cur); cur = null; continue; }
+    if (!cur) continue;
+    const idx = line.indexOf(':');
+    if (idx < 0) continue;
+    const rawKey = line.slice(0, idx);
+    const value = line.slice(idx + 1);
+    const key = rawKey.split(';')[0];
+    if (key === 'SUMMARY') cur.title = unescapeICSText(value);
+    else if (key === 'UID') cur.uid = value;
+    else if (key === 'DTSTART') { cur.dtstartRaw = value; cur.allDay = rawKey.includes('VALUE=DATE') && !rawKey.includes('VALUE=DATE-TIME'); }
+  }
+  return raws
+    .filter((e) => e.uid && e.dtstartRaw)
+    .map((e) => ({ uid: e.uid, title: e.title || '(untitled)', ...parseICSDate(e.dtstartRaw, e.allDay) }))
+    .filter((e) => e.date);
+}
+function hashUid(uid) {
+  let h = 5381;
+  for (let i = 0; i < uid.length; i++) h = ((h << 5) + h + uid.charCodeAt(i)) >>> 0;
+  return 'ol_' + h.toString(36);
+}
+
+document.getElementById('ics-import-btn').addEventListener('click', async () => {
+  const fileInput = document.getElementById('ics-file-input');
+  const file = fileInput.files[0];
+  if (!file) { showToast('Choose an .ics file first.', 'error'); return; }
+  const category = document.getElementById('ics-category').value;
+  try {
+    const text = await file.text();
+    const parsed = parseICS(text).filter((e) => e.date >= todayStr);
+    if (!parsed.length) { showToast('No upcoming events found in that file.', 'error'); return; }
+    const seenIds = new Set();
+    for (const ev of parsed) {
+      const id = hashUid(ev.uid);
+      seenIds.add(id);
+      await setDoc(doc(db, 'calendar_events', id), {
+        title: ev.title,
+        date: ev.date,
+        time: ev.time,
+        category,
+        who: null,
+        source: 'outlook',
+        outlookUid: ev.uid,
+        entered_by: profile.uid,
+        entered_at: serverTimestamp(),
+      });
+    }
+    const stale = calendarEvents.filter((x) => x.source === 'outlook' && x.date >= todayStr && !seenIds.has(x.id));
+    for (const s of stale) await deleteDoc(doc(db, 'calendar_events', s.id));
+    fileInput.value = '';
+    showToast(`Imported ${parsed.length} event${parsed.length === 1 ? '' : 's'}${stale.length ? `, removed ${stale.length} no longer on your calendar` : ''}.`);
+    await loadCalendarEvents();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not import — ' + err.message, 'error');
+  }
+});
 
 function render() {
   const personFilter = document.getElementById('person-filter').value;
