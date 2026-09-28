@@ -38,7 +38,30 @@
 
       <div class="tabs" id="top-tabs">
         <div class="tab active" data-tab="open">Open tasks</div>
+        <div class="tab" data-tab="weekly">Weekly focus</div>
         <div class="tab" data-tab="assign">Assign task</div>
+      </div>
+
+      <div id="top-tab-weekly" hidden>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>This week</h3><span id="weekly-current-range">—</span></div>
+        <div class="card-body">
+          <div class="field">
+            <label class="f-lab" for="weekly-recap">Recap — what happened this week / where we left off</label>
+            <textarea class="f-in" id="weekly-recap" rows="4" style="resize:vertical" placeholder="e.g. Two open reqs for Trees are stalled waiting on VP review. Sent the Q3 handbook update for signature, half the roster is done."></textarea>
+          </div>
+          <div class="field">
+            <label class="f-lab" for="weekly-focus">Focus for next week — upcoming issues, tasks, projects</label>
+            <textarea class="f-in" id="weekly-focus" rows="4" style="resize:vertical" placeholder="e.g. Follow up with VP on the two stalled reqs. Finish handbook signatures. Start the Landscape division's 90-day reviews due next Friday."></textarea>
+          </div>
+          <button class="gh solid" id="weekly-save-btn" type="button">Save</button>
+          <span class="dim" id="weekly-saved-note" style="margin-left:10px;font-size:11.5px"></span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Past weeks</h3><span id="weekly-history-summary">—</span></div>
+        <div class="card-body" id="weekly-history-body"></div>
+      </div>
       </div>
 
       <div id="top-tab-assign" hidden>
@@ -86,10 +109,14 @@
           </select>
         </div>
         <div class="tabs inner" id="view-tabs">
-          <div class="tab active" data-tab="calendar">Calendar</div>
+          <div class="tab active" data-tab="today">Today</div>
+          <div class="tab" data-tab="calendar">Calendar</div>
           <div class="tab" data-tab="list">List</div>
         </div>
-        <div id="cal-view">
+        <div id="today-view">
+          <div class="card-body" id="today-body"></div>
+        </div>
+        <div id="cal-view" hidden>
           <div class="tools" style="border-top:0">
             <button class="gh" id="cal-prev-btn" type="button">&larr;</button>
             <span id="cal-month-label" style="font-family:var(--display);font-size:15px;min-width:160px;text-align:center"></span>
@@ -181,6 +208,7 @@ async function loadTasks() {
     .sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''));
   render();
   renderCalendar();
+  renderToday();
 }
 
 function render() {
@@ -262,6 +290,75 @@ function render() {
   });
 }
 
+// ---- Today — a daily reminder digest: what's overdue (carries over
+// every day until it's actually done) and what's due today, tasks and
+// 30/60/90 reviews together, filtered the same way the Calendar/List
+// tabs are. Ignores the Open/All status toggle above -- a completed
+// item has nothing to remind anyone of, so it never belongs here.
+function renderToday() {
+  const personFilter = document.getElementById('person-filter').value;
+  const openTasksFiltered = tasks.filter((t) => t.status !== 'complete' && (!personFilter || t.assigned_to === personFilter));
+  const overdueTasks = openTasksFiltered.filter((t) => t.due_date && t.due_date < todayStr)
+    .sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''));
+  const dueTodayTasks = openTasksFiltered.filter((t) => t.due_date === todayStr);
+
+  const reviewsFiltered = pendingReviews.filter((r) => !personFilter || !r.assigned_to || r.assigned_to === personFilter);
+  const overdueReviews = reviewsFiltered.filter((r) => r.due_date < todayStr)
+    .sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''));
+  const dueTodayReviews = reviewsFiltered.filter((r) => r.due_date === todayStr);
+
+  const todayCount = dueTodayTasks.length + dueTodayReviews.length;
+  const overdueCount = overdueTasks.length + overdueReviews.length;
+
+  function taskRow(t) {
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)">
+        <div>
+          <div style="font-size:13px">${escapeAttr(t.instructions)}</div>
+          <div class="dim" style="font-size:11px;margin-top:2px">${escapeAttr(staffName(t.assigned_to))}${t.due_date < todayStr ? ` · <span style="color:var(--alertTx);font-weight:600">overdue, was due ${formatDate(t.due_date)}</span>` : ''}</div>
+        </div>
+        ${t.linked_doc_id
+          ? `<button class="gh solid today-open-doc-btn" data-id="${t.id}" data-doc="${t.linked_doc_id}" data-type="${t.linked_doc_type}" type="button" style="flex-shrink:0">Open document</button>`
+          : `<button class="gh today-complete-btn" data-id="${t.id}" type="button" style="flex-shrink:0">Complete</button>`}
+      </div>
+    `;
+  }
+  function reviewRow(r) {
+    const emp = empById(r.empId);
+    const name = emp ? `${emp.first_name} ${emp.last_name}` : r.empId;
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0 9px 8px;border-bottom:1px solid var(--line);border-left:3px solid #7C5CBF">
+        <div>
+          <div style="font-size:13px">${r.milestone}-day review — ${escapeAttr(name)}</div>
+          <div class="dim" style="font-size:11px;margin-top:2px">${escapeAttr(staffName(r.assigned_to))}${r.due_date < todayStr ? ` · <span style="color:var(--alertTx);font-weight:600">overdue, was due ${formatDate(r.due_date)}</span>` : ''}</div>
+        </div>
+        <a class="gh solid" href="docgen.html?open=review&emp=${r.empId}&milestone=${r.milestone}" style="text-decoration:none;flex-shrink:0">Submit review &rarr;</a>
+      </div>
+    `;
+  }
+
+  const parts = [];
+  parts.push(`<p class="dim" style="font-size:12.5px;margin:0 0 12px">${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} — ${todayCount} due today${overdueCount ? `, ${overdueCount} overdue` : ''}.</p>`);
+  if (overdueCount) {
+    parts.push(`<div style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--alertTx);margin-bottom:2px">Overdue</div>`);
+    parts.push(overdueTasks.map(taskRow).join('') + overdueReviews.map(reviewRow).join(''));
+  }
+  parts.push(`<div style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin:14px 0 2px">Due today</div>`);
+  parts.push(todayCount
+    ? dueTodayTasks.map(taskRow).join('') + dueTodayReviews.map(reviewRow).join('')
+    : '<p class="dim" style="font-size:12.5px;padding:6px 0">Nothing due today.</p>');
+
+  document.getElementById('today-body').innerHTML = parts.join('');
+  document.querySelectorAll('.today-complete-btn').forEach((btn) => {
+    btn.addEventListener('click', () => completeTask(btn.dataset.id));
+  });
+  document.querySelectorAll('.today-open-doc-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      window.location.href = linkedDocUrl(btn.dataset.type, btn.dataset.doc, btn.dataset.id);
+    });
+  });
+}
+
 async function reassignReview(empId, milestone, newUid) {
   try {
     await updateDoc(doc(db, 'employees', empId, 'reviews', milestone), { assigned_to: newUid, entered_by: profile.uid });
@@ -330,22 +427,24 @@ async function reassignTask(id, newUid) {
   }
 }
 
-document.getElementById('person-filter').addEventListener('change', () => { render(); renderCalendar(); });
+document.getElementById('person-filter').addEventListener('change', () => { render(); renderCalendar(); renderToday(); });
 document.getElementById('status-filter').addEventListener('change', render);
 
-// ---- Top-level tabs (Open tasks / Assign task) and, inside Open
-// tasks, the Calendar/List view tabs -- same pattern as ATS and the
-// Employee profile page. ----
+// ---- Top-level tabs (Open tasks / Weekly focus / Assign task) and,
+// inside Open tasks, the Today/Calendar/List view tabs -- same pattern
+// as ATS and the Employee profile page. ----
 document.querySelectorAll('#top-tabs .tab').forEach((btn) => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('#top-tabs .tab').forEach((b) => b.classList.toggle('active', b === btn));
     document.getElementById('top-tab-open').hidden = btn.dataset.tab !== 'open';
+    document.getElementById('top-tab-weekly').hidden = btn.dataset.tab !== 'weekly';
     document.getElementById('top-tab-assign').hidden = btn.dataset.tab !== 'assign';
   });
 });
 document.querySelectorAll('#view-tabs .tab').forEach((btn) => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('#view-tabs .tab').forEach((b) => b.classList.toggle('active', b === btn));
+    document.getElementById('today-view').hidden = btn.dataset.tab !== 'today';
     document.getElementById('cal-view').hidden = btn.dataset.tab !== 'calendar';
     document.getElementById('list-view').hidden = btn.dataset.tab !== 'list';
   });
@@ -500,6 +599,79 @@ async function toggleCalTask(id) {
   }
 }
 
+// ---- Weekly focus & recap — one shared entry per week (id = that
+// week's Monday) so David and Tanya always have a place to see where
+// the other left off: what happened, and what's next. Anyone can
+// amend the current week's entry as it goes; past weeks stay as a
+// running, read-only record underneath.
+let weeklyUpdates = [];
+
+function mondayOfStr(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const day = d.getDay();
+  d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
+  return d.toISOString().slice(0, 10);
+}
+function weekRangeLabel(weekStart) {
+  const start = new Date(weekStart + 'T00:00:00');
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${fmt(start)} – ${fmt(end)}${start.getFullYear() !== new Date().getFullYear() ? ', ' + start.getFullYear() : ''}`;
+}
+const currentWeekStart = mondayOfStr(todayStr);
+
+async function loadWeeklyUpdates() {
+  const snap = await getDocs(collection(db, 'weekly_updates'));
+  weeklyUpdates = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.week_start || '').localeCompare(a.week_start || ''));
+  renderWeeklyFocus();
+}
+
+function renderWeeklyFocus() {
+  document.getElementById('weekly-current-range').textContent = weekRangeLabel(currentWeekStart);
+  const current = weeklyUpdates.find((w) => w.week_start === currentWeekStart);
+  document.getElementById('weekly-recap').value = current?.recap || '';
+  document.getElementById('weekly-focus').value = current?.focus || '';
+  document.getElementById('weekly-saved-note').textContent = current
+    ? `Last updated by ${staffName(current.updated_by)}${current.updated_at?.toDate ? ' — ' + current.updated_at.toDate().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : ''}`
+    : 'Not started yet this week.';
+
+  const past = weeklyUpdates.filter((w) => w.week_start !== currentWeekStart);
+  document.getElementById('weekly-history-summary').textContent = `${past.length} past week${past.length === 1 ? '' : 's'} on file`;
+  document.getElementById('weekly-history-body').innerHTML = past.length ? past.map((w) => `
+    <div style="padding:12px 0;border-bottom:1px solid var(--line)">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+        <b style="font-size:13px">${weekRangeLabel(w.week_start)}</b>
+        <span class="dim" style="font-size:11px;white-space:nowrap">${escapeAttr(staffName(w.updated_by))}${w.updated_at?.toDate ? ' — ' + w.updated_at.toDate().toLocaleDateString('en-US', { dateStyle: 'medium' }) : ''}</span>
+      </div>
+      ${w.recap ? `<div style="margin-top:6px"><b class="dim" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em">Recap</b><div style="font-size:12.5px;white-space:pre-wrap;margin-top:2px">${escapeAttr(w.recap)}</div></div>` : ''}
+      ${w.focus ? `<div style="margin-top:6px"><b class="dim" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em">Focus</b><div style="font-size:12.5px;white-space:pre-wrap;margin-top:2px">${escapeAttr(w.focus)}</div></div>` : ''}
+      ${!w.recap && !w.focus ? '<div class="dim" style="font-size:12.5px;margin-top:4px">Nothing entered that week.</div>' : ''}
+    </div>
+  `).join('') : '<div class="dim" style="font-size:12.5px">Nothing on file from previous weeks yet.</div>';
+}
+
+document.getElementById('weekly-save-btn').addEventListener('click', async () => {
+  const recap = document.getElementById('weekly-recap').value.trim();
+  const focus = document.getElementById('weekly-focus').value.trim();
+  try {
+    await setDoc(doc(db, 'weekly_updates', currentWeekStart), {
+      week_start: currentWeekStart,
+      recap, focus,
+      updated_by: profile.uid,
+      updated_at: serverTimestamp(),
+      entered_by: profile.uid,
+    }, { merge: true });
+    showToast('Saved.');
+    await loadWeeklyUpdates();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+});
+
 document.getElementById('task-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
@@ -525,6 +697,7 @@ await loadStaff();
 await loadEmployees();
 await loadPendingReviews();
 await loadTasks();
+await loadWeeklyUpdates();
 </script>
 </body>
 </html>

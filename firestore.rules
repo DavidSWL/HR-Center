@@ -389,6 +389,18 @@ service cloud.firestore {
       }
     }
 
+    // ---- weekly focus / recap -------------------------------------------
+    // One shared doc per week (id = that week's Monday), so David and Tanya
+    // always have a place to see where the other left off. The current
+    // week's entry can be amended as the week goes; delete is off so past
+    // weeks stay on file as a running record, the same append-only spirit
+    // as task reassignments above.
+    match /weekly_updates/{weekId} {
+      allow read: if isHrUser();
+      allow create, update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+    }
+
     // ---- training ---------------------------------------------------------
     match /training_modules/{moduleId} {
       allow read: if isHrUser();
