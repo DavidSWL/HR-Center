@@ -60,6 +60,7 @@
         </div>
         <div class="card" id="headcount-card" style="margin:0 0 14px" hidden>
           <div class="card-h"><h3>Headcount by division</h3><span id="headcount-total"></span></div>
+          <label style="display:block;font-size:11px;font-weight:400;padding:10px 16px 0"><input type="checkbox" id="headcount-staff-only"> Field crew only — exclude client reps, operations managers, branch managers, supervisors, office manager, HR manager</label>
           <div id="headcount-rows"></div>
         </div>
         <table>
@@ -562,11 +563,25 @@ function render() {
   renderHeadcount();
 }
 
+// Position is free text (see populateDivisionOptions' note on division for
+// the same reasoning), so "exclude management" matches by keyword rather
+// than an exact title list — catches "Senior Client Rep", "Irrigation
+// Supervisor", etc. without needing every variant spelled out.
+const HEADCOUNT_EXCLUDED_ROLE_KEYWORDS = [
+  'client rep', 'operations manager', 'branch manager', 'supervisor', 'office manager', 'hr manager',
+];
+function isExcludedFromStaffHeadcount(position) {
+  const p = (position || '').toLowerCase();
+  return HEADCOUNT_EXCLUDED_ROLE_KEYWORDS.some((k) => p.includes(k));
+}
+
 // Always counts active + onboarding, non-test employees — independent of
 // whatever the search/filter row above is set to, so it reads as a real
 // headcount snapshot rather than a count of the current filtered view.
 function renderHeadcount() {
-  const active = allEmployees.filter((e) => e.status !== 'terminated' && !e.is_test);
+  const staffOnly = document.getElementById('headcount-staff-only').checked;
+  let active = allEmployees.filter((e) => e.status !== 'terminated' && !e.is_test);
+  if (staffOnly) active = active.filter((e) => !isExcludedFromStaffHeadcount(e.position));
   const byDivision = {};
   active.forEach((e) => {
     const d = e.division || 'Unspecified';
@@ -574,15 +589,18 @@ function renderHeadcount() {
   });
   const pairs = Object.entries(byDivision).sort((a, b) => b[1] - a[1]);
   const max = pairs.length ? pairs[0][1] : 1;
-  document.getElementById('headcount-total').textContent = `${active.length} total`;
+  document.getElementById('headcount-total').textContent = staffOnly
+    ? `${active.length} field crew`
+    : `${active.length} total`;
   document.getElementById('headcount-rows').innerHTML = pairs.length ? pairs.map(([d, c]) => `
     <div class="rowbar">
       <div class="l">${d}</div>
       <div class="trk"><i style="width:${(c / max) * 100}%"></i></div>
       <div class="mono" style="text-align:right">${c}</div>
     </div>
-  `).join('') : '<div class="card-body dim">No active employees.</div>';
+  `).join('') : `<div class="card-body dim">No ${staffOnly ? 'field crew' : 'active'} employees.</div>`;
 }
+document.getElementById('headcount-staff-only').addEventListener('change', renderHeadcount);
 
 // Division isn't a fixed list — real rosters have more divisions than
 // anyone remembers up front (Client Services, Design, Executive... not
