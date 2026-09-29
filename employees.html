@@ -558,7 +558,10 @@ function render() {
 
   const activeCount = allEmployees.filter((e) => e.status !== 'terminated' && !e.is_test).length;
   const divisions = new Set(allEmployees.filter((e) => e.status !== 'terminated' && !e.is_test).map((e) => e.division).filter(Boolean));
-  document.getElementById('roster-summary').textContent = `${activeCount} active · ${divisions.size} division${divisions.size === 1 ? '' : 's'}`;
+  // Leads with the count matching the search/filter row above -- so
+  // picking a division + location shows its total right at the top,
+  // instead of only the fixed roster-wide count.
+  document.getElementById('roster-summary').textContent = `${visible.length} shown · ${activeCount} active total · ${divisions.size} division${divisions.size === 1 ? '' : 's'}`;
 
   renderHeadcount();
 }
