@@ -2258,6 +2258,8 @@ const LETTER_TYPES = [
   { value: 'salary-es', label: 'Salaried Offer Letter (Español)', category: 'offer' },
   { value: 'increase-en', label: 'Wage Increase Letter (English)', category: 'increase' },
   { value: 'increase-es', label: 'Wage Increase Letter (Español)', category: 'increase' },
+  { value: 'increase-salary-en', label: 'Salary Increase Letter (English)', category: 'increase' },
+  { value: 'increase-salary-es', label: 'Salary Increase Letter (Español)', category: 'increase' },
   { value: 'promotion-hourly', label: 'Promotion Letter — Hourly (English)', category: 'promotion' },
   { value: 'promotion-hourly-es', label: 'Promotion Letter — Hourly (Español)', category: 'promotion' },
   { value: 'promotion-salary', label: 'Promotion Letter — Salary (English)', category: 'promotion' },
@@ -2343,10 +2345,10 @@ function renderLetters() {
 
   function toggleLetterFields() {
     const type = typeSel.value;
-    const isSalary = type === 'salary' || type === 'salary-es' || type === 'promotion-salary' || type === 'promotion-salary-es';
+    const isSalary = type === 'salary' || type === 'salary-es' || type === 'promotion-salary' || type === 'promotion-salary-es' || type === 'increase-salary-en' || type === 'increase-salary-es';
     document.getElementById('ltr-salary-field').hidden = !isSalary;
     document.getElementById('ltr-rate-field').querySelector('#ltr-rate').closest('.field').hidden = isSalary;
-    document.getElementById('ltr-position-field').hidden = (type === 'increase-en' || type === 'increase-es');
+    document.getElementById('ltr-position-field').hidden = type.startsWith('increase');
     // The pay scale reference only has hourly bands, not salaried ones,
     // so the lookup only makes sense next to the hourly rate field.
     document.getElementById('ltr-payrange-field').hidden = isSalary;
@@ -2612,6 +2614,54 @@ function buildIncreaseEs(ctx) {
     ${acceptanceBlock('ACEPTACIÓN Y ACUERDO:', 'Firma', 'Fecha')}
     ${pageFooter()}`;
 }
+function buildIncreaseSalaryEn(ctx) {
+  return `${letterHead()}
+    <p><strong>${ctx.date}</strong></p>
+    <p><strong>Dear ${escapeHtml(ctx.name)}:</strong></p>
+    <p class="just">Southwest Landscape is pleased to notify you of a salary increase in recognition of your continued contributions and commitment to our team.</p>
+    <p class="just indent"><strong>1. Effective Date.</strong> Your new salary will go into effect on <strong>${ctx.startDate}</strong>.</p>
+    <p class="just indent tight"><strong>2. Compensation.</strong></p>
+    <ul class="tight"><li>You will be paid a salary of <strong>${formatMoney(ctx.salary)} per annum.</strong></li></ul>
+    <p class="just">You will be paid on a weekly basis, with each pay period covering work performed Sunday through Saturday. All forms of compensation referred to in this letter are subject to applicable withholding and payroll taxes.</p>
+    <p class="indent tight"><strong>3. Location and Supervisor:</strong></p>
+    <ul>
+      <li>You will be headquartered in our facility located at <strong>${escapeHtml(ctx.address)} – ${escapeHtml(ctx.branchLabel)} Team.</strong></li>
+      <li>You will report to <strong>${escapeHtml(ctx.supervisorName)} – ${escapeHtml(ctx.supervisorTitle)}.</strong></li>
+      <li>Your schedule is as follows: <strong>${escapeHtml(ctx.schedule)}</strong> – Schedule will vary as business needs dictate.</li>
+    </ul>
+    <p class="center">Your location and schedule may be subject to changes as the company's needs may require.</p>
+    <p class="indent section-gap"><strong>4. Benefits.</strong> As a regular employee of Southwest Landscape, you will be eligible for paid vacation time and may elect to enroll in subsidized medical insurance coverage. Participating in the health plan is voluntary and available at your expense. Full details, including eligibility and enrollment, are provided in the Employee Benefits Guide.</p>
+    <p class="section-gap"><strong>5. Conditional Offer.</strong> This offer of employment is contingent upon the successful completion of standard pre-employment verifications. These may include confirmation of employment history, reference checks, review of driving record (if applicable), and verification of any information or credentials provided during the hiring process. This offer is made with the understanding that all information disclosed by the candidate is accurate and complete.</p>
+    <p class="indent section-gap force-break"><strong>6. Employment Relationship.</strong> Notwithstanding any of the above, your employment with Southwest Landscape is "at will" meaning that you or Southwest Landscape can terminate the employment relationship at any time, with or without cause, and with or without notice.</p>
+    <p>If you wish to accept this offer, please sign and date this letter and return it to me by <strong>${ctx.returnDate}</strong>.</p>
+    ${sigBlock()}
+    ${acceptanceBlock('ACCEPTANCE AND AGREEMENT:', 'Signature', 'Date')}
+    ${pageFooter()}`;
+}
+function buildIncreaseSalaryEs(ctx) {
+  return `${letterHead()}
+    <p><strong>${ctx.date}</strong></p>
+    <p><strong>Estimado(a) ${escapeHtml(ctx.name)}:</strong></p>
+    <p class="just">Southwest Landscape se complace en notificarle un aumento de salario en reconocimiento a sus continuas contribuciones y compromiso con nuestro equipo.</p>
+    <p class="just indent"><strong>1. Fecha de Vigencia.</strong> Su nuevo salario entrará en vigor el <strong>${ctx.startDate}</strong>.</p>
+    <p class="just indent tight"><strong>2. Compensación.</strong></p>
+    <ul class="tight"><li>Se le pagará un salario de <strong>${formatMoney(ctx.salary)} al año.</strong></li></ul>
+    <p class="just">Usted será pagado(a) semanalmente, con cada período de pago cubriendo el trabajo realizado de domingo a sábado. Todas las formas de compensación mencionadas en esta carta están sujetas a las retenciones y los impuestos correspondientes.</p>
+    <p class="indent tight"><strong>3. Ubicación y Supervisor:</strong></p>
+    <ul>
+      <li>Su lugar de trabajo principal será en nuestras instalaciones ubicadas en <strong>${escapeHtml(ctx.address)} – Equipo de ${escapeHtml(ctx.branchLabel)}.</strong></li>
+      <li>Usted reportará a <strong>${escapeHtml(ctx.supervisorName)} – ${escapeHtml(ctx.supervisorTitle)}.</strong></li>
+      <li>Su horario será el siguiente: <strong>${escapeHtml(ctx.schedule)}</strong>; el horario puede variar según las necesidades del negocio.</li>
+    </ul>
+    <p class="center">Su ubicación y horario pueden estar sujetos a cambios según lo requieran las necesidades de la empresa.</p>
+    <p class="indent section-gap"><strong>4. Beneficios.</strong> Como empleado(a) regular de Southwest Landscape, usted será elegible para tiempo de vacaciones pagadas y podrá optar por inscribirse en un plan de seguro médico subsidiado. La participación en el plan médico es voluntaria y está disponible a su propio costo. Los detalles completos, incluyendo elegibilidad e inscripción, se encuentran en la Guía de Beneficios para Empleados.</p>
+    <p class="section-gap"><strong>5. Oferta Condicional.</strong> Esta oferta de empleo está condicionada a la finalización exitosa de las verificaciones estándar previas al empleo. Estas pueden incluir confirmación de historial laboral, verificación de referencias, revisión del registro de manejo (si aplica) y verificación de cualquier información o credenciales proporcionadas durante el proceso de contratación. Esta oferta se realiza bajo el entendimiento de que toda la información proporcionada por el candidato es precisa y completa.</p>
+    <p class="indent section-gap force-break"><strong>6. Relación Laboral.</strong> Sin perjuicio de lo anterior, su empleo con Southwest Landscape es "a voluntad", lo que significa que usted o Southwest Landscape pueden terminar la relación laboral en cualquier momento, con o sin causa, y con o sin previo aviso.</p>
+    <p>Si desea aceptar esta oferta, firme y feche esta carta y regrésela a mí antes del <strong>${ctx.returnDate}</strong>.</p>
+    ${sigBlock('Atentamente,')}
+    ${acceptanceBlock('ACEPTACIÓN Y ACUERDO:', 'Firma', 'Fecha')}
+    ${pageFooter()}`;
+}
 function buildPromotionHourly(ctx) {
   const overtime = formatMoney(ctx.rate * 1.5);
   return `${letterHead()}
@@ -2742,9 +2792,9 @@ function generateLetterSheet() {
   if (!schedule) return showToast('Enter a schedule.', 'error');
   if (!reportsTo) return showToast('Select who this employee reports to.', 'error');
   if (!letterDate || !startDate || !returnDate) return showToast('Letter date, start date, and return-by date are all required.', 'error');
-  const positionRequired = type !== 'increase-en' && type !== 'increase-es';
+  const positionRequired = !type.startsWith('increase');
   if (positionRequired && !position) return showToast('Enter a position title.', 'error');
-  const isSalaryType = type === 'salary' || type === 'salary-es' || type === 'promotion-salary' || type === 'promotion-salary-es';
+  const isSalaryType = type === 'salary' || type === 'salary-es' || type === 'promotion-salary' || type === 'promotion-salary-es' || type === 'increase-salary-en' || type === 'increase-salary-es';
   if (!isSalaryType && (!rate || rate <= 0)) return showToast('Enter a valid hourly rate.', 'error');
   if (isSalaryType && (!salary || salary <= 0)) return showToast('Enter a valid annual salary.', 'error');
 
@@ -2760,6 +2810,7 @@ function generateLetterSheet() {
   const builders = {
     'hourly-en': buildHourlyEn, 'hourly-es': buildHourlyEs, salary: buildSalary, 'salary-es': buildSalaryEs,
     'increase-en': buildIncreaseEn, 'increase-es': buildIncreaseEs,
+    'increase-salary-en': buildIncreaseSalaryEn, 'increase-salary-es': buildIncreaseSalaryEs,
     'promotion-hourly': buildPromotionHourly, 'promotion-hourly-es': buildPromotionHourlyEs,
     'promotion-salary': buildPromotionSalary, 'promotion-salary-es': buildPromotionSalaryEs,
   };
