@@ -2299,7 +2299,9 @@ function renderLetters() {
           <div class="field"><label class="f-lab">Schedule (editable)</label><input class="f-in" id="ltr-schedule"></div>
         </div>
         <div class="frow">
-          ${empSearchFieldHtml('ltr-reportsto', '<label class="f-lab">Reports to</label>', employees.filter((e) => managerIds.has(e.id)))}
+          <div class="field"><label class="f-lab">Reports to</label>
+            <select class="f-in" id="ltr-reportsto"><option value="">Select a manager…</option>${employees.filter((e) => managerIds.has(e.id)).map((e) => `<option value="${e.id}">${escapeHtml(`${e.first_name} ${e.last_name}`)}</option>`).join('')}</select>
+          </div>
           <div class="field"><label class="f-lab">Reports-to title</label><input class="f-in" id="ltr-reportsto-title"></div>
         </div>
         ${managerIds.size === 0 ? '<p class="dim" style="margin:-4px 0 12px">No managers marked yet — add them in Settings → Managers.</p>' : ''}
@@ -2327,7 +2329,6 @@ function renderLetters() {
     </div>
     <div class="letter" id="ltr-sheet" hidden></div>
   `;
-  wireEmpSearch('ltr-reportsto', employees.filter((e) => managerIds.has(e.id)));
 
   const typeSel = document.getElementById('ltr-type');
   function fillTypes(category) {
@@ -5575,7 +5576,7 @@ async function loadPendingSignatureDoc(type, id) {
       document.getElementById('ltr-schedule').value = d.schedule || '';
       const mgrPool = employees.filter((e) => managerIds.has(e.id));
       const mgrMatch = mgrPool.find((e) => `${e.first_name} ${e.last_name}` === d.supervisor_name);
-      if (mgrMatch) setEmpField('ltr-reportsto', mgrMatch.id, mgrPool);
+      document.getElementById('ltr-reportsto').value = mgrMatch ? mgrMatch.id : '';
       document.getElementById('ltr-reportsto-title').value = d.supervisor_title || '';
       document.getElementById('ltr-date').value = d.letter_date || '';
       document.getElementById('ltr-start').value = d.start_date || '';
