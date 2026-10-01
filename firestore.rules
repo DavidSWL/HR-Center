@@ -399,6 +399,17 @@ service cloud.firestore {
       allow delete: if canDeleteTasks();
     }
 
+    // ---- HR budget ---------------------------------------------------------
+    // Expense line items (events, gifts, awards, general purchases) -- never
+    // per-person salary figures. isClean() already blocks any pay/SSN/DOB
+    // field here same as everywhere else; this collection just adds the
+    // normal HR-staff read/write, David-or-Tanya-delete pattern.
+    match /hr_budget_items/{itemId} {
+      allow read: if isHrUser();
+      allow create, update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if canDeleteTasks();
+    }
+
     // ---- weekly focus / recap -------------------------------------------
     // One shared doc per week (id = that week's Monday), so David and Tanya
     // always have a place to see where the other left off. The current

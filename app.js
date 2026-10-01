@@ -45,6 +45,7 @@ export const NAV_SECTIONS = [
   {
     label: 'HR team',
     items: [
+      { key: 'budget', label: 'HR Budget', href: 'budget.html', built: true },
       { key: 'completed', label: 'Completed work', href: 'activity.html', built: true },
       { key: 'documents', label: 'Documents', href: 'documents.html', built: true },
       { key: 'foremantraining', label: 'Foreman training', href: 'foremantraining.html', built: true },
