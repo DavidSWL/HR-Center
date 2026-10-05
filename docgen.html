@@ -2318,6 +2318,15 @@ function renderLetters() {
           <div class="field"><label class="f-lab">Hourly rate ($, printed only — never saved)</label><input class="f-in" id="ltr-rate" type="number" step="0.01"></div>
           <div class="field" id="ltr-salary-field" hidden><label class="f-lab">Annual salary ($, printed only — never saved)</label><input class="f-in" id="ltr-salary" type="number" step="0.01"></div>
         </div>
+        <div id="ltr-retro-field" hidden style="margin-top:-6px;padding-top:10px;border-top:1px solid var(--line)">
+          <div class="frow">
+            <div class="field"><label class="f-lab">Retro pay owed ($, optional — printed only, never saved)</label><input class="f-in" id="ltr-retro-amount" type="number" step="0.01" min="0"></div>
+          </div>
+          <div class="frow">
+            <div class="field"><label class="f-lab">Retro period covers — from</label><input class="f-in" id="ltr-retro-start" type="date"></div>
+            <div class="field"><label class="f-lab">to</label><input class="f-in" id="ltr-retro-end" type="date"></div>
+          </div>
+        </div>
         <div class="frow">
           <div class="field"><label class="f-lab">Letter date</label><input class="f-in" id="ltr-date" type="date"></div>
           <div class="field"><label class="f-lab">Start / effective date</label><input class="f-in" id="ltr-start" type="date"></div>
@@ -2354,6 +2363,9 @@ function renderLetters() {
     // so the lookup only makes sense next to the hourly rate field.
     document.getElementById('ltr-payrange-field').hidden = isSalary;
     document.getElementById('ltr-payrange-result').hidden = isSalary;
+    // Retro pay only makes sense when there's a prior rate to catch up on
+    // -- an Offer letter is someone's first rate, so it's left off there.
+    document.getElementById('ltr-retro-field').hidden = !(type.startsWith('increase') || type.startsWith('promotion'));
   }
 
   // Pay range lookup -- a reference table (never saved, same as the
@@ -2454,6 +2466,20 @@ function acceptanceBlock(agreementLabel, sigLabel, dateLabel) {
   </div>`;
 }
 function formatMoney(n) { return (Number(n) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' }); }
+
+// Retro pay is optional on Increase/Promotion letters only -- printed on
+// the letter and never saved, same rule as rate/salary above. Returns an
+// extra <li> for the Compensation list, or '' when no amount was entered.
+function retroPayBullet(ctx, isEs) {
+  if (!ctx.retroAmount) return '';
+  const hasPeriod = ctx.retroStart && ctx.retroEnd;
+  if (isEs) {
+    const period = hasPeriod ? ` correspondiente al período del <strong>${ctx.retroStart}</strong> al <strong>${ctx.retroEnd}</strong>,` : '';
+    return `<li>También recibirá un pago retroactivo único de <strong>${formatMoney(ctx.retroAmount)}</strong>,${period} el cual se le pagará en su próximo período de nómina regular.</li>`;
+  }
+  const period = hasPeriod ? ` covering the period from <strong>${ctx.retroStart}</strong> to <strong>${ctx.retroEnd}</strong>,` : '';
+  return `<li>You will also receive a one-time retroactive payment of <strong>${formatMoney(ctx.retroAmount)}</strong>,${period} paid on your next regular payroll.</li>`;
+}
 
 function buildHourlyEn(ctx) {
   const overtime = formatMoney(ctx.rate * 1.5);
@@ -2570,6 +2596,7 @@ function buildIncreaseEn(ctx) {
     <ul class="tight">
       <li>You will be paid a wage <strong>${formatMoney(ctx.rate)} per hour</strong></li>
       <li>Your overtime rate will be <strong>${overtime} per hour</strong> in accordance with applicable laws.</li>
+      ${retroPayBullet(ctx, false)}
     </ul>
     <p class="just">You will be paid on a weekly basis, with each pay period covering work performed Sunday through Saturday. All forms of compensation referred to in this letter are subject to applicable withholding and payroll taxes.</p>
     <p class="indent tight"><strong>3. Location and Supervisor:</strong></p>
@@ -2598,6 +2625,7 @@ function buildIncreaseEs(ctx) {
     <ul class="tight">
       <li>Se le pagará un salario de <strong>${formatMoney(ctx.rate)} por hora</strong>.</li>
       <li>Su tasa de pago por horas extras será de <strong>${overtime} por hora</strong>, de acuerdo con las leyes aplicables.</li>
+      ${retroPayBullet(ctx, true)}
     </ul>
     <p class="just">Usted será pagado(a) semanalmente, con cada período de pago cubriendo el trabajo realizado de domingo a sábado. Todas las formas de compensación mencionadas en esta carta están sujetas a las retenciones y los impuestos correspondientes.</p>
     <p class="indent tight"><strong>3. Ubicación y Supervisor:</strong></p>
@@ -2622,7 +2650,7 @@ function buildIncreaseSalaryEn(ctx) {
     <p class="just">Southwest Landscape is pleased to notify you of a salary increase in recognition of your continued contributions and commitment to our team.</p>
     <p class="just indent"><strong>1. Effective Date.</strong> Your new salary will go into effect on <strong>${ctx.startDate}</strong>.</p>
     <p class="just indent tight"><strong>2. Compensation.</strong></p>
-    <ul class="tight"><li>You will be paid a salary of <strong>${formatMoney(ctx.salary)} per annum.</strong></li></ul>
+    <ul class="tight"><li>You will be paid a salary of <strong>${formatMoney(ctx.salary)} per annum.</strong></li>${retroPayBullet(ctx, false)}</ul>
     <p class="just">You will be paid on a weekly basis, with each pay period covering work performed Sunday through Saturday. All forms of compensation referred to in this letter are subject to applicable withholding and payroll taxes.</p>
     <p class="indent tight"><strong>3. Location and Supervisor:</strong></p>
     <ul>
@@ -2646,7 +2674,7 @@ function buildIncreaseSalaryEs(ctx) {
     <p class="just">Southwest Landscape se complace en notificarle un aumento de salario en reconocimiento a sus continuas contribuciones y compromiso con nuestro equipo.</p>
     <p class="just indent"><strong>1. Fecha de Vigencia.</strong> Su nuevo salario entrará en vigor el <strong>${ctx.startDate}</strong>.</p>
     <p class="just indent tight"><strong>2. Compensación.</strong></p>
-    <ul class="tight"><li>Se le pagará un salario de <strong>${formatMoney(ctx.salary)} al año.</strong></li></ul>
+    <ul class="tight"><li>Se le pagará un salario de <strong>${formatMoney(ctx.salary)} al año.</strong></li>${retroPayBullet(ctx, true)}</ul>
     <p class="just">Usted será pagado(a) semanalmente, con cada período de pago cubriendo el trabajo realizado de domingo a sábado. Todas las formas de compensación mencionadas en esta carta están sujetas a las retenciones y los impuestos correspondientes.</p>
     <p class="indent tight"><strong>3. Ubicación y Supervisor:</strong></p>
     <ul>
@@ -2674,6 +2702,7 @@ function buildPromotionHourly(ctx) {
     <ul class="tight">
       <li>You will be paid a starting wage at <strong>${formatMoney(ctx.rate)} per hour</strong>.</li>
       <li>Your overtime rate will be <strong>${overtime} per hour</strong> in accordance with applicable law.</li>
+      ${retroPayBullet(ctx, false)}
     </ul>
     <p class="just">You will be paid on a weekly basis, with each pay period covering work performed Sunday through Saturday. All forms of compensation referred to in this letter are subject to applicable withholding and payroll taxes.</p>
     <p class="indent tight"><strong>3. Location and Supervisor:</strong></p>
@@ -2702,6 +2731,7 @@ function buildPromotionHourlyEs(ctx) {
     <ul class="tight">
       <li>Se le pagará un salario inicial de <strong>${formatMoney(ctx.rate)} por hora</strong>.</li>
       <li>Su tarifa de tiempo extra será de <strong>${overtime} por hora</strong>, de acuerdo con las leyes aplicables.</li>
+      ${retroPayBullet(ctx, true)}
     </ul>
     <p class="just">Se le pagará semanalmente, con cada período de pago cubriendo el trabajo realizado de domingo a sábado. Todas las formas de compensación mencionadas en esta carta están sujetas a las retenciones e impuestos de nómina aplicables.</p>
     <p class="indent tight"><strong>3. Ubicación y Supervisor:</strong></p>
@@ -2726,7 +2756,7 @@ function buildPromotionSalary(ctx) {
     <p class="just">On behalf of Southwest Landscape, I am pleased to offer you a title change as a <strong>${escapeHtml(ctx.empType)}, exempt</strong> position as <strong>${escapeHtml(ctx.position)}</strong>. If accepted, the terms of your employment with Southwest Landscape will be as follows:</p>
     <p class="just indent"><strong>1. Effective Date.</strong> Your anticipated start date is scheduled for <strong>${ctx.startDate}</strong>.</p>
     <p class="just indent tight"><strong>2. Compensation.</strong></p>
-    <ul class="tight"><li>You will be paid a starting salary of <strong>${formatMoney(ctx.salary)} per annum.</strong></li></ul>
+    <ul class="tight"><li>You will be paid a starting salary of <strong>${formatMoney(ctx.salary)} per annum.</strong></li>${retroPayBullet(ctx, false)}</ul>
     <p class="just">You will be paid on a weekly basis, with each pay period covering work performed Sunday through Saturday. All forms of compensation referred to in this letter are subject to applicable withholding and payroll taxes.</p>
     <p class="indent tight"><strong>3. Location and Supervisor:</strong></p>
     <ul>
@@ -2750,7 +2780,7 @@ function buildPromotionSalaryEs(ctx) {
     <p class="just">En nombre de Southwest Landscape, me complace ofrecerle un cambio de puesto a <strong>${escapeHtml(ctx.empType)}, exento</strong> como <strong>${escapeHtml(ctx.position)}</strong>. Si acepta, los términos de su empleo con Southwest Landscape serán los siguientes:</p>
     <p class="just indent"><strong>1. Fecha de Vigencia.</strong> Su fecha de inicio prevista está programada para el <strong>${ctx.startDate}</strong>.</p>
     <p class="just indent tight"><strong>2. Compensación.</strong></p>
-    <ul class="tight"><li>Se le pagará un salario inicial de <strong>${formatMoney(ctx.salary)} al año.</strong></li></ul>
+    <ul class="tight"><li>Se le pagará un salario inicial de <strong>${formatMoney(ctx.salary)} al año.</strong></li>${retroPayBullet(ctx, true)}</ul>
     <p class="just">Se le pagará semanalmente, con cada período de pago cubriendo el trabajo realizado de domingo a sábado. Todas las formas de compensación mencionadas en esta carta están sujetas a las retenciones e impuestos de nómina aplicables.</p>
     <p class="indent tight"><strong>3. Ubicación y Supervisor:</strong></p>
     <ul>
@@ -2786,13 +2816,23 @@ function generateLetterSheet() {
   const empType = document.getElementById('ltr-emptype').value;
   const rate = parseFloat(document.getElementById('ltr-rate').value);
   const salary = parseFloat(document.getElementById('ltr-salary').value);
+  const retroAmount = parseFloat(document.getElementById('ltr-retro-amount').value);
+  const retroStartRaw = document.getElementById('ltr-retro-start').value;
+  const retroEndRaw = document.getElementById('ltr-retro-end').value;
 
   if (!first || !last) return showToast('Enter the employee\'s name.', 'error');
   if (!loc) return showToast('Select a branch.', 'error');
   if (!address) return showToast('Enter a facility address.', 'error');
   if (!schedule) return showToast('Enter a schedule.', 'error');
   if (!reportsTo) return showToast('Select who this employee reports to.', 'error');
-  if (!letterDate || !startDate || !returnDate) return showToast('Letter date, start date, and return-by date are all required.', 'error');
+  // Named individually (instead of one "all three required" message) so
+  // whichever date field is actually empty is obvious -- a native date
+  // input shows blank .value if it's not fully filled in (e.g. the year
+  // never got typed), even when something is visibly in the box, which
+  // made the old blanket message look like it was ignoring valid input.
+  if (!letterDate) { document.getElementById('ltr-date').focus(); return showToast('Enter the letter date.', 'error'); }
+  if (!startDate) { document.getElementById('ltr-start').focus(); return showToast('Enter the start / effective date.', 'error'); }
+  if (!returnDate) { document.getElementById('ltr-return').focus(); return showToast('Enter the "sign and return by" date.', 'error'); }
   const positionRequired = !type.startsWith('increase');
   if (positionRequired && !position) return showToast('Enter a position title.', 'error');
   const isSalaryType = type === 'salary' || type === 'salary-es' || type === 'promotion-salary' || type === 'promotion-salary-es' || type === 'increase-salary-en' || type === 'increase-salary-es';
@@ -2804,6 +2844,9 @@ function generateLetterSheet() {
     name: `${first} ${last}`,
     date: longDate(letterDate, isEs), startDate: longDate(startDate, isEs), returnDate: longDate(returnDate, isEs),
     position, empType, rate, salary, address, schedule, branchLabel: loc.label,
+    retroAmount: retroAmount > 0 ? retroAmount : 0,
+    retroStart: retroStartRaw ? longDate(retroStartRaw, isEs) : '',
+    retroEnd: retroEndRaw ? longDate(retroEndRaw, isEs) : '',
     supervisorName: `${reportsTo.first_name} ${reportsTo.last_name}`,
     supervisorTitle: reportsToTitle || reportsTo.position || '',
   };
