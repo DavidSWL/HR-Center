@@ -254,6 +254,7 @@
       </div>
       <div class="modal-actions">
         <button type="button" class="gh" id="terminate-btn" hidden style="border-color:var(--alertTx);color:var(--alertTx)">Terminate</button>
+        <button type="button" class="gh" id="reactivate-btn" hidden>Reactivate</button>
         <button type="button" class="gh" id="cancel-btn">Cancel</button>
         <button type="submit" class="gh solid" id="save-btn">Save</button>
       </div>
@@ -661,6 +662,7 @@ function openAdd() {
   document.getElementById('emp-id').disabled = false;
   document.getElementById('emp-id-field').hidden = false;
   document.getElementById('terminate-btn').hidden = true;
+  document.getElementById('reactivate-btn').hidden = true;
   document.getElementById('terminate-section').hidden = true;
   document.getElementById('onboarding-field').hidden = true; // set automatically for a brand-new hire
   overlay.hidden = false;
@@ -712,6 +714,7 @@ function openEdit(id) {
   document.getElementById('emergency-phone').value = emp.emergency_contact_phone || '';
   document.getElementById('is-test').checked = !!emp.is_test;
   document.getElementById('terminate-btn').hidden = emp.status === 'terminated';
+  document.getElementById('reactivate-btn').hidden = emp.status !== 'terminated';
   document.getElementById('terminate-section').hidden = true;
   document.getElementById('onboarding-field').hidden = emp.status === 'terminated';
   document.getElementById('is-onboarding').checked = emp.status === 'onboarding';
@@ -737,6 +740,31 @@ document.getElementById('headcount-btn').addEventListener('click', () => {
 
 document.getElementById('terminate-btn').addEventListener('click', () => {
   document.getElementById('terminate-section').hidden = false;
+});
+
+// Reverses a termination entered by mistake -- there was previously no
+// way back once someone was marked terminated. Clears separation_date
+// and separation_type too, since a reactivated employee shouldn't still
+// carry a stale separation record.
+document.getElementById('reactivate-btn').addEventListener('click', async () => {
+  const emp = allEmployees.find((x) => x.id === editingId);
+  if (!emp) return;
+  if (!confirm(`Reactivate ${emp.first_name} ${emp.last_name}?\n\nThis sets their status back to Active and clears the separation date/type.`)) return;
+  try {
+    await updateDoc(doc(db, 'employees', editingId), {
+      status: 'active',
+      separation_date: null,
+      separation_type: null,
+      entered_by: profile.uid,
+      updated_at: serverTimestamp(),
+    });
+    showToast('Reactivated.');
+    closeModal();
+    await loadEmployees();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not reactivate — ' + err.message, 'error');
+  }
 });
 
 form.addEventListener('submit', async (e) => {
