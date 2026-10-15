@@ -229,6 +229,7 @@ const GENERATORS = [
   { key: 'osha300a', title: 'OSHA 300A Annual Summary', desc: 'Totals computed from recordable incidents for the year — post Feb 1–Apr 30', category: 'Safety' },
 
   { key: 'employeefile', title: 'Employee file', desc: 'Everything on file for one employee — reviews, discipline, training, incidents — in one printable packet', category: 'Employee records' },
+  { key: 'hrrequest', title: 'HR Request Form', desc: 'Wage/file verification, personal info changes, leave or payroll status requests — matches the SWL paper form (SWL-HR-REQ), English or Spanish', category: 'Employee records' },
 
   { key: 'sop', title: 'SOP', desc: 'Standard Operating Procedure — matches the real SWL SOP format, saves to Documents', category: 'Reference library' },
   { key: 'jobdesc', title: 'Job description', desc: 'Matches the real SWL Job Description format — English or Spanish, saves to Documents', category: 'Reference library' },
@@ -384,7 +385,7 @@ function openGenerator(key) {
   // exactly as supplied — those forms are English-only, so the language
   // toggle only applies to PIP, Onboarding, and the letters (which manage
   // English/Spanish through their own letter-type list instead).
-  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty' || key === 'mealwaiver2' || key === 'mileage' || key === 'review' || key === 'termination' || key === 'incidentreport' || key === 'termsummary' || key === 'changenotice') ? '' : 'none';
+  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty' || key === 'mealwaiver2' || key === 'mileage' || key === 'review' || key === 'termination' || key === 'incidentreport' || key === 'termsummary' || key === 'changenotice' || key === 'hrrequest') ? '' : 'none';
   renderCurrent();
 }
 
@@ -405,6 +406,7 @@ function renderCurrent() {
   if (currentKey === 'incidentreport') renderIncidentReport();
   if (currentKey === 'osha300a') renderOsha300a();
   if (currentKey === 'employeefile') renderEmployeeFile();
+  if (currentKey === 'hrrequest') renderHrRequest(lang);
   if (currentKey === 'termsummary') renderTermSummary(lang);
   if (currentKey === 'changenotice') renderChangeNotice(lang);
 }
@@ -3199,6 +3201,163 @@ async function loadIncidentForRefusal(incidentId) {
     console.error(err);
     showToast('Could not load the incident — ' + err.message, 'error');
   }
+}
+
+// ---- HR Request Form -- matches the real SWL paper form (SWL-HR-REQ):
+// wage/file verification, personal info change, payroll status change,
+// and leave of absence requests, all on one sheet. Everything below the
+// Request Information + checkbox/reason section prints blank for
+// handwriting, same as the paper original -- there's no on-screen input
+// for the Payroll Status Change table because CLAUDE.md's rule against
+// ever storing pay figures applies here exactly like everywhere else.
+const HR_REQUEST_ITEMS = ['Wage', 'Last Pay Increase', 'Hire Date', 'Sick Days', 'Employee File'];
+const HR_REQUEST_ITEMS_ES = {
+  Wage: 'Salario', 'Last Pay Increase': 'Último Aumento de Pago', 'Hire Date': 'Fecha de Contratación',
+  'Sick Days': 'Días de Enfermedad', 'Employee File': 'Expediente del Empleado',
+};
+
+function renderHrRequest(lang) {
+  const isEs = lang === 'es';
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        ${empSearchFieldHtml('hrreq-emp', `<label class="f-lab">${isEs ? 'Empleado' : 'Employee'}</label>`)}
+        <div class="frow">
+          <div class="field"><label class="f-lab" for="hrreq-date">${isEs ? 'Fecha' : 'Date'}</label><input class="f-in" id="hrreq-date" type="date"></div>
+          <div class="field"><label class="f-lab" for="hrreq-copyto">${isEs ? 'Copia Para (opcional)' : 'Copy To (optional)'}</label><input class="f-in" id="hrreq-copyto"></div>
+        </div>
+        <div class="field"><label class="f-lab">${isEs ? 'Solicitud de Información Personal del Empleado — marque lo que corresponda' : 'Employee Personal Information Request — check what applies'}</label>
+          <div style="display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:4px;align-items:center">
+            ${HR_REQUEST_ITEMS.map((it) => `<label style="font-size:12.5px;white-space:nowrap"><input type="checkbox" class="hrreq-item" value="${it}"> ${isEs ? HR_REQUEST_ITEMS_ES[it] : it}</label>`).join('')}
+            <label style="font-size:12.5px;display:flex;align-items:center;gap:6px;white-space:nowrap">
+              <input type="checkbox" id="hrreq-other-check"> ${isEs ? 'Otro:' : 'Other:'}
+              <input class="f-in" id="hrreq-other-text" style="width:160px;height:30px" placeholder="${isEs ? 'especifique' : 'please list'}">
+            </label>
+          </div>
+        </div>
+        <div class="field"><label class="f-lab" for="hrreq-reason">${isEs ? 'Motivo de la Solicitud' : 'Reason for Request'}</label><textarea class="f-in" id="hrreq-reason" rows="2" style="resize:vertical"></textarea></div>
+        <button class="gh solid" id="hrreq-generate-btn" type="button">${isEs ? 'Generar' : 'Generate'}</button>
+        <button class="gh" id="hrreq-log-btn" type="button">${isEs ? 'Registrar en actividad' : 'Log to activity'}</button>
+      </div>
+    </div>
+    <div class="form-doc" id="hrreq-sheet" hidden></div>
+  `;
+  wireEmpSearch('hrreq-emp');
+  document.getElementById('hrreq-date').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('hrreq-generate-btn').addEventListener('click', () => renderHrRequestSheet(lang));
+  document.getElementById('hrreq-log-btn').addEventListener('click', async () => {
+    const emp = employees.find((e) => e.id === document.getElementById('hrreq-emp').value);
+    if (!emp) { showToast(isEs ? 'Seleccione un empleado.' : 'Select an employee.', 'error'); return; }
+    try {
+      await addDoc(collection(db, 'activity'), {
+        module: 'documents', item: `HR Request Form generated — ${emp.first_name} ${emp.last_name}`,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast(isEs ? 'Registrado en actividad.' : 'Logged to activity.');
+    } catch (err) {
+      console.error(err);
+      showToast((isEs ? 'No se pudo registrar — ' : 'Could not log — ') + err.message, 'error');
+    }
+  });
+}
+
+function renderHrRequestSheet(lang) {
+  const isEs = lang === 'es';
+  const emp = employees.find((e) => e.id === document.getElementById('hrreq-emp').value);
+  if (!emp) { showToast(isEs ? 'Seleccione un empleado.' : 'Select an employee.', 'error'); return; }
+  const date = document.getElementById('hrreq-date').value;
+  const copyTo = document.getElementById('hrreq-copyto').value.trim();
+  const reason = document.getElementById('hrreq-reason').value.trim();
+  const otherChecked = document.getElementById('hrreq-other-check').checked;
+  const otherText = document.getElementById('hrreq-other-text').value.trim();
+  const checkedItems = new Set([...document.querySelectorAll('.hrreq-item:checked')].map((c) => c.value));
+  const manager = employees.find((m) => m.id === emp.manager_emp_id);
+  const managerName = manager ? `${manager.first_name} ${manager.last_name}` : '';
+
+  const sheet = document.getElementById('hrreq-sheet');
+  sheet.hidden = false;
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  sheet.innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title" style="margin-bottom:3px">${isEs ? 'Formulario de Solicitud de Recursos Humanos' : 'Human Resources Request Form'}</h1>
+      <p class="dim" style="font-size:11px;margin:0 0 12px">Southwest Landscape, Inc. — ${isEs ? 'Departamento de Recursos Humanos' : 'Human Resources Department'}</p>
+
+      <div class="form-section">${isEs ? 'Información de la Solicitud' : 'Request Information'}</div>
+      <div class="form-grid c3">
+        <div class="form-cell"><b>${isEs ? 'Nombre del Empleado' : 'Employee Name'}</b>${emp.first_name} ${emp.last_name}</div>
+        <div class="form-cell"><b>${isEs ? 'Número de Empleado' : 'Employee Number'}</b>${emp.id}</div>
+        <div class="form-cell"><b>${isEs ? 'Gerente Solicitante' : 'Requesting Manager'}</b>${escapeHtml(managerName) || '—'}</div>
+      </div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Fecha' : 'Date'}</b>${formatDate(date)}</div>
+        <div class="form-cell"><b>${isEs ? 'Copia Para' : 'Copy To'}</b>${escapeHtml(copyTo) || '—'}</div>
+      </div>
+
+      <div class="form-section" style="display:flex;justify-content:space-between;align-items:baseline">
+        <span>${isEs ? 'Solicitud de Información Personal del Empleado' : 'Employee Personal Information Request'}</span>
+        <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;opacity:.9">${isEs ? 'Marque la casilla que corresponda' : 'Check applicable box'}</span>
+      </div>
+      <div class="form-checks">
+        ${HR_REQUEST_ITEMS.map((it) => `<label>${checkedItems.has(it) ? '☑' : '☐'} ${isEs ? HR_REQUEST_ITEMS_ES[it] : it}</label>`).join('')}
+        <label>${otherChecked ? '☑' : '☐'} ${isEs ? 'Otro' : 'Other'}${otherText ? `: ${escapeHtml(otherText)}` : ''}</label>
+      </div>
+      <div class="form-grid">
+        <div class="form-cell" style="min-height:48px"><b>${isEs ? 'Motivo de la Solicitud' : 'Reason for Request'}</b>${escapeHtml(reason) || '—'}</div>
+      </div>
+      <div class="form-sub">${isEs ? 'Respuesta del Departamento de Recursos Humanos' : 'Human Resources Department Response'}</div>
+      <div class="form-box" style="min-height:52px"></div>
+
+      <div class="form-section">${isEs ? 'Solicitud de Cambio de Información Personal' : 'Personal Information Change Request'}</div>
+      <div class="form-grid">
+        <div class="form-cell"><b>${isEs ? 'Cambio de Dirección' : 'Address Change'}</b></div>
+        <div class="form-cell"><b>${isEs ? 'Corrección de Nombre' : 'Name Correction'}</b></div>
+        <div class="form-cell"><b>${isEs ? 'Otro (especifique)' : 'Other (please list)'}</b></div>
+      </div>
+
+      <div class="form-section">${isEs ? 'Solicitud de Cambio de Estado de Nómina' : 'Payroll Status Change Request'}</div>
+      <table class="form-notice-table">
+        <thead><tr>
+          <th style="width:26%">${isEs ? 'Cambio' : 'Change'}</th>
+          <th style="width:20%">${isEs ? 'De' : 'From'}</th>
+          <th style="width:20%">${isEs ? 'A' : 'To'}</th>
+          <th>${isEs ? 'Motivo' : 'Reason'}</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>${isEs ? 'Cambio de Retención' : 'Withholding Change'}<br><small class="dim" style="font-size:9.5px">${isEs ? 'Adjunte nuevo formulario W-4' : 'Attach new W-4 form'}</small></td><td></td><td></td><td></td></tr>
+          <tr><td>${isEs ? 'Salario' : 'Wage'}</td><td></td><td></td><td></td></tr>
+          <tr><td>${isEs ? 'Deducción de Nómina' : 'Payroll Deduction'}</td><td></td><td></td><td></td></tr>
+        </tbody>
+      </table>
+
+      <div class="form-section">${isEs ? 'Solicitud de Licencia de Ausencia' : 'Leave of Absence Request'}</div>
+      <table class="form-notice-table">
+        <thead><tr>
+          <th style="width:26%">${isEs ? 'De' : 'From'}</th>
+          <th style="width:26%">${isEs ? 'A' : 'To'}</th>
+          <th>${isEs ? 'Motivo' : 'Reason'}</th>
+        </tr></thead>
+        <tbody><tr><td></td><td></td><td></td></tr></tbody>
+      </table>
+
+      <div class="form-section">${isEs ? 'Firmas' : 'Signatures'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell" style="min-height:46px"><b>${isEs ? 'Firma del Empleado Solicitante' : 'Requesting Employee Signature'}</b></div>
+        <div class="form-cell" style="min-height:46px"><b>${isEs ? 'Fecha' : 'Date'}</b></div>
+        <div class="form-cell" style="min-height:46px"><b>${isEs ? 'Firma del Gerente Solicitante' : 'Requesting Manager Signature'}</b></div>
+        <div class="form-cell" style="min-height:46px"><b>${isEs ? 'Fecha' : 'Date'}</b></div>
+        <div class="form-cell" style="min-height:46px"><b>${isEs ? 'Autorizado por (Recursos Humanos)' : 'Authorized by (Human Resources)'}</b></div>
+        <div class="form-cell" style="min-height:46px"><b>${isEs ? 'Fecha' : 'Date'}</b></div>
+      </div>
+      <div class="form-fine" style="display:flex;justify-content:space-between;gap:12px">
+        <span>${isEs ? 'Formulario en papel original revisado 6/06.' : 'Original paper form revised 6/06.'}</span>
+        <span>SWL-HR-REQ</span>
+      </div>
+    </div>
+    <button class="gh no-print" id="hrreq-back-btn" type="button" style="margin:14px">&larr; ${isEs ? 'Volver al generador de documentos' : 'Back to document generator'}</button>
+  `;
+  document.getElementById('hrreq-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  showToast(isEs ? 'Formulario generado.' : 'Form generated.');
 }
 
 function renderRefusalSheet(lang) {
