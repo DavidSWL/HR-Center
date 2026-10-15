@@ -4835,7 +4835,10 @@ function renderFormBlocks(blocks, lang, ctx) {
       const text = b.dyn ? (lang === 'es' ? b.esFn(emp) : b.enFn(emp)) : (lang === 'es' && es != null ? es : en);
       return `<p style="margin:0 0 9px;line-height:1.5">${b.bold ? `<b>${(lang === 'es' ? b.boldEs : b.boldEn)}</b> ` : ''}${text}</p>`;
     }
-    if (b.t === 'callout') return `<div class="form-callout">${lang === 'es' ? es : en}</div>`;
+    // Same fallback as the 'p' case above -- a callout with no `es` (the
+    // Arbitration Agreement's English-only acknowledgment line) prints
+    // the English text instead of the literal word "undefined".
+    if (b.t === 'callout') return `<div class="form-callout">${lang === 'es' && es != null ? es : en}</div>`;
     if (b.t === 'pdflink') {
       // hrefEs is only set when the source actually has a separate
       // Spanish PDF (MPN); everything else (W-4, DE 4) is an
