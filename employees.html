@@ -224,6 +224,21 @@
             <input class="f-in" id="emergency-phone" type="tel">
           </div>
         </div>
+        <div class="frow">
+          <div class="field">
+            <label class="f-lab" for="vehicle-unit">Assigned vehicle</label>
+            <input class="f-in" id="vehicle-unit" placeholder="e.g. Unit 132 or White F-150">
+          </div>
+          <div class="field">
+            <label class="f-lab" for="vehicle-plate">License plate</label>
+            <input class="f-in" id="vehicle-plate" placeholder="e.g. 8A28061" style="text-transform:uppercase">
+          </div>
+        </div>
+        <div class="field">
+          <label class="f-lab" for="vehicle-transponder">FasTrak transponder label</label>
+          <input class="f-in" id="vehicle-transponder" placeholder="As it appears on the toll statement, e.g. &quot;Todd 132&quot; — leave blank if same as above">
+          <span class="s" style="display:block;margin-top:5px;font-size:10.5px;color:var(--faint)">Used by Toll Tracker to match statement charges to this employee automatically. Leave all three blank if they don't drive a company vehicle.</span>
+        </div>
         <div class="field" id="onboarding-field" hidden>
           <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted)">
             <input type="checkbox" id="is-onboarding">Currently in 30/60/90 onboarding — shows on the New Hire board
@@ -712,6 +727,9 @@ function openEdit(id) {
   if (emp.photo_data_url) document.getElementById('photo-remove-btn').hidden = false;
   document.getElementById('emergency-name').value = emp.emergency_contact_name || '';
   document.getElementById('emergency-phone').value = emp.emergency_contact_phone || '';
+  document.getElementById('vehicle-unit').value = emp.vehicle_unit || '';
+  document.getElementById('vehicle-plate').value = emp.vehicle_plate || '';
+  document.getElementById('vehicle-transponder').value = emp.vehicle_transponder || '';
   document.getElementById('is-test').checked = !!emp.is_test;
   document.getElementById('terminate-btn').hidden = emp.status === 'terminated';
   document.getElementById('reactivate-btn').hidden = emp.status !== 'terminated';
@@ -786,6 +804,9 @@ form.addEventListener('submit', async (e) => {
     birth_day: document.getElementById('birth-day').value ? Number(document.getElementById('birth-day').value) : null,
     emergency_contact_name: document.getElementById('emergency-name').value.trim(),
     emergency_contact_phone: document.getElementById('emergency-phone').value.trim(),
+    vehicle_unit: document.getElementById('vehicle-unit').value.trim(),
+    vehicle_plate: document.getElementById('vehicle-plate').value.trim().toUpperCase(),
+    vehicle_transponder: document.getElementById('vehicle-transponder').value.trim(),
     is_test: document.getElementById('is-test').checked,
     entered_by: profile.uid,
     updated_at: serverTimestamp(),

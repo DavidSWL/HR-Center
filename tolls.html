@@ -1,0 +1,817 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toll Tracker — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1>Toll Tracker</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+
+      <p class="dim" style="margin:0 0 16px;font-size:12.5px;max-width:76ch">
+        Charges are matched to a vehicle, and the vehicle's assigned driver, using the plate number and transponder
+        label on each employee's profile. Nobody's pay is touched here — each driver gets a review sheet of their
+        own charges, marks business vs. personal themselves, and you enter the result once it's returned.
+      </p>
+
+      <div class="big" style="margin-bottom:20px">
+        <div><div class="v n" id="stat-total">$0.00</div><div class="k">Total tolls — this statement</div></div>
+        <div><div class="v n" id="stat-drivers">0</div><div class="k">Drivers with charges</div></div>
+        <div><div class="v hot" id="stat-pending">0</div><div class="k">Sheets not yet entered</div></div>
+        <div><div class="v n" id="stat-unmatched">0</div><div class="k">Charges — no vehicle match</div></div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h">
+          <h3>1. Import a statement</h3>
+          <span>paste the billing text, not a file upload</span>
+        </div>
+        <div class="card-body">
+          <p class="dim" style="margin-top:0;font-size:12.5px">
+            Open the PDF, select all the text (Ctrl/Cmd+A), copy it, and paste it below. This reads The Toll
+            Roads' statement format — grouped by transponder, plus the "Paid by plate" section — and matches
+            every charge to a vehicle and driver before anything is saved.
+          </p>
+          <textarea class="f-in" id="paste-text" rows="6" style="width:100%;resize:vertical;font-family:var(--mono);font-size:11.5px" placeholder="Paste the statement text here…"></textarea>
+          <div style="margin-top:12px;display:flex;gap:9px;align-items:center">
+            <button class="gh solid" id="parse-btn" type="button">Parse statement</button>
+            <span class="dim" id="parse-status" style="font-size:12px"></span>
+          </div>
+
+          <div id="parse-preview" hidden style="margin-top:16px">
+            <div class="big" style="margin-bottom:12px">
+              <div><div class="v n" id="pv-count">0</div><div class="k">Charges found</div></div>
+              <div><div class="v n" id="pv-matched">0</div><div class="k">Matched to a driver</div></div>
+              <div><div class="v hot" id="pv-unmatched">0</div><div class="k">No vehicle match</div></div>
+              <div><div class="v n" id="pv-total">$0.00</div><div class="k">Total amount</div></div>
+            </div>
+            <div class="frow">
+              <div class="field">
+                <label class="f-lab" for="pv-period-start">Period start (optional)</label>
+                <input class="f-in" id="pv-period-start" type="date">
+              </div>
+              <div class="field">
+                <label class="f-lab" for="pv-period-end">Period end (optional)</label>
+                <input class="f-in" id="pv-period-end" type="date">
+              </div>
+            </div>
+            <button class="gh solid" id="confirm-import-btn" type="button">Save this import</button>
+            <button class="gh" id="cancel-import-btn" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h">
+          <h3>2. Review sheets by driver</h3>
+          <span id="statement-picker-wrap" style="display:flex;gap:8px;align-items:center">
+            <select class="inp" id="statement-select" style="font-size:11.5px"></select>
+            <select class="inp" id="sheet-lang-select" style="font-size:11.5px">
+              <option value="en">Sheet language: English</option>
+              <option value="es">Sheet language: Español</option>
+            </select>
+          </span>
+        </div>
+        <table>
+          <thead><tr><th>Employee</th><th>Vehicle</th><th># Charges</th><th>Total</th><th>Status</th><th></th></tr></thead>
+          <tbody id="sheets-body"><tr><td colspan="6" class="dim">No statement imported yet.</td></tr></tbody>
+        </table>
+        <div class="foot" id="sheets-foot"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px" id="unmatched-card" hidden>
+        <div class="card-h"><h3>Charges with no vehicle match</h3><span id="unmatched-count"></span></div>
+        <div class="card-body" style="padding-top:0">
+          <p class="dim" style="font-size:12.5px">
+            These charges didn't match any employee's plate number or transponder label. Add the vehicle to
+            that employee's profile under Employee roster, or assign a driver here directly.
+          </p>
+        </div>
+        <table>
+          <thead><tr><th>Date &amp; time</th><th>Source</th><th>Location</th><th>Amount</th><th>Assign to</th><th></th></tr></thead>
+          <tbody id="unmatched-body"></tbody>
+        </table>
+      </div>
+
+      <div class="card" id="entry-card" hidden>
+        <div class="card-h"><h3 id="entry-title">Enter a returned sheet</h3><span id="entry-sub"></span></div>
+        <div class="card-body">
+          <p class="dim" style="margin-top:0;font-size:12.5px">
+            Upload the signed sheet this driver handed back — a scan or a phone photo is fine — then check off
+            what they marked Personal. The upload is the record of what was actually signed; the checkboxes
+            below are what the system acts on.
+          </p>
+          <div class="field" style="max-width:420px">
+            <label class="f-lab" for="entry-upload">Signed sheet (PDF or photo)</label>
+            <input class="f-in" id="entry-upload" type="file" accept="application/pdf,image/*">
+          </div>
+          <div id="entry-upload-pill" class="pill ok" style="display:none;margin-bottom:14px"></div>
+          <table style="margin-bottom:14px">
+            <thead><tr><th style="width:40px">Personal</th><th>Date</th><th>Time</th><th>Location</th><th>Amount</th><th>Job / Site</th></tr></thead>
+            <tbody id="entry-rows"></tbody>
+          </table>
+          <div style="display:flex;gap:9px;align-items:center">
+            <button class="gh solid" id="entry-save-btn" type="button">Save entry</button>
+            <button class="gh" id="entry-cancel-btn" type="button">Cancel</button>
+            <span class="dim" id="entry-total-label" style="font-size:12.5px"></span>
+          </div>
+        </div>
+      </div>
+
+    </section>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, showToast, formatDate } from './app.js';
+import { db } from './firebaseconfig.js';
+import { LOGO_DATA_URL } from './letterhead-assets.js';
+import {
+  collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, writeBatch,
+  query, where, orderBy, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('tolls', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+function money(n) { return `$${(n || 0).toFixed(2)}`; }
+
+// ---------------------------------------------------------------------
+// Statement text parser — The Toll Roads format. Charge lines are
+// attributed to whichever "TOLLS FOR TRANSPONDER <label>" or
+// "TOLL PAID: … <plate>" header line most recently appeared above them;
+// order-independent across the two printed PDF columns since each
+// section is self-contained (header line, then its charge lines).
+// "Toll discount" lines are FasTrak account credits on the same
+// crossing, not separate trips, and "PAYMENT" lines are account
+// payments — neither is a chargeable toll, so both are skipped.
+// ---------------------------------------------------------------------
+function parseTollStatement(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const charges = [];
+  let ctx = null;
+  const chargeLineRe = /^(\d{2}\/\d{2}\/\d{2})\s+(\d{2}:\d{2})\s+(.+?)\s+(-?\d+\.\d{2})$/;
+  const transponderRe = /^TOLLS\s+FOR\s+TRANSPONDER\s+(.+)$/i;
+  const plateSectionRe = /^TOLLS\s+PAID\s+BY\s+PLATE/i;
+  const tollPaidRe = /^TOLL\s+PAID:\s*\d{2}\/\d{2}\/\d{2}\s+#\S+\s+[A-Z]{2}\s*(\S+)/i;
+  let periodStart = null, periodEnd = null;
+  const periodRe = /Statement\s+Activity\s+Period:\s*(\d{2}\/\d{2}\/\d{4})\s*-\s*(\d{2}\/\d{2}\/\d{4})/i;
+
+  function toIso(mmddyy) {
+    const [mm, dd, yy] = mmddyy.split('/');
+    return `20${yy}-${mm}-${dd}`;
+  }
+  function toIsoLong(mmddyyyy) {
+    const [mm, dd, yyyy] = mmddyyyy.split('/');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  for (const line of lines) {
+    const periodM = line.match(periodRe);
+    if (periodM) { periodStart = toIsoLong(periodM[1]); periodEnd = toIsoLong(periodM[2]); continue; }
+
+    let m = line.match(transponderRe);
+    if (m) { ctx = { type: 'transponder', key: m[1].trim() }; continue; }
+    if (plateSectionRe.test(line)) { ctx = null; continue; }
+    m = line.match(tollPaidRe);
+    if (m) { ctx = { type: 'plate', key: m[1].trim().toUpperCase() }; continue; }
+    if (/^TOTAL\b/i.test(line)) continue;
+
+    m = line.match(chargeLineRe);
+    if (!m) continue;
+    const [, dateStr, time, locationRaw, amtStr] = m;
+    const location = locationRaw.trim();
+    if (/toll discount/i.test(location)) continue;
+    if (/payment/i.test(location)) continue;
+    if (!ctx) continue;
+    charges.push({
+      date: toIso(dateStr), time, location,
+      amount: Math.round(Math.abs(parseFloat(amtStr)) * 100) / 100,
+      source: ctx.type, match_key: ctx.key,
+    });
+  }
+  return { charges, periodStart, periodEnd };
+}
+
+function matchEmployee(charge, employees) {
+  if (charge.source === 'transponder') {
+    const key = charge.match_key.trim().toLowerCase();
+    return employees.find((e) => (e.vehicle_transponder || '').trim().toLowerCase() === key) || null;
+  }
+  const key = charge.match_key.trim().toUpperCase();
+  return employees.find((e) => (e.vehicle_plate || '').trim().toUpperCase() === key) || null;
+}
+
+// ---------------------------------------------------------------------
+// Data
+// ---------------------------------------------------------------------
+let employees = [];
+let statements = [];
+let currentStatementId = null;
+let currentTolls = [];      // tolls for the selected statement
+let currentSheets = {};     // emp_id -> toll_sheets doc
+let lastParse = null;       // { charges, periodStart, periodEnd } awaiting confirmation
+let entryEmpId = null;
+let entryCharges = [];
+let entryUploadDataUrl = null;
+let entryUploadMeta = null;
+
+async function loadEmployees() {
+  const snap = await getDocs(collection(db, 'employees'));
+  employees = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((e) => e.status !== 'terminated' && !e.is_test);
+}
+
+async function loadStatements() {
+  const snap = await getDocs(query(collection(db, 'toll_statements'), orderBy('entered_at', 'desc')));
+  statements = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const sel = document.getElementById('statement-select');
+  if (statements.length === 0) {
+    sel.innerHTML = '<option value="">No statements imported</option>';
+    currentStatementId = null;
+    return;
+  }
+  sel.innerHTML = statements.map((s) => {
+    const label = s.period_start && s.period_end
+      ? `${formatDate(s.period_start)} – ${formatDate(s.period_end)}`
+      : `Imported ${s.entered_at && s.entered_at.toDate ? s.entered_at.toDate().toLocaleDateString() : ''}`;
+    return `<option value="${s.id}">${escapeHtml(label)}</option>`;
+  }).join('');
+  if (!currentStatementId || !statements.some((s) => s.id === currentStatementId)) {
+    currentStatementId = statements[0].id;
+  }
+  sel.value = currentStatementId;
+}
+
+async function loadStatementData(statementId) {
+  if (!statementId) { currentTolls = []; currentSheets = {}; renderAll(); return; }
+  const tollsSnap = await getDocs(query(collection(db, 'tolls'), where('statement_id', '==', statementId)));
+  currentTolls = tollsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const sheetsSnap = await getDocs(query(collection(db, 'toll_sheets'), where('statement_id', '==', statementId)));
+  currentSheets = {};
+  sheetsSnap.docs.forEach((d) => { currentSheets[d.data().emp_id] = { id: d.id, ...d.data() }; });
+  renderAll();
+}
+
+function empLabel(empId) {
+  const e = employees.find((x) => x.id === empId);
+  return e ? `${e.first_name} ${e.last_name}` : null;
+}
+
+// ---------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------
+function renderAll() {
+  renderStats();
+  renderSheetsTable();
+  renderUnmatchedTable();
+}
+
+function renderStats() {
+  const total = currentTolls.reduce((s, t) => s + t.amount, 0);
+  const matched = currentTolls.filter((t) => t.emp_id);
+  const driverIds = new Set(matched.map((t) => t.emp_id));
+  const unmatchedCount = currentTolls.length - matched.length;
+  let pendingSheets = 0;
+  driverIds.forEach((id) => {
+    const sheet = currentSheets[id];
+    if (!sheet || sheet.status !== 'entered') pendingSheets++;
+  });
+  document.getElementById('stat-total').textContent = money(total);
+  document.getElementById('stat-drivers').textContent = String(driverIds.size);
+  document.getElementById('stat-pending').textContent = String(pendingSheets);
+  document.getElementById('stat-unmatched').textContent = String(unmatchedCount);
+}
+
+function renderSheetsTable() {
+  const body = document.getElementById('sheets-body');
+  if (!currentStatementId) {
+    body.innerHTML = '<tr><td colspan="6" class="dim">No statement imported yet.</td></tr>';
+    document.getElementById('sheets-foot').textContent = '';
+    return;
+  }
+  const byEmp = {};
+  currentTolls.filter((t) => t.emp_id).forEach((t) => {
+    (byEmp[t.emp_id] = byEmp[t.emp_id] || []).push(t);
+  });
+  const empIds = Object.keys(byEmp).sort((a, b) => (empLabel(a) || '').localeCompare(empLabel(b) || ''));
+  if (empIds.length === 0) {
+    body.innerHTML = '<tr><td colspan="6" class="dim">No matched charges in this statement.</td></tr>';
+  } else {
+    body.innerHTML = empIds.map((empId) => {
+      const charges = byEmp[empId];
+      const emp = employees.find((e) => e.id === empId);
+      const total = charges.reduce((s, c) => s + c.amount, 0);
+      const sheet = currentSheets[empId];
+      let statusHtml;
+      if (!sheet || sheet.status === 'not_sent') statusHtml = '<span class="pill">Not sent</span>';
+      else if (sheet.status === 'sent') statusHtml = `<span class="pill mid">Sent${sheet.generated_at && sheet.generated_at.toDate ? ' ' + sheet.generated_at.toDate().toLocaleDateString() : ''} — awaiting return</span>`;
+      else statusHtml = `<span class="pill ok">Returned &amp; entered${sheet.entered_at && sheet.entered_at.toDate ? ' ' + sheet.entered_at.toDate().toLocaleDateString() : ''}</span>`;
+      return `
+        <tr>
+          <td>${escapeHtml(emp ? `${emp.first_name} ${emp.last_name}` : empId)}</td>
+          <td class="mono">${escapeHtml(emp?.vehicle_unit || emp?.vehicle_plate || '—')}</td>
+          <td>${charges.length}</td>
+          <td class="mono">${money(total)}</td>
+          <td>${statusHtml}</td>
+          <td style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="gh" style="padding:5px 10px;font-size:10.5px" type="button" data-gen="${empId}">Generate &amp; download sheet</button>
+            <button class="gh" style="padding:5px 10px;font-size:10.5px" type="button" data-enter="${empId}">Enter returned sheet</button>
+          </td>
+        </tr>`;
+    }).join('');
+  }
+  document.getElementById('sheets-foot').textContent =
+    `${empIds.length} driver(s) had charges this statement. Totals are for this statement period only.`;
+
+  body.querySelectorAll('[data-gen]').forEach((btn) => btn.addEventListener('click', () => generateSheetPdf(btn.dataset.gen)));
+  body.querySelectorAll('[data-enter]').forEach((btn) => btn.addEventListener('click', () => openEntry(btn.dataset.enter)));
+}
+
+function renderUnmatchedTable() {
+  const unmatched = currentTolls.filter((t) => !t.emp_id);
+  const card = document.getElementById('unmatched-card');
+  if (unmatched.length === 0) { card.hidden = true; return; }
+  card.hidden = false;
+  document.getElementById('unmatched-count').textContent = `${unmatched.length} charge(s)`;
+  const empOptions = employees
+    .slice()
+    .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''))
+    .map((e) => `<option value="${e.id}">${escapeHtml(`${e.first_name} ${e.last_name}`)}</option>`).join('');
+  document.getElementById('unmatched-body').innerHTML = unmatched.map((t) => `
+    <tr>
+      <td class="mono">${formatDate(t.date)} ${t.time}</td>
+      <td class="mono">${t.source === 'plate' ? 'Plate ' + t.match_key : 'Transponder "' + escapeHtml(t.match_key) + '"'}</td>
+      <td>${escapeHtml(t.location)}</td>
+      <td class="mono">${money(t.amount)}</td>
+      <td><select class="inp" data-assign="${t.id}" style="font-size:11.5px"><option value="">Choose…</option>${empOptions}</select></td>
+      <td><button class="gh" style="padding:5px 10px;font-size:10.5px" type="button" data-save-assign="${t.id}">Assign</button></td>
+    </tr>
+  `).join('');
+  document.getElementById('unmatched-body').querySelectorAll('[data-save-assign]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const tollId = btn.dataset.saveAssign;
+      const sel = document.querySelector(`[data-assign="${tollId}"]`);
+      const empId = sel.value;
+      if (!empId) { showToast('Choose who had this vehicle.', 'error'); return; }
+      try {
+        await updateDoc(doc(db, 'tolls', tollId), { emp_id: empId, entered_by: profile.uid, entered_at: serverTimestamp() });
+        showToast('Assigned.');
+        await loadStatementData(currentStatementId);
+      } catch (err) {
+        console.error(err);
+        showToast('Could not assign — ' + err.message, 'error');
+      }
+    });
+  });
+}
+
+// ---------------------------------------------------------------------
+// Import
+// ---------------------------------------------------------------------
+document.getElementById('parse-btn').addEventListener('click', () => {
+  const text = document.getElementById('paste-text').value;
+  if (!text.trim()) { showToast('Paste the statement text first.', 'error'); return; }
+  const result = parseTollStatement(text);
+  lastParse = result;
+  const matched = result.charges.filter((c) => matchEmployee(c, employees));
+  document.getElementById('pv-count').textContent = String(result.charges.length);
+  document.getElementById('pv-matched').textContent = String(matched.length);
+  document.getElementById('pv-unmatched').textContent = String(result.charges.length - matched.length);
+  document.getElementById('pv-total').textContent = money(result.charges.reduce((s, c) => s + c.amount, 0));
+  document.getElementById('pv-period-start').value = result.periodStart || '';
+  document.getElementById('pv-period-end').value = result.periodEnd || '';
+  document.getElementById('parse-status').textContent = result.charges.length === 0
+    ? 'No charge lines recognized — check that the full statement text was pasted.' : '';
+  document.getElementById('parse-preview').hidden = false;
+});
+
+document.getElementById('cancel-import-btn').addEventListener('click', () => {
+  lastParse = null;
+  document.getElementById('parse-preview').hidden = true;
+  document.getElementById('paste-text').value = '';
+});
+
+document.getElementById('confirm-import-btn').addEventListener('click', async () => {
+  if (!lastParse || lastParse.charges.length === 0) return;
+  const btn = document.getElementById('confirm-import-btn');
+  btn.disabled = true;
+  try {
+    const periodStart = document.getElementById('pv-period-start').value || null;
+    const periodEnd = document.getElementById('pv-period-end').value || null;
+    const total = lastParse.charges.reduce((s, c) => s + c.amount, 0);
+    const stRef = await addDoc(collection(db, 'toll_statements'), {
+      period_start: periodStart, period_end: periodEnd,
+      charge_count: lastParse.charges.length, total_amount: total,
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    // Chunked batches — Firestore caps a single batch at 500 writes.
+    const chunks = [];
+    for (let i = 0; i < lastParse.charges.length; i += 400) chunks.push(lastParse.charges.slice(i, i + 400));
+    for (const chunk of chunks) {
+      const batch = writeBatch(db);
+      chunk.forEach((c) => {
+        const match = matchEmployee(c, employees);
+        const ref = doc(collection(db, 'tolls'));
+        batch.set(ref, {
+          statement_id: stRef.id, date: c.date, time: c.time, location: c.location, amount: c.amount,
+          source: c.source, match_key: c.match_key, emp_id: match ? match.id : null,
+          status: 'unreviewed', job_site: '', note: '',
+          entered_by: profile.uid, entered_at: serverTimestamp(),
+        });
+      });
+      await batch.commit();
+    }
+    showToast(`Imported ${lastParse.charges.length} charges.`);
+    lastParse = null;
+    document.getElementById('parse-preview').hidden = true;
+    document.getElementById('paste-text').value = '';
+    currentStatementId = stRef.id;
+    await loadStatements();
+    await loadStatementData(currentStatementId);
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save the import — ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('statement-select').addEventListener('change', async (e) => {
+  currentStatementId = e.target.value || null;
+  await loadStatementData(currentStatementId);
+});
+
+// ---------------------------------------------------------------------
+// Generate &amp; download the fillable review-sheet PDF
+// ---------------------------------------------------------------------
+async function logoImageBytes() {
+  const res = await fetch(LOGO_DATA_URL);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+function statementPeriodLabel() {
+  const s = statements.find((x) => x.id === currentStatementId);
+  if (!s) return '';
+  return s.period_start && s.period_end ? `${formatDate(s.period_start)} – ${formatDate(s.period_end)}` : '';
+}
+
+const TOLL_SHEET_I18N = {
+  en: {
+    title: 'Toll Charge Review', continued: 'Toll Charge Review — continued',
+    dept: 'Southwest Landscape, Inc. — Human Resources Department',
+    empInfo: 'EMPLOYEE INFORMATION',
+    instructions: 'Instructions: the vehicle above was charged for each toll crossing listed below. For every row, check whether the trip was for company business or personal use. If business, type the job or site you were traveling to. Once finished, print this form, sign the Authorization section by hand, and return it to HR.',
+    colDate: 'DATE', colTime: 'TIME', colLoc: 'LOCATION', colAmt: 'AMT', colBiz: 'BUSINESS', colJob: 'JOB / SITE TRAVELED TO', colPer: 'PERSONAL',
+    totalPersonal: 'Total marked Personal:',
+    authorization: 'AUTHORIZATION',
+    authText: 'I have reviewed the charges above and marked each as business or personal use. I authorize Southwest Landscape, Inc. to deduct the total amount marked Personal from my next regular paycheck, in accordance with California wage deduction requirements.',
+    printNote: 'Print this page after filling it out, then sign below in ink before returning it to HR.',
+    empSig: 'Employee Signature', date: 'Date', hrSig: 'Received by HR — Signature',
+    footer: (period) => `Generated from The Toll Roads statement, period ${period || '—'}.   SWL-TOLL-REV`,
+  },
+  es: {
+    title: 'Revisión de Cargos de Peaje', continued: 'Revisión de Cargos de Peaje — continuación',
+    dept: 'Southwest Landscape, Inc. — Departamento de Recursos Humanos',
+    empInfo: 'INFORMACIÓN DEL EMPLEADO',
+    instructions: 'Instrucciones: el vehículo indicado arriba generó cada cargo de peaje que aparece abajo. Para cada fila, marque si el viaje fue de negocios de la empresa o de uso personal. Si fue de negocios, escriba el trabajo o lugar al que se dirigía. Al terminar, imprima este formulario, firme la sección de Autorización a mano y devuélvalo a Recursos Humanos.',
+    colDate: 'FECHA', colTime: 'HORA', colLoc: 'UBICACIÓN', colAmt: 'MONTO', colBiz: 'NEGOCIOS', colJob: 'TRABAJO / LUGAR AL QUE VIAJÓ', colPer: 'PERSONAL',
+    totalPersonal: 'Total marcado como Personal:',
+    authorization: 'AUTORIZACIÓN',
+    authText: 'He revisado los cargos anteriores y marqué cada uno como de uso de negocios o personal. Autorizo a Southwest Landscape, Inc. a deducir el monto total marcado como Personal de mi próximo cheque de pago regular, de acuerdo con los requisitos de deducción salarial de California.',
+    printNote: 'Imprima esta página después de completarla, luego firme abajo con tinta antes de devolverla a Recursos Humanos.',
+    empSig: 'Firma del Empleado', date: 'Fecha', hrSig: 'Recibido por Recursos Humanos — Firma',
+    footer: (period) => `Generado del estado de cuenta de The Toll Roads, período ${period || '—'}.   SWL-TOLL-REV`,
+  },
+};
+
+async function buildReviewSheetPdf(emp, charges, periodLabel, lang = 'en') {
+  const tr = TOLL_SHEET_I18N[lang] || TOLL_SHEET_I18N.en;
+  const { PDFDocument, StandardFonts, rgb } = PDFLib;
+  const pdf = await PDFDocument.create();
+  const form = pdf.getForm();
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const reg = await pdf.embedFont(StandardFonts.Helvetica);
+  const italic = await pdf.embedFont(StandardFonts.HelveticaOblique);
+  const logoImg = await pdf.embedPng(await logoImageBytes());
+  const logoH = 36;
+  const logoDims = logoImg.scale(logoH / logoImg.height);
+  const M = 46;
+  const PW = 612, PH = 792;
+
+  let page = pdf.addPage([PW, PH]);
+  let y = PH - 50;
+
+  function text(str, x, yy, opts = {}) {
+    page.drawText(str, { x, y: yy, size: opts.size || 10, font: opts.font || reg, color: opts.color || rgb(0.07, 0.07, 0.07) });
+  }
+  function rightText(str, rightX, yy, opts = {}) {
+    const size = opts.size || 10, font = opts.font || bold;
+    text(str, rightX - font.widthOfTextAtSize(str, size), yy, { ...opts, size, font });
+  }
+  function wrap(str, x, yy, maxWidth, size, font) {
+    const words = str.split(' ');
+    let line = '', cy = yy;
+    for (const w of words) {
+      const test = line ? line + ' ' + w : w;
+      if (font.widthOfTextAtSize(test, size) > maxWidth) { text(line, x, cy, { size, font }); cy -= size + 3; line = w; }
+      else line = test;
+    }
+    if (line) { text(line, x, cy, { size, font }); cy -= size + 3; }
+    return cy;
+  }
+  function drawLogoHeader(continued) {
+    page.drawImage(logoImg, { x: M, y: y - logoH + 8, width: logoDims.width, height: logoH });
+    rightText('SOUTHWEST', PW - M, y + 2, { size: 13, color: rgb(0.27, 0.27, 0.27) });
+    rightText('LANDSCAPE', PW - M, y - 12, { size: 13, color: rgb(0.27, 0.27, 0.27) });
+    y -= logoH + 14;
+    text(continued ? tr.continued : tr.title, M, y, { size: continued ? 14 : 20, font: bold });
+    y -= continued ? 16 : 16;
+    if (!continued) { text(tr.dept, M, y, { size: 9, color: rgb(0.4, 0.4, 0.4) }); y -= 22; }
+  }
+
+  drawLogoHeader(false);
+
+  page.drawRectangle({ x: M, y: y - 18, width: PW - 2 * M, height: 20, color: rgb(0.24, 0.24, 0.24) });
+  text(tr.empInfo, M + 6, y - 13, { size: 8, font: bold, color: rgb(1, 1, 1) });
+  y -= 28;
+  const fEmp = form.createTextField('employee_name'); fEmp.setText(`${emp.first_name} ${emp.last_name}`); fEmp.enableReadOnly();
+  fEmp.addToPage(page, { x: M, y: y - 16, width: 180, height: 18, borderWidth: 0.5 });
+  const fVeh = form.createTextField('vehicle'); fVeh.setText(emp.vehicle_unit || emp.vehicle_plate || ''); fVeh.enableReadOnly();
+  fVeh.addToPage(page, { x: M + 190, y: y - 16, width: 140, height: 18, borderWidth: 0.5 });
+  const fPeriod = form.createTextField('period'); fPeriod.setText(periodLabel || ''); fPeriod.enableReadOnly();
+  fPeriod.addToPage(page, { x: M + 340, y: y - 16, width: 226, height: 18, borderWidth: 0.5 });
+  y -= 46;
+
+  y = wrap(tr.instructions, M, y, PW - 2 * M, 9, reg);
+  y -= 14;
+
+  const colW = { date: 55, time: 46, loc: 145, amt: 42, biz: 42, job: 148, per: 42 };
+  function drawTableHeader() {
+    const colX = {}; let cx = M;
+    for (const k of ['date', 'time', 'loc', 'amt', 'biz', 'job', 'per']) { colX[k] = cx; cx += colW[k]; }
+    page.drawRectangle({ x: M, y: y - 16, width: PW - 2 * M, height: 18, color: rgb(0.93, 0.93, 0.93) });
+    text(tr.colDate, colX.date + 3, y - 11, { size: 7.5, font: bold });
+    text(tr.colTime, colX.time + 3, y - 11, { size: 7.5, font: bold });
+    text(tr.colLoc, colX.loc + 3, y - 11, { size: 7.5, font: bold });
+    text(tr.colAmt, colX.amt + 3, y - 11, { size: 7.5, font: bold });
+    text(tr.colBiz, colX.biz + 2, y - 11, { size: 6.3, font: bold });
+    text(tr.colJob, colX.job + 3, y - 11, { size: 6.8, font: bold });
+    text(tr.colPer, colX.per + 2, y - 11, { size: 6.3, font: bold });
+    y -= 18;
+    return colX;
+  }
+  let colX = drawTableHeader();
+
+  const rowH = 20;
+  const BOTTOM = 70; // leave room before starting a fresh page
+  charges.forEach((c, i) => {
+    if (y - rowH < BOTTOM) {
+      page = pdf.addPage([PW, PH]);
+      y = PH - 50;
+      drawLogoHeader(true);
+      colX = drawTableHeader();
+    }
+    const ry = y;
+    if (i % 2 === 1) page.drawRectangle({ x: M, y: ry - rowH + 2, width: PW - 2 * M, height: rowH - 2, color: rgb(0.975, 0.975, 0.975) });
+    text(formatDate(c.date).replace(/\/\d{4}$/, ''), colX.date + 3, ry - 13, { size: 8.3 });
+    text(c.time, colX.time + 3, ry - 13, { size: 8.3 });
+    text(c.location.length > 28 ? c.location.slice(0, 27) + '…' : c.location, colX.loc + 3, ry - 13, { size: 7.5 });
+    text(money(c.amount), colX.amt + 3, ry - 13, { size: 8.3 });
+    const cbBiz = form.createCheckBox(`business_${c.id}`);
+    cbBiz.addToPage(page, { x: colX.biz + (colW.biz - 11) / 2, y: ry - 15, width: 11, height: 11, borderWidth: 0.7 });
+    const jobField = form.createTextField(`job_${c.id}`);
+    jobField.addToPage(page, { x: colX.job + 3, y: ry - 17, width: colW.job - 6, height: 15, borderWidth: 0.5 });
+    const cbPer = form.createCheckBox(`personal_${c.id}`);
+    cbPer.addToPage(page, { x: colX.per + (colW.per - 11) / 2, y: ry - 15, width: 11, height: 11, borderWidth: 0.7 });
+    y -= rowH;
+  });
+
+  if (y - 170 < BOTTOM) { page = pdf.addPage([PW, PH]); y = PH - 50; drawLogoHeader(true); }
+
+  y -= 4;
+  page.drawLine({ start: { x: M, y: y + 4 }, end: { x: PW - M, y: y + 4 }, thickness: 0.6, color: rgb(0.6, 0.6, 0.6) });
+  text(tr.totalPersonal, M + 280, y - 10, { size: 9, font: bold });
+  const totalField = form.createTextField('total_personal');
+  totalField.addToPage(page, { x: PW - M - 72, y: y - 16, width: 72, height: 16, borderWidth: 0.5 });
+  y -= 34;
+
+  page.drawRectangle({ x: M, y: y - 16, width: PW - 2 * M, height: 18, color: rgb(0.24, 0.24, 0.24) });
+  text(tr.authorization, M + 6, y - 11, { size: 8, font: bold, color: rgb(1, 1, 1) });
+  y -= 28;
+  y = wrap(tr.authText, M, y, PW - 2 * M, 9, reg);
+  y -= 10;
+  text(tr.printNote, M, y, { size: 8, font: italic, color: rgb(0.35, 0.35, 0.35) });
+  y -= 26;
+
+  const sigColW = (PW - 2 * M) / 2;
+  page.drawLine({ start: { x: M, y }, end: { x: M + sigColW - 20, y }, thickness: 0.7, color: rgb(0.2, 0.2, 0.2) });
+  page.drawLine({ start: { x: M + sigColW, y }, end: { x: PW - M, y }, thickness: 0.7, color: rgb(0.2, 0.2, 0.2) });
+  text(tr.empSig, M, y - 11, { size: 8, font: bold, color: rgb(0.3, 0.3, 0.3) });
+  text(tr.date, M + sigColW, y - 11, { size: 8, font: bold, color: rgb(0.3, 0.3, 0.3) });
+  y -= 38;
+  page.drawLine({ start: { x: M, y }, end: { x: M + sigColW - 20, y }, thickness: 0.7, color: rgb(0.2, 0.2, 0.2) });
+  page.drawLine({ start: { x: M + sigColW, y }, end: { x: PW - M, y }, thickness: 0.7, color: rgb(0.2, 0.2, 0.2) });
+  text(tr.hrSig, M, y - 11, { size: 8, font: bold, color: rgb(0.3, 0.3, 0.3) });
+  text(tr.date, M + sigColW, y - 11, { size: 8, font: bold, color: rgb(0.3, 0.3, 0.3) });
+  y -= 28;
+  text(tr.footer(periodLabel), M, y, { size: 7.5, color: rgb(0.45, 0.45, 0.45) });
+
+  return pdf.save();
+}
+
+async function generateSheetPdf(empId) {
+  const emp = employees.find((e) => e.id === empId);
+  const charges = currentTolls.filter((t) => t.emp_id === empId);
+  if (!emp || charges.length === 0) return;
+  const lang = document.getElementById('sheet-lang-select').value;
+  try {
+    const bytes = await buildReviewSheetPdf(emp, charges, statementPeriodLabel(), lang);
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Toll Charge Review - ${emp.first_name} ${emp.last_name}.pdf`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+
+    const sheetRef = doc(db, 'toll_sheets', `${currentStatementId}__${empId}`);
+    await setDoc(sheetRef, {
+      statement_id: currentStatementId, emp_id: empId, status: 'sent', sheet_lang: lang,
+      generated_by: profile.uid, generated_at: serverTimestamp(),
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    }, { merge: true });
+    showToast('Sheet downloaded.');
+    await loadStatementData(currentStatementId);
+  } catch (err) {
+    console.error(err);
+    showToast('Could not generate the sheet — ' + err.message, 'error');
+  }
+}
+
+// ---------------------------------------------------------------------
+// Enter a returned sheet
+// ---------------------------------------------------------------------
+function openEntry(empId) {
+  entryEmpId = empId;
+  entryUploadDataUrl = null;
+  entryUploadMeta = null;
+  const emp = employees.find((e) => e.id === empId);
+  entryCharges = currentTolls.filter((t) => t.emp_id === empId);
+  document.getElementById('entry-title').textContent = `Enter a returned sheet — ${emp.first_name} ${emp.last_name}`;
+  document.getElementById('entry-sub').textContent = `${entryCharges.length} charges, ${money(entryCharges.reduce((s, c) => s + c.amount, 0))}`;
+  document.getElementById('entry-upload').value = '';
+  document.getElementById('entry-upload-pill').style.display = 'none';
+  document.getElementById('entry-rows').innerHTML = entryCharges.map((c) => `
+    <tr>
+      <td><input type="checkbox" data-personal="${c.id}" ${c.status === 'personal' ? 'checked' : ''}></td>
+      <td class="mono">${formatDate(c.date)}</td>
+      <td class="mono">${c.time}</td>
+      <td>${escapeHtml(c.location)}</td>
+      <td class="mono">${money(c.amount)}</td>
+      <td><input class="inp" data-job="${c.id}" value="${escapeHtml(c.job_site || '')}" style="font-size:11.5px;width:100%"></td>
+    </tr>
+  `).join('');
+  document.getElementById('entry-rows').querySelectorAll('[data-personal]').forEach((cb) => {
+    cb.addEventListener('change', updateEntryTotal);
+  });
+  updateEntryTotal();
+  document.getElementById('entry-card').hidden = false;
+  document.getElementById('entry-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function updateEntryTotal() {
+  let total = 0;
+  entryCharges.forEach((c) => {
+    const cb = document.querySelector(`[data-personal="${c.id}"]`);
+    if (cb && cb.checked) total += c.amount;
+  });
+  document.getElementById('entry-total-label').textContent = `Total marked Personal: ${money(total)}`;
+}
+
+document.getElementById('entry-cancel-btn').addEventListener('click', () => {
+  document.getElementById('entry-card').hidden = true;
+  entryEmpId = null;
+});
+
+document.getElementById('entry-upload').addEventListener('change', async () => {
+  const file = document.getElementById('entry-upload').files[0];
+  if (!file) return;
+  if (file.size > 500 * 1024) {
+    showToast('That file is too large to attach (max ~500KB) — try a lower-resolution scan or photo of it.', 'error');
+    document.getElementById('entry-upload').value = '';
+    return;
+  }
+  entryUploadDataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+  entryUploadMeta = { name: file.name, type: file.type };
+  const pill = document.getElementById('entry-upload-pill');
+  pill.textContent = `${file.name} — attached`;
+  pill.style.display = 'inline-block';
+});
+
+document.getElementById('entry-save-btn').addEventListener('click', async () => {
+  if (!entryEmpId) return;
+  const btn = document.getElementById('entry-save-btn');
+  btn.disabled = true;
+  try {
+    const batch = writeBatch(db);
+    const personalIds = [];
+    let personalTotal = 0;
+    entryCharges.forEach((c) => {
+      const cb = document.querySelector(`[data-personal="${c.id}"]`);
+      const jobInput = document.querySelector(`[data-job="${c.id}"]`);
+      const isPersonal = !!(cb && cb.checked);
+      const jobSite = jobInput ? jobInput.value.trim() : '';
+      if (isPersonal) { personalIds.push(c.id); personalTotal += c.amount; }
+      batch.update(doc(db, 'tolls', c.id), {
+        status: isPersonal ? 'personal' : 'business',
+        job_site: jobSite,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+    });
+    await batch.commit();
+
+    const sheetRef = doc(db, 'toll_sheets', `${currentStatementId}__${entryEmpId}`);
+    const sheetUpdate = {
+      statement_id: currentStatementId, emp_id: entryEmpId, status: 'entered',
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    };
+    if (entryUploadDataUrl) {
+      sheetUpdate.signed_file_data_url = entryUploadDataUrl;
+      sheetUpdate.signed_file_name = entryUploadMeta.name;
+      sheetUpdate.signed_file_type = entryUploadMeta.type;
+    }
+    await setDoc(sheetRef, sheetUpdate, { merge: true });
+
+    document.getElementById('entry-card').hidden = true;
+    const empId = entryEmpId;
+    entryEmpId = null;
+    await loadStatementData(currentStatementId);
+
+    if (personalIds.length > 0) {
+      const dedRef = await addDoc(collection(db, 'toll_deductions'), {
+        statement_id: currentStatementId, emp_id: empId, charge_ids: personalIds,
+        total_amount: Math.round(personalTotal * 100) / 100,
+        generated_by: profile.uid, generated_at: serverTimestamp(),
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast('Saved. Opening the Payroll Deduction Authorization…');
+      window.location.href = `docgen.html?open=tolldeduction&deduction=${encodeURIComponent(dedRef.id)}`;
+    } else {
+      showToast('Saved. No personal charges for this driver.');
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---------------------------------------------------------------------
+// Boot
+// ---------------------------------------------------------------------
+await loadEmployees();
+await loadStatements();
+await loadStatementData(currentStatementId);
+</script>
+</body>
+</html>
