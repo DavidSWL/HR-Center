@@ -201,6 +201,9 @@ document.getElementById('tab-employment').innerHTML = `
     <div><b>Dotted line</b><span>${escapeHtml(managerName(emp.dotted_line_emp_id))}</span></div>
     <div><b>Hire date</b><span>${formatDate(emp.hire_date)}</span></div>
     <div><b>Tenure</b><span>${emp.status === 'terminated' ? '—' : `${yearsSince(emp.hire_date)} yrs`}</span><span class="kv-note">Computed from hire date, not stored</span></div>
+    <div><b>Assigned vehicle</b><span>${escapeHtml(emp.vehicle_unit) || '—'}</span></div>
+    <div><b>License plate</b><span>${escapeHtml(emp.vehicle_plate) || '—'}</span></div>
+    <div><b>FasTrak transponder label</b><span>${escapeHtml(emp.vehicle_transponder) || '—'}</span><span class="kv-note">Matches toll charges in Toll Tracker</span></div>
     ${emp.status === 'terminated' ? `
     <div><b>Separation date</b><span>${formatDate(emp.separation_date)}</span></div>
     <div><b>Separation type</b><span>${escapeHtml(emp.separation_type) || '—'}</span></div>

@@ -113,6 +113,18 @@ service cloud.firestore {
         || data.photo_data_urls.size() <= 6;
     }
 
+    // A signed toll review sheet (scan or phone photo), same data: URI
+    // pattern as the photo fields above. tolls.html caps the file at
+    // 500KB before it's ever base64-encoded here, so 700,000 chars
+    // leaves headroom for that plus the rest of the document while
+    // staying safely under Firestore's 1MiB-per-document ceiling —
+    // unlike photoSizeOk/applicationPageSizeOk's larger thresholds,
+    // which cut it close to that ceiling on their own.
+    function tollSheetFileOk(data) {
+      return !('signed_file_data_url' in data) || data.signed_file_data_url == null
+        || data.signed_file_data_url.size() < 700000;
+    }
+
     // ---- users ------------------------------------------------------------
     // Role assignment is how every other rule below decides who can do
     // what, so it is not something the app itself is allowed to change.
@@ -469,6 +481,52 @@ service cloud.firestore {
         && stamped(request.resource.data);
       allow update: if isHrUser() && isClean(request.resource.data);
       allow delete: if isHrUser();
+    }
+
+    // ---- toll tracker -----------------------------------------------------
+    // Toll charge amounts are a vehicle/fuel-cost record, not compensation
+    // data — isClean() still blocks any pay/SSN/DOB field here same as
+    // everywhere else, and there's no comp-like field to enter in the UI
+    // in the first place. No David-only restriction: any HR staff can
+    // import a statement, review charges, and mark one personal.
+    match /toll_statements/{statementId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data)
+        && stamped(request.resource.data);
+      allow update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false; // import history — append only
+    }
+
+    match /tolls/{tollId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data)
+        && stamped(request.resource.data);
+      allow update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+    }
+
+    // Doc id is "{statementId}__{empId}" — one review-sheet record per
+    // driver per statement, written with setDoc(merge:true) as the sheet
+    // moves from generated to returned, so both create and update need
+    // the same checks.
+    match /toll_sheets/{sheetId} {
+      allow read: if isHrUser();
+      allow create, update: if isHrUser() && isClean(request.resource.data)
+        && stamped(request.resource.data) && tollSheetFileOk(request.resource.data);
+      allow delete: if false;
+    }
+
+    // One per employee per batch of charges confirmed personal — this is
+    // the record a write-up creates for payroll the moment Toll Tracker
+    // generates it, same "generating a document files its record"
+    // pattern as everywhere else. payroll_status flips to 'submitted' via
+    // update once HR has actually handed it to the payroll vendor.
+    match /toll_deductions/{deductionId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data)
+        && stamped(request.resource.data);
+      allow update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
     }
 
     // ---- settings (managed lists) -----------------------------------

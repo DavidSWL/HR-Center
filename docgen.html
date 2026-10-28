@@ -223,6 +223,7 @@ const GENERATORS = [
   { key: 'timecard', title: 'Time card adjustment', desc: 'Employee-signed record of an Aspire punch correction — print, sign, file', category: 'Pay & time' },
   { key: 'mealpenalty', title: 'Missed meal period', desc: 'Documents a missed/delayed break, the CA meal premium owed, and whether a late lunch was still given', category: 'Pay & time' },
   { key: 'mealwaiver2', title: 'Second Meal Period Waiver', desc: 'For emergency-hours days past 10 hours — matches the SWL waiver form, English or Spanish, saves to Documents', category: 'Pay & time' },
+  { key: 'tolldeduction', title: 'Payroll Deduction Authorization', desc: 'Generated automatically from Toll Tracker once a driver’s signed review sheet is entered — not filled in by hand', category: 'Pay & time' },
 
   { key: 'refusal', title: 'Medical Treatment Refusal', desc: 'Matches the SWL acknowledgment form — English or Spanish, saves to Documents', category: 'Safety' },
   { key: 'incidentreport', title: 'Incident Report', desc: 'Log a new incident — injury/near miss/property damage/vehicle accident, matches SWL Form 7.3, signed by manager and employee', category: 'Safety' },
@@ -385,7 +386,7 @@ function openGenerator(key) {
   // exactly as supplied — those forms are English-only, so the language
   // toggle only applies to PIP, Onboarding, and the letters (which manage
   // English/Spanish through their own letter-type list instead).
-  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty' || key === 'mealwaiver2' || key === 'mileage' || key === 'review' || key === 'termination' || key === 'incidentreport' || key === 'termsummary' || key === 'changenotice' || key === 'hrrequest') ? '' : 'none';
+  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty' || key === 'mealwaiver2' || key === 'mileage' || key === 'review' || key === 'termination' || key === 'incidentreport' || key === 'termsummary' || key === 'changenotice' || key === 'hrrequest' || key === 'tolldeduction') ? '' : 'none';
   renderCurrent();
 }
 
@@ -409,6 +410,7 @@ function renderCurrent() {
   if (currentKey === 'hrrequest') renderHrRequest(lang);
   if (currentKey === 'termsummary') renderTermSummary(lang);
   if (currentKey === 'changenotice') renderChangeNotice(lang);
+  if (currentKey === 'tolldeduction') renderTollDeduction(lang);
 }
 
 // ---- PIP ----
@@ -1832,6 +1834,159 @@ function renderTermSummarySheet(lang) {
     }
   });
   sheetRerender = (l) => renderTermSummarySheet(l);
+}
+
+// ---- Payroll Deduction Authorization (Toll Tracker) ----
+// Unlike every other generator here, this one is never filled in by
+// hand — Toll Tracker already decided which charges are personal and
+// filed the toll_deductions record before linking here, so this is a
+// read-only printable copy of that record plus the one thing still
+// outstanding: getting it to payroll. The employee's actual signature
+// already happened on the paper sheet Toll Tracker had them sign;
+// that scan lives on the toll_sheets record this pulls from.
+let pendingTollDeductionData = null;
+
+async function loadTollDeduction(deductionId) {
+  const snap = await getDoc(doc(db, 'toll_deductions', deductionId));
+  if (!snap.exists()) { showToast('Could not find that deduction record.', 'error'); return; }
+  const ded = { id: snap.id, ...snap.data() };
+  const tollSnaps = await Promise.all(ded.charge_ids.map((cid) => getDoc(doc(db, 'tolls', cid))));
+  const tolls = tollSnaps.filter((d) => d.exists()).map((d) => ({ id: d.id, ...d.data() }));
+  const sheetSnap = await getDoc(doc(db, 'toll_sheets', `${ded.statement_id}__${ded.emp_id}`));
+  const sheet = sheetSnap.exists() ? sheetSnap.data() : null;
+  pendingTollDeductionData = { ded, tolls, sheet };
+  renderCurrent();
+}
+
+function renderTollDeduction(lang) {
+  if (!pendingTollDeductionData) {
+    document.getElementById('gen-body').innerHTML = `
+      <div class="card">
+        <div class="card-body">
+          <p class="dim" style="margin:0">This document is generated automatically by Toll Tracker once a driver's signed review sheet is entered — it isn't filled in by hand here. <a href="tolls.html">Open Toll Tracker</a> to create one.</p>
+        </div>
+      </div>`;
+    return;
+  }
+  renderTollDeductionSheet(lang);
+}
+
+function renderTollDeductionSheet(lang) {
+  const isEs = lang === 'es';
+  const { ded, tolls, sheet } = pendingTollDeductionData;
+  const emp = allEmployeesEver.find((e) => e.id === ded.emp_id);
+  const empName = emp ? `${emp.first_name} ${emp.last_name}` : ded.emp_id;
+  const submitted = ded.payroll_status === 'submitted';
+
+  document.getElementById('gen-body').innerHTML = `
+    <div class="form-doc" id="toll-ded-sheet">
+      <div class="form-doc-inner">
+        <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+        <h1 class="form-title" style="margin-bottom:3px">${isEs ? 'Autorización de Deducción de Nómina' : 'Payroll Deduction Authorization'}</h1>
+        <p class="dim" style="font-size:11px;margin:0 0 12px">${isEs ? 'Southwest Landscape, Inc. — Departamento de Recursos Humanos' : 'Southwest Landscape, Inc. — Human Resources Department'}</p>
+
+        <div class="form-section">${isEs ? 'Información del Empleado' : 'Employee Information'}</div>
+        <div class="form-grid c3">
+          <div class="form-cell"><b>${isEs ? 'Nombre del Empleado' : 'Employee Name'}</b>${escapeHtml(empName)}</div>
+          <div class="form-cell"><b>${isEs ? 'Número de Empleado' : 'Employee Number'}</b>${escapeHtml(ded.emp_id)}</div>
+          <div class="form-cell"><b>${isEs ? 'Fecha' : 'Date'}</b>${formatDateTime(ded.generated_at)}</div>
+        </div>
+
+        <div class="form-section">${isEs ? 'Cargos de Peaje — Uso Personal' : 'Toll Charges — Personal Use'}</div>
+        <table class="form-notice-table">
+          <thead><tr>
+            <th style="width:16%">${isEs ? 'Fecha' : 'Date'}</th>
+            <th>${isEs ? 'Ubicación' : 'Location'}</th>
+            <th style="width:22%">${isEs ? 'Trabajo / Lugar' : 'Job / Site'}</th>
+            <th style="width:14%">${isEs ? 'Monto' : 'Amount'}</th>
+          </tr></thead>
+          <tbody>
+            ${tolls.map((t) => `<tr><td>${formatDate(t.date)}</td><td>${escapeHtml(t.location)}</td><td>${escapeHtml(t.job_site) || '—'}</td><td>$${t.amount.toFixed(2)}</td></tr>`).join('')}
+          </tbody>
+          <tfoot>
+            <tr><td colspan="3" style="text-align:right;font-weight:700">${isEs ? 'Total a deducir' : 'Total to be deducted'}</td><td style="font-weight:700">$${ded.total_amount.toFixed(2)}</td></tr>
+          </tfoot>
+        </table>
+
+        <div class="form-callout">
+          <b>${isEs ? 'Nota:' : 'Note:'}</b>
+          ${isEs
+            ? 'El empleado revisó y marcó estos cargos como personales y firmó la hoja de revisión en papel, que se adjunta como respaldo.'
+            : 'The employee reviewed and marked these charges as personal and signed the paper review sheet, kept on file as backup.'}
+          ${sheet && sheet.signed_file_name ? ` ${isEs ? 'Archivo adjunto' : 'Attached file'}: ${escapeHtml(sheet.signed_file_name)}.` : ''}
+        </div>
+
+        ${sheet && sheet.signed_file_data_url ? `<p class="no-print" style="margin:8px 0 0"><a href="${sheet.signed_file_data_url}" target="_blank" rel="noopener">${isEs ? 'Ver la hoja firmada' : 'View the signed sheet'}</a></p>` : ''}
+
+        <div class="form-fine" style="display:flex;justify-content:space-between;gap:12px;margin-top:14px">
+          <span>${isEs ? 'Generado por Toll Tracker.' : 'Generated by Toll Tracker.'}</span>
+          <span>SWL-TOLL-DED</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card no-print" style="margin-top:16px">
+      <div class="card-body">
+        ${submitted
+          ? `<p style="margin:0"><span class="pill ok">${isEs ? 'Enviado a nómina' : 'Submitted to payroll'}</span> ${formatDateTime(ded.submitted_at)}</p>`
+          : `
+            <p class="dim" style="margin-top:0;font-size:12.5px">${isEs ? 'Cuando esto se haya enviado a su procesador de nómina, márquelo aquí para que quede registrado.' : 'Once this has been handed to your payroll processor, mark it here so it’s on the record.'}</p>
+            <button class="gh solid" id="toll-ded-submit-btn" type="button">${isEs ? 'Marcar como enviado a nómina' : 'Mark submitted to payroll'}</button>
+          `}
+        <div class="frow" style="margin-top:14px;align-items:flex-end">
+          <div class="field" style="margin:0">
+            <label class="f-lab">${isEs ? '¿Quién debe enviarlo a nómina?' : 'Who should send this to payroll'}</label>
+            <select class="f-in" id="toll-ded-task-assignee"><option value="">${isEs ? 'Elegir…' : 'Choose…'}</option>${staff.map((s) => `<option value="${s.id}">${s.name}</option>`).join('')}</select>
+          </div>
+          <div class="field" style="margin:0"><label class="f-lab">${isEs ? 'Para cuándo' : 'By when'}</label><input class="f-in" id="toll-ded-task-due" type="date"></div>
+          <button class="gh" id="toll-ded-task-btn" type="button">${isEs ? 'Crear tarea' : 'Create task'}</button>
+        </div>
+      </div>
+    </div>
+    <button class="gh no-print" id="toll-ded-back-btn" type="button" style="margin:14px">&larr; ${isEs ? 'Volver al generador de documentos' : 'Back to document generator'}</button>
+  `;
+
+  document.getElementById('toll-ded-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+
+  const submitBtn = document.getElementById('toll-ded-submit-btn');
+  if (submitBtn) {
+    submitBtn.addEventListener('click', async () => {
+      try {
+        await updateDoc(doc(db, 'toll_deductions', ded.id), {
+          payroll_status: 'submitted', submitted_by: profile.uid, submitted_at: serverTimestamp(),
+          entered_by: profile.uid, entered_at: serverTimestamp(),
+        });
+        ded.payroll_status = 'submitted';
+        ded.submitted_at = { toDate: () => new Date() };
+        showToast(isEs ? 'Marcado como enviado.' : 'Marked as submitted.');
+        renderTollDeductionSheet(lang);
+      } catch (err) {
+        console.error(err);
+        showToast((isEs ? 'No se pudo guardar — ' : 'Could not save — ') + err.message, 'error');
+      }
+    });
+  }
+
+  document.getElementById('toll-ded-task-btn').addEventListener('click', async () => {
+    const assigneeId = document.getElementById('toll-ded-task-assignee').value;
+    const dueDate = document.getElementById('toll-ded-task-due').value;
+    if (!assigneeId || !dueDate) { showToast(isEs ? 'Elija quién y para cuándo.' : 'Pick who and by when.', 'error'); return; }
+    const assignee = staff.find((s) => s.id === assigneeId);
+    try {
+      await addDoc(collection(db, 'tasks'), {
+        assigned_to: assigneeId, due_date: dueDate,
+        instructions: `Send to payroll — Toll deduction, ${empName}, $${ded.total_amount.toFixed(2)}`,
+        recurring: 'none', status: 'open', linked_doc_id: ded.id, linked_doc_type: 'tolldeduction',
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      showToast(`Task created for ${assignee?.name || assigneeId}.`);
+    } catch (err) {
+      console.error(err);
+      showToast('Could not create the task — ' + err.message, 'error');
+    }
+  });
+
+  sheetRerender = (l) => renderTollDeductionSheet(l);
 }
 
 // ---- CA Notice of Change in Employment Status ----
@@ -6563,6 +6718,7 @@ await loadOshaEstablishment();
 const requestedOpen = new URLSearchParams(window.location.search).get('open');
 const requestedDocId = new URLSearchParams(window.location.search).get('doc');
 const requestedIncidentId = new URLSearchParams(window.location.search).get('incident');
+const requestedDeductionId = new URLSearchParams(window.location.search).get('deduction');
 const SIGNABLE_DOC_TYPES = ['timecard', 'mealpenalty', 'mileage', 'refusal', 'mealwaiver2', 'offer', 'pip', 'review', 'termination', 'incidentreport', 'changenotice'];
 if (requestedOpen && GENERATORS.some((g) => g.key === requestedOpen)) {
   openGenerator(requestedOpen);
@@ -6570,6 +6726,8 @@ if (requestedOpen && GENERATORS.some((g) => g.key === requestedOpen)) {
     await loadPendingSignatureDoc(requestedOpen, requestedDocId);
   } else if (requestedOpen === 'refusal' && requestedIncidentId) {
     await loadIncidentForRefusal(requestedIncidentId);
+  } else if (requestedOpen === 'tolldeduction' && requestedDeductionId) {
+    await loadTollDeduction(requestedDeductionId);
   }
 }
 </script>

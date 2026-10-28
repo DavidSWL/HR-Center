@@ -52,6 +52,7 @@ export const NAV_SECTIONS = [
       { key: 'ipads', label: 'iPad tracking', href: 'ipads.html', built: true },
       { key: 'tasks', label: 'Tasks', href: 'tasks.html', built: true },
       { key: 'training', label: 'Team training', href: 'training.html', built: true },
+      { key: 'tolls', label: 'Toll tracker', href: 'tolls.html', built: true },
     ],
   },
   {
