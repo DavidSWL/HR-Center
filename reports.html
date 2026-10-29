@@ -101,6 +101,7 @@ const REPORTS = [
   { key: 'recurring', title: 'Recurring issues', desc: 'Employees showing up across multiple modules' },
   { key: 'output', title: 'Team output', desc: 'Completed work by person, from the activity log' },
   { key: 'tolls', title: 'Toll charges', desc: 'Total toll spend, business vs. personal split' },
+  { key: 'tollsdue', title: 'Toll amount due', desc: 'Minimal — total owed to the toll agency, business charges only' },
 ];
 
 document.getElementById('report-tiles').innerHTML = REPORTS.map((r) => `
@@ -607,6 +608,22 @@ async function renderReport(key) {
       ['Personal', personalCount, personalTotal.toFixed(2)],
       ['Not yet reviewed', unreviewedCount, unreviewedTotal.toFixed(2)],
     ];
+  }
+
+  else if (key === 'tollsdue') {
+    await ensureLoaded(['tolls']);
+    const charges = data.tolls.filter((t) => inRange(t.date, range));
+    const businessCharges = charges.filter((t) => t.status === 'business');
+    const businessTotal = businessCharges.reduce((s, t) => s + t.amount, 0);
+    const unreviewedCount = charges.filter((t) => t.status !== 'business' && t.status !== 'personal').length;
+    const money = (n) => `$${n.toFixed(2)}`;
+    body.innerHTML = statLine(range, `denominator: ${businessCharges.length} confirmed-business toll charges with a date in range`) + `
+      <div class="big">
+        <div><div class="v n">${money(businessTotal)}</div><div class="k">Toll amount due — business charges only</div></div>
+      </div>
+      ${unreviewedCount > 0 ? `<p class="dim" style="font-size:12px;margin:-6px 0 0">${unreviewedCount} charge(s) in this range are not yet marked business or personal in Toll Tracker and are not included above.</p>` : ''}
+    `;
+    lastCsv = [['Toll amount due (business only)'], [businessTotal.toFixed(2)]];
   }
 
   else if (key === 'attendance') {
