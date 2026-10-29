@@ -2092,6 +2092,25 @@ function renderTollInvoiceSheet(lang) {
 
     <div class="card no-print" style="margin-top:16px">
       <div class="card-body">
+        <div class="frow" style="align-items:flex-end;margin-bottom:0">
+          <div class="field" style="margin:0;max-width:240px">
+            <label class="f-lab" for="toll-inv-method">${isEs ? 'Método de Pago' : 'Payment Method'}</label>
+            <select class="f-in" id="toll-inv-method">
+              <option value="">${isEs ? 'No especificado' : 'Not yet specified'}</option>
+              <option value="check">${isEs ? 'Cheque' : 'Check'}</option>
+              <option value="card">${isEs ? 'Tarjeta' : 'Card'}</option>
+              <option value="electronic">${isEs ? 'Pago electrónico' : 'Electronic payment'}</option>
+              <option value="payroll_deduction" ${emp?.flsa_status === 'exempt' ? 'disabled' : ''}>${isEs ? 'Deducción de nómina' : 'Payroll deduction'}${emp?.flsa_status === 'exempt' ? (isEs ? ' (no disponible — exento)' : ' (unavailable — exempt)') : ''}</option>
+            </select>
+          </div>
+          <button class="gh" id="toll-inv-method-btn" type="button">${isEs ? 'Actualizar' : 'Update'}</button>
+        </div>
+        ${emp?.flsa_status === 'exempt' ? `<p class="dim" style="font-size:11.5px;margin:6px 0 0">${isEs ? 'Este empleado es exento — la deducción de nómina no está disponible; el salario de un empleado exento nunca se deduce.' : 'This employee is exempt — payroll deduction isn’t available; pay is never deducted for an exempt employee.'}</p>` : ''}
+      </div>
+    </div>
+
+    <div class="card no-print" style="margin-top:16px">
+      <div class="card-body">
         ${paid
           ? `<p style="margin:0"><span class="pill ok">${isEs ? 'Pagado' : 'Paid'}</span> ${formatDate(sheet.date_received)}${sheet.receipt_ref ? ` — ${escapeHtml(sheet.receipt_ref)}` : ''}</p>`
           : `
@@ -2107,6 +2126,35 @@ function renderTollInvoiceSheet(lang) {
   `;
 
   document.getElementById('toll-inv-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  document.getElementById('toll-inv-method').value = sheet.repayment_method || '';
+
+  document.getElementById('toll-inv-method-btn').addEventListener('click', async () => {
+    const newMethod = document.getElementById('toll-inv-method').value || null;
+    if (newMethod === sheet.repayment_method) { showToast(isEs ? 'Sin cambios.' : 'No change.'); return; }
+    try {
+      await updateDoc(doc(db, 'toll_sheets', sheet.id), {
+        repayment_method: newMethod,
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+      sheet.repayment_method = newMethod;
+      if (newMethod === 'payroll_deduction' && total > 0) {
+        const dedRef = await addDoc(collection(db, 'toll_deductions'), {
+          statement_id: sheet.statement_id, emp_id: sheet.emp_id,
+          charge_ids: personalTolls.map((t) => t.id), total_amount: Math.round(total * 100) / 100,
+          generated_by: profile.uid, generated_at: serverTimestamp(),
+          entered_by: profile.uid, entered_at: serverTimestamp(),
+        });
+        showToast(isEs ? 'Actualizado. Abriendo la Autorización de Deducción de Nómina…' : 'Updated. Opening the Payroll Deduction Authorization…');
+        window.location.href = `docgen.html?open=tolldeduction&deduction=${encodeURIComponent(dedRef.id)}`;
+        return;
+      }
+      showToast(isEs ? 'Método de pago actualizado.' : 'Payment method updated.');
+      renderTollInvoiceSheet(lang);
+    } catch (err) {
+      console.error(err);
+      showToast((isEs ? 'No se pudo guardar — ' : 'Could not save — ') + err.message, 'error');
+    }
+  });
 
   const paidBtn = document.getElementById('toll-inv-paid-btn');
   if (paidBtn) {
