@@ -129,10 +129,43 @@
           </div>
           <div id="entry-upload-pill" class="pill ok" style="display:none;margin-bottom:14px"></div>
           <table style="margin-bottom:14px">
-            <thead><tr><th style="width:40px">Personal</th><th>Date</th><th>Time</th><th>Location</th><th>Amount</th><th>Job / Site</th></tr></thead>
+            <thead><tr><th style="width:40px">Personal</th><th>Date</th><th>Time</th><th>Location</th><th>Amount</th><th>Reason</th></tr></thead>
             <tbody id="entry-rows"></tbody>
           </table>
-          <div style="display:flex;gap:9px;align-items:center">
+
+          <div class="lh" style="margin-top:4px">B. Company verification</div>
+          <div class="field">
+            <label class="f-lab">Checked against</label>
+            <label style="margin-right:16px;font-size:12.5px"><input type="checkbox" id="entry-chk-route"> Route / GPS</label>
+            <label style="margin-right:16px;font-size:12.5px"><input type="checkbox" id="entry-chk-schedule"> Work schedule</label>
+            <label style="font-size:12.5px"><input type="checkbox" id="entry-chk-clockout"> Clock-out time</label>
+          </div>
+          <div class="field">
+            <label class="f-lab">Any change to a designation?</label>
+            <label style="margin-right:16px;font-size:12.5px"><input type="radio" name="entry-change" id="entry-change-no" value="no" checked> No</label>
+            <label style="font-size:12.5px"><input type="radio" name="entry-change" id="entry-change-yes" value="yes"> Yes — note below</label>
+          </div>
+          <div class="field"><label class="f-lab" for="entry-notes">Notes</label><textarea class="f-in" id="entry-notes" rows="2" style="resize:vertical"></textarea></div>
+
+          <div class="lh">C. Repayment of personal tolls</div>
+          <div class="frow">
+            <div class="field"><label class="f-lab">Personal tolls owed</label><div class="mono" id="entry-owed-display" style="padding:8px 0">$0.00</div></div>
+            <div class="field"><label class="f-lab" for="entry-due-date">Due date (30 days)</label><input class="f-in" id="entry-due-date" type="date"></div>
+          </div>
+          <div class="field" id="entry-method-field">
+            <label class="f-lab">Repayment method</label>
+            <label style="margin-right:16px;font-size:12.5px"><input type="radio" name="entry-method" id="entry-method-check" value="check"> Check</label>
+            <label style="margin-right:16px;font-size:12.5px"><input type="radio" name="entry-method" id="entry-method-card" value="card"> Card</label>
+            <label style="margin-right:16px;font-size:12.5px"><input type="radio" name="entry-method" id="entry-method-electronic" value="electronic"> Electronic payment</label>
+            <label style="font-size:12.5px"><input type="radio" name="entry-method" id="entry-method-payroll" value="payroll_deduction"> Payroll deduction</label>
+            <p class="dim" id="entry-exempt-note" style="font-size:11.5px;margin:4px 0 0;display:none">This employee is exempt (salaried) — payroll deduction isn't an option; pay is never deducted for an exempt employee.</p>
+          </div>
+          <div class="frow">
+            <div class="field"><label class="f-lab" for="entry-date-received">Date received</label><input class="f-in" id="entry-date-received" type="date"></div>
+            <div class="field"><label class="f-lab" for="entry-receipt-ref">Receipt / reference #</label><input class="f-in" id="entry-receipt-ref"></div>
+          </div>
+
+          <div style="display:flex;gap:9px;align-items:center;margin-top:6px">
             <button class="gh solid" id="entry-save-btn" type="button">Save entry</button>
             <button class="gh" id="entry-cancel-btn" type="button">Cancel</button>
             <span class="dim" id="entry-total-label" style="font-size:12.5px"></span>
@@ -449,7 +482,7 @@ document.getElementById('confirm-import-btn').addEventListener('click', async ()
         batch.set(ref, {
           statement_id: stRef.id, date: c.date, time: c.time, location: c.location, amount: c.amount,
           source: c.source, match_key: c.match_key, emp_id: match ? match.id : null,
-          status: 'unreviewed', job_site: '', note: '',
+          status: 'unreviewed', reason: '', note: '',
           entered_by: profile.uid, entered_at: serverTimestamp(),
         });
       });
@@ -491,30 +524,56 @@ function statementPeriodLabel() {
 
 const TOLL_SHEET_I18N = {
   en: {
-    title: 'Toll Charge Review', continued: 'Toll Charge Review — continued',
-    dept: 'Southwest Landscape, Inc. — Human Resources Department',
-    empInfo: 'EMPLOYEE INFORMATION',
-    instructions: 'Instructions: the vehicle above was charged for each toll crossing listed below. For every row, check whether the trip was for company business or personal use. If business, type the job or site you were traveling to. Once finished, print this form, sign the Authorization section by hand, and return it to HR.',
-    colDate: 'DATE', colTime: 'TIME', colLoc: 'LOCATION', colAmt: 'AMT', colBiz: 'BUSINESS', colJob: 'JOB / SITE TRAVELED TO', colPer: 'PERSONAL',
-    totalPersonal: 'Total marked Personal:',
-    authorization: 'AUTHORIZATION',
-    authText: 'I have reviewed the charges above and marked each as business or personal use. I authorize Southwest Landscape, Inc. to deduct the total amount marked Personal from my next regular paycheck, in accordance with California wage deduction requirements.',
-    printNote: 'Print this page after filling it out, then sign below in ink before returning it to HR.',
-    empSig: 'Employee Signature', date: 'Date', hrSig: 'Received by HR — Signature',
-    footer: (period) => `Generated from The Toll Roads statement, period ${period || '—'}.   SWL-TOLL-REV`,
+    title: 'Monthly Toll Review and Repayment Record', continued: 'Monthly Toll Review and Repayment Record — continued',
+    subtitle: 'Company vehicle tolls   |   Complete one form per employee per month and keep it in the vehicle and payroll file',
+    lblEmpName: 'Employee name', lblPosition: 'Position', lblVehicle: 'Vehicle / plate', lblMonth: 'Statement month', lblEmpType: 'Employee type',
+    empTypeExempt: 'Exempt (salaried)', empTypeNonexempt: 'Non-exempt (hourly, or salaried non-exempt)',
+    sectionA: 'A.  EMPLOYEE REVIEW  (return within 7 days of receiving the statement)',
+    colDate: 'DATE', colTime: 'TIME', colLoc: 'TOLL LOCATION', colAmt: 'AMOUNT', colBiz: 'BUSINESS', colPer: 'PERSONAL', colReason: 'REASON / TRIP PURPOSE',
+    totalRow: 'Total tolls on statement',
+    defNote: 'Business = traveling for Company work (between job sites, to or from worksites, yard, or office). Personal = drive home after the last work stop, weekends, any non-work trip or detour. Mark one box per toll.',
+    ackText: 'I reviewed the tolls charged to my assigned vehicle and marked each one Business or Personal based on the purpose of the trip. I understand the Company pays business tolls and that I am responsible for personal tolls.',
+    empSig: 'Employee signature', date: 'Date',
+    sectionB: 'B.  COMPANY VERIFICATION  (HR / supervisor)',
+    checkedAgainst: 'Checked against', routeGps: 'Route / GPS', workSchedule: 'Work schedule', clockOutTime: 'Clock-out time',
+    anyChange: 'Any change to a designation?', no: 'No', yesExplain: 'Yes — employee asked to explain; note below',
+    notes: 'Notes', verifiedBy: 'Verified by / date',
+    sectionC: 'C.  REPAYMENT OF PERSONAL TOLLS',
+    tollsOwed: 'Personal tolls owed', dueDate: 'Due date (30 days)',
+    repayMethod: 'Repayment method', mCheck: 'Check', mCard: 'Card', mElectronic: 'Electronic payment', mPayroll: 'Payroll deduction (Section D)',
+    dateReceived: 'Date received', receiptRef: 'Receipt / reference #', receivedBy: 'Received by',
+    sectionD: 'D.  OPTIONAL PAYROLL DEDUCTION AUTHORIZATION  (non-exempt employees only)',
+    dText: 'I choose to repay the personal tolls listed above through a deduction from my paycheck, as specified below. This is my voluntary choice. I may instead repay by check, card, or electronic payment. I understand I cannot be required to sign this section.',
+    dWarning: 'Exempt (salaried) employees: do not complete this section. No amount is ever deducted from an exempt employee’s salary. Nothing is deducted from a final paycheck.',
+    dAmount: 'Total amount: $', dPaycheckDate: 'Paycheck date:',
+    footerNote: 'Keep with the monthly toll report. Retain at least 4 years.',
+    footer: (period) => `Statement period ${period || '—'}.   SWL-TOLL-REV`,
   },
   es: {
-    title: 'Revisión de Cargos de Peaje', continued: 'Revisión de Cargos de Peaje — continuación',
-    dept: 'Southwest Landscape, Inc. — Departamento de Recursos Humanos',
-    empInfo: 'INFORMACIÓN DEL EMPLEADO',
-    instructions: 'Instrucciones: el vehículo indicado arriba generó cada cargo de peaje que aparece abajo. Para cada fila, marque si el viaje fue de negocios de la empresa o de uso personal. Si fue de negocios, escriba el trabajo o lugar al que se dirigía. Al terminar, imprima este formulario, firme la sección de Autorización a mano y devuélvalo a Recursos Humanos.',
-    colDate: 'FECHA', colTime: 'HORA', colLoc: 'UBICACIÓN', colAmt: 'MONTO', colBiz: 'NEGOCIOS', colJob: 'TRABAJO / LUGAR AL QUE VIAJÓ', colPer: 'PERSONAL',
-    totalPersonal: 'Total marcado como Personal:',
-    authorization: 'AUTORIZACIÓN',
-    authText: 'He revisado los cargos anteriores y marqué cada uno como de uso de negocios o personal. Autorizo a Southwest Landscape, Inc. a deducir el monto total marcado como Personal de mi próximo cheque de pago regular, de acuerdo con los requisitos de deducción salarial de California.',
-    printNote: 'Imprima esta página después de completarla, luego firme abajo con tinta antes de devolverla a Recursos Humanos.',
-    empSig: 'Firma del Empleado', date: 'Fecha', hrSig: 'Recibido por Recursos Humanos — Firma',
-    footer: (period) => `Generado del estado de cuenta de The Toll Roads, período ${period || '—'}.   SWL-TOLL-REV`,
+    title: 'Registro Mensual de Revisión y Reembolso de Peajes', continued: 'Registro Mensual de Revisión y Reembolso de Peajes — continuación',
+    subtitle: 'Peajes de vehículos de la empresa   |   Complete un formulario por empleado por mes y consérvelo en el archivo del vehículo y de nómina',
+    lblEmpName: 'Nombre del empleado', lblPosition: 'Puesto', lblVehicle: 'Vehículo / placa', lblMonth: 'Mes del estado de cuenta', lblEmpType: 'Tipo de empleado',
+    empTypeExempt: 'Exento (asalariado)', empTypeNonexempt: 'No exento (por hora, o asalariado no exento)',
+    sectionA: 'A.  REVISIÓN DEL EMPLEADO  (devolver dentro de 7 días de recibir el estado de cuenta)',
+    colDate: 'FECHA', colTime: 'HORA', colLoc: 'UBICACIÓN DEL PEAJE', colAmt: 'MONTO', colBiz: 'NEGOCIOS', colPer: 'PERSONAL', colReason: 'MOTIVO / PROPÓSITO DEL VIAJE',
+    totalRow: 'Total de peajes en el estado de cuenta',
+    defNote: 'Negocios = viajar por trabajo de la Compañía (entre sitios de trabajo, hacia o desde los lugares de trabajo, el patio o la oficina). Personal = manejar a casa después de la última parada de trabajo, fines de semana, cualquier viaje o desvío que no sea de trabajo. Marque una casilla por cada peaje.',
+    ackText: 'Revisé los peajes cargados a mi vehículo asignado y marqué cada uno como Negocios o Personal según el propósito del viaje. Entiendo que la Compañía paga los peajes de negocios y que soy responsable de los peajes personales.',
+    empSig: 'Firma del empleado', date: 'Fecha',
+    sectionB: 'B.  VERIFICACIÓN DE LA COMPAÑÍA  (Recursos Humanos / supervisor)',
+    checkedAgainst: 'Verificado contra', routeGps: 'Ruta / GPS', workSchedule: 'Horario de trabajo', clockOutTime: 'Hora de salida',
+    anyChange: '¿Algún cambio en una designación?', no: 'No', yesExplain: 'Sí — se le pidió al empleado que explique; anote abajo',
+    notes: 'Notas', verifiedBy: 'Verificado por / fecha',
+    sectionC: 'C.  REEMBOLSO DE PEAJES PERSONALES',
+    tollsOwed: 'Peajes personales adeudados', dueDate: 'Fecha límite (30 días)',
+    repayMethod: 'Método de reembolso', mCheck: 'Cheque', mCard: 'Tarjeta', mElectronic: 'Pago electrónico', mPayroll: 'Deducción de nómina (Sección D)',
+    dateReceived: 'Fecha de recibido', receiptRef: 'Recibo / número de referencia', receivedBy: 'Recibido por',
+    sectionD: 'D.  AUTORIZACIÓN OPCIONAL DE DEDUCCIÓN DE NÓMINA  (solo empleados no exentos)',
+    dText: 'Elijo reembolsar los peajes personales indicados arriba mediante una deducción de mi cheque de pago, según se especifica abajo. Esta es mi elección voluntaria. En su lugar, puedo reembolsar con cheque, tarjeta o pago electrónico. Entiendo que no se me puede exigir que firme esta sección.',
+    dWarning: 'Empleados exentos (asalariados): no complete esta sección. Nunca se deduce ningún monto del salario de un empleado exento. No se deduce nada de un cheque final.',
+    dAmount: 'Monto total: $', dPaycheckDate: 'Fecha del cheque de pago:',
+    footerNote: 'Conserve junto con el informe mensual de peajes. Retenga por al menos 4 años.',
+    footer: (period) => `Período del estado de cuenta ${period || '—'}.   SWL-TOLL-REV`,
   },
 };
 
@@ -531,6 +590,11 @@ async function buildReviewSheetPdf(emp, charges, periodLabel, lang = 'en') {
   const logoDims = logoImg.scale(logoH / logoImg.height);
   const M = 46;
   const PW = 612, PH = 792;
+  const BOTTOM = 60;
+  const maroon = rgb(0.478, 0.122, 0.169);
+  const darkBar = rgb(0.24, 0.24, 0.24);
+  const gridLine = rgb(0.6, 0.6, 0.6);
+  const shade = rgb(0.93, 0.93, 0.93);
 
   let page = pdf.addPage([PW, PH]);
   let y = PH - 50;
@@ -553,101 +617,182 @@ async function buildReviewSheetPdf(emp, charges, periodLabel, lang = 'en') {
     if (line) { text(line, x, cy, { size, font }); cy -= size + 3; }
     return cy;
   }
+  function sectionHeader(label) {
+    page.drawRectangle({ x: M, y: y - 20, width: PW - 2 * M, height: 20, color: darkBar });
+    text(label, M + 6, y - 14, { size: 8.5, font: bold, color: rgb(1, 1, 1) });
+    y -= 29; // 9pt clearance below the bar — enough for a 9pt line's ascenders to clear it
+  }
+  function checkboxInline(x, yBaseline, checked, label, size = 8) {
+    const box = 9;
+    page.drawRectangle({ x, y: yBaseline - 1.5, width: box, height: box, borderColor: rgb(0.3, 0.3, 0.3), borderWidth: 0.8, color: checked ? rgb(0.3, 0.3, 0.3) : undefined });
+    text(label, x + box + 4, yBaseline, { size });
+    return x + box + 4 + reg.widthOfTextAtSize(label, size) + 16;
+  }
   function drawLogoHeader(continued) {
     page.drawImage(logoImg, { x: M, y: y - logoH + 8, width: logoDims.width, height: logoH });
     rightText('SOUTHWEST', PW - M, y + 2, { size: 13, color: rgb(0.27, 0.27, 0.27) });
     rightText('LANDSCAPE', PW - M, y - 12, { size: 13, color: rgb(0.27, 0.27, 0.27) });
     y -= logoH + 14;
-    text(continued ? tr.continued : tr.title, M, y, { size: continued ? 14 : 20, font: bold });
-    y -= continued ? 16 : 16;
-    if (!continued) { text(tr.dept, M, y, { size: 9, color: rgb(0.4, 0.4, 0.4) }); y -= 22; }
+    text(continued ? tr.continued : tr.title, M, y, { size: continued ? 13 : 18, font: bold, color: maroon });
+    y -= continued ? 14 : 15;
+    if (!continued) { text(tr.subtitle, M, y, { size: 8.5, color: rgb(0.4, 0.4, 0.4) }); y -= 18; }
+  }
+  function ensureSpace(h) {
+    if (y - h < BOTTOM) { page = pdf.addPage([PW, PH]); y = PH - 50; drawLogoHeader(true); }
   }
 
   drawLogoHeader(false);
 
-  page.drawRectangle({ x: M, y: y - 18, width: PW - 2 * M, height: 20, color: rgb(0.24, 0.24, 0.24) });
-  text(tr.empInfo, M + 6, y - 13, { size: 8, font: bold, color: rgb(1, 1, 1) });
-  y -= 28;
-  const fEmp = form.createTextField('employee_name'); fEmp.setText(`${emp.first_name} ${emp.last_name}`); fEmp.enableReadOnly();
-  fEmp.addToPage(page, { x: M, y: y - 16, width: 180, height: 18, borderWidth: 0.5 });
-  const fVeh = form.createTextField('vehicle'); fVeh.setText(emp.vehicle_unit || emp.vehicle_plate || ''); fVeh.enableReadOnly();
-  fVeh.addToPage(page, { x: M + 190, y: y - 16, width: 140, height: 18, borderWidth: 0.5 });
-  const fPeriod = form.createTextField('period'); fPeriod.setText(periodLabel || ''); fPeriod.enableReadOnly();
-  fPeriod.addToPage(page, { x: M + 340, y: y - 16, width: 226, height: 18, borderWidth: 0.5 });
-  y -= 46;
+  // ---- top info grid ----
+  const rowH = 20;
+  function infoRow(pairs) {
+    page.drawRectangle({ x: M, y: y - rowH, width: PW - 2 * M, height: rowH, borderColor: gridLine, borderWidth: 0.6 });
+    let cx = M;
+    pairs.forEach((p) => {
+      const labelW = Math.min(p.w - 60, Math.max(Math.round(p.w * 0.36), bold.widthOfTextAtSize(p.label, 8) + 10));
+      page.drawRectangle({ x: cx, y: y - rowH, width: labelW, height: rowH, color: shade });
+      text(p.label, cx + 5, y - 13, { size: 8, font: bold });
+      page.drawLine({ start: { x: cx + labelW, y: y - rowH }, end: { x: cx + labelW, y }, thickness: 0.6, color: gridLine });
+      if (p.value) text(p.value.length > 34 ? p.value.slice(0, 33) + '…' : p.value, cx + labelW + 5, y - 13, { size: 8.8 });
+      cx += p.w;
+      if (cx < PW - M - 0.5) page.drawLine({ start: { x: cx, y: y - rowH }, end: { x: cx, y }, thickness: 0.6, color: gridLine });
+    });
+    y -= rowH;
+  }
+  const half = (PW - 2 * M) / 2;
+  infoRow([{ label: tr.lblEmpName, value: `${emp.first_name} ${emp.last_name}`, w: half }, { label: tr.lblPosition, value: emp.position || '', w: half }]);
+  infoRow([{ label: tr.lblVehicle, value: emp.vehicle_unit || emp.vehicle_plate || '', w: half }, { label: tr.lblMonth, value: periodLabel || '', w: half }]);
+  page.drawRectangle({ x: M, y: y - rowH, width: PW - 2 * M, height: rowH, borderColor: gridLine, borderWidth: 0.6 });
+  const empTypeLabelW = Math.max(Math.round((PW - 2 * M) * 0.18), bold.widthOfTextAtSize(tr.lblEmpType, 8) + 10);
+  page.drawRectangle({ x: M, y: y - rowH, width: empTypeLabelW, height: rowH, color: shade });
+  text(tr.lblEmpType, M + 5, y - 13, { size: 8, font: bold });
+  page.drawLine({ start: { x: M + empTypeLabelW, y: y - rowH }, end: { x: M + empTypeLabelW, y }, thickness: 0.6, color: gridLine });
+  let cbx = M + empTypeLabelW + 10;
+  cbx = checkboxInline(cbx, y - 13, emp.flsa_status === 'exempt', tr.empTypeExempt, 8.3);
+  checkboxInline(cbx, y - 13, emp.flsa_status === 'nonexempt', tr.empTypeNonexempt, 8.3);
+  y -= rowH + 10;
 
-  y = wrap(tr.instructions, M, y, PW - 2 * M, 9, reg);
-  y -= 14;
-
-  const colW = { date: 55, time: 46, loc: 145, amt: 42, biz: 42, job: 148, per: 42 };
+  // ---- Section A: Employee Review ----
+  sectionHeader(tr.sectionA);
+  const colW = { date: 50, time: 42, loc: 138, amt: 40, biz: 38, per: 38, reason: 174 };
   function drawTableHeader() {
     const colX = {}; let cx = M;
-    for (const k of ['date', 'time', 'loc', 'amt', 'biz', 'job', 'per']) { colX[k] = cx; cx += colW[k]; }
-    page.drawRectangle({ x: M, y: y - 16, width: PW - 2 * M, height: 18, color: rgb(0.93, 0.93, 0.93) });
-    text(tr.colDate, colX.date + 3, y - 11, { size: 7.5, font: bold });
-    text(tr.colTime, colX.time + 3, y - 11, { size: 7.5, font: bold });
-    text(tr.colLoc, colX.loc + 3, y - 11, { size: 7.5, font: bold });
-    text(tr.colAmt, colX.amt + 3, y - 11, { size: 7.5, font: bold });
-    text(tr.colBiz, colX.biz + 2, y - 11, { size: 6.3, font: bold });
-    text(tr.colJob, colX.job + 3, y - 11, { size: 6.8, font: bold });
-    text(tr.colPer, colX.per + 2, y - 11, { size: 6.3, font: bold });
+    for (const k of ['date', 'time', 'loc', 'amt', 'biz', 'per', 'reason']) { colX[k] = cx; cx += colW[k]; }
+    page.drawRectangle({ x: M, y: y - 16, width: PW - 2 * M, height: 18, color: shade, borderColor: gridLine, borderWidth: 0.6 });
+    text(tr.colDate, colX.date + 3, y - 11, { size: 7, font: bold });
+    text(tr.colTime, colX.time + 3, y - 11, { size: 7, font: bold });
+    text(tr.colLoc, colX.loc + 3, y - 11, { size: 7, font: bold });
+    text(tr.colAmt, colX.amt + 3, y - 11, { size: 7, font: bold });
+    text(tr.colBiz, colX.biz + 2, y - 11, { size: 6, font: bold });
+    text(tr.colPer, colX.per + 2, y - 11, { size: 6, font: bold });
+    text(tr.colReason, colX.reason + 3, y - 11, { size: 6.5, font: bold });
     y -= 18;
     return colX;
   }
   let colX = drawTableHeader();
 
-  const rowH = 20;
-  const BOTTOM = 70; // leave room before starting a fresh page
   charges.forEach((c, i) => {
-    if (y - rowH < BOTTOM) {
-      page = pdf.addPage([PW, PH]);
-      y = PH - 50;
-      drawLogoHeader(true);
-      colX = drawTableHeader();
-    }
+    if (y - rowH < BOTTOM) { page = pdf.addPage([PW, PH]); y = PH - 50; drawLogoHeader(true); sectionHeader(tr.sectionA); colX = drawTableHeader(); }
     const ry = y;
     if (i % 2 === 1) page.drawRectangle({ x: M, y: ry - rowH + 2, width: PW - 2 * M, height: rowH - 2, color: rgb(0.975, 0.975, 0.975) });
-    text(formatDate(c.date).replace(/\/\d{4}$/, ''), colX.date + 3, ry - 13, { size: 8.3 });
-    text(c.time, colX.time + 3, ry - 13, { size: 8.3 });
-    text(c.location.length > 28 ? c.location.slice(0, 27) + '…' : c.location, colX.loc + 3, ry - 13, { size: 7.5 });
-    text(money(c.amount), colX.amt + 3, ry - 13, { size: 8.3 });
+    text(formatDate(c.date).replace(/\/\d{4}$/, ''), colX.date + 3, ry - 13, { size: 8 });
+    text(c.time, colX.time + 3, ry - 13, { size: 8 });
+    text(c.location.length > 27 ? c.location.slice(0, 26) + '…' : c.location, colX.loc + 3, ry - 13, { size: 7.3 });
+    text(money(c.amount), colX.amt + 3, ry - 13, { size: 8 });
     const cbBiz = form.createCheckBox(`business_${c.id}`);
     cbBiz.addToPage(page, { x: colX.biz + (colW.biz - 11) / 2, y: ry - 15, width: 11, height: 11, borderWidth: 0.7 });
-    const jobField = form.createTextField(`job_${c.id}`);
-    jobField.addToPage(page, { x: colX.job + 3, y: ry - 17, width: colW.job - 6, height: 15, borderWidth: 0.5 });
     const cbPer = form.createCheckBox(`personal_${c.id}`);
     cbPer.addToPage(page, { x: colX.per + (colW.per - 11) / 2, y: ry - 15, width: 11, height: 11, borderWidth: 0.7 });
+    const reasonField = form.createTextField(`reason_${c.id}`);
+    reasonField.addToPage(page, { x: colX.reason + 3, y: ry - 17, width: colW.reason - 6, height: 15, borderWidth: 0.5 });
     y -= rowH;
   });
 
-  if (y - 170 < BOTTOM) { page = pdf.addPage([PW, PH]); y = PH - 50; drawLogoHeader(true); }
+  // total row
+  page.drawRectangle({ x: M, y: y - rowH, width: PW - 2 * M, height: rowH, borderColor: gridLine, borderWidth: 0.6, color: shade });
+  text(tr.totalRow, M + 4, y - 13, { size: 8.3, font: bold });
+  const totalAmt = charges.reduce((s, c) => s + c.amount, 0);
+  text(money(totalAmt), colX.amt + 3, y - 13, { size: 8.3, font: bold });
+  y -= rowH + 10;
 
-  y -= 4;
-  page.drawLine({ start: { x: M, y: y + 4 }, end: { x: PW - M, y: y + 4 }, thickness: 0.6, color: rgb(0.6, 0.6, 0.6) });
-  text(tr.totalPersonal, M + 280, y - 10, { size: 9, font: bold });
-  const totalField = form.createTextField('total_personal');
-  totalField.addToPage(page, { x: PW - M - 72, y: y - 16, width: 72, height: 16, borderWidth: 0.5 });
-  y -= 34;
-
-  page.drawRectangle({ x: M, y: y - 16, width: PW - 2 * M, height: 18, color: rgb(0.24, 0.24, 0.24) });
-  text(tr.authorization, M + 6, y - 11, { size: 8, font: bold, color: rgb(1, 1, 1) });
-  y -= 28;
-  y = wrap(tr.authText, M, y, PW - 2 * M, 9, reg);
-  y -= 10;
-  text(tr.printNote, M, y, { size: 8, font: italic, color: rgb(0.35, 0.35, 0.35) });
-  y -= 26;
-
+  ensureSpace(100);
+  y = wrap(tr.defNote, M, y, PW - 2 * M, 7.8, italic);
+  y -= 6;
+  y = wrap(tr.ackText, M, y, PW - 2 * M, 9, reg);
+  y -= 8;
   const sigColW = (PW - 2 * M) / 2;
   page.drawLine({ start: { x: M, y }, end: { x: M + sigColW - 20, y }, thickness: 0.7, color: rgb(0.2, 0.2, 0.2) });
   page.drawLine({ start: { x: M + sigColW, y }, end: { x: PW - M, y }, thickness: 0.7, color: rgb(0.2, 0.2, 0.2) });
   text(tr.empSig, M, y - 11, { size: 8, font: bold, color: rgb(0.3, 0.3, 0.3) });
   text(tr.date, M + sigColW, y - 11, { size: 8, font: bold, color: rgb(0.3, 0.3, 0.3) });
-  y -= 38;
+  y -= 30;
+
+  // ---- Section B: Company Verification ----
+  ensureSpace(18 + rowH * 4 + 10);
+  sectionHeader(tr.sectionB);
+  function bcRow(label, drawValue, labelFrac = 0.26) {
+    page.drawRectangle({ x: M, y: y - rowH, width: PW - 2 * M, height: rowH, borderColor: gridLine, borderWidth: 0.6 });
+    const labelW = Math.min((PW - 2 * M) - 120, Math.max(Math.round((PW - 2 * M) * labelFrac), bold.widthOfTextAtSize(label, 8) + 10));
+    page.drawRectangle({ x: M, y: y - rowH, width: labelW, height: rowH, color: shade });
+    text(label, M + 5, y - 13, { size: 8, font: bold });
+    page.drawLine({ start: { x: M + labelW, y: y - rowH }, end: { x: M + labelW, y }, thickness: 0.6, color: gridLine });
+    drawValue(M + labelW + 8, y - 13, M + (PW - 2 * M) - labelW - 16);
+    y -= rowH;
+  }
+  bcRow(tr.checkedAgainst, (x, yy) => {
+    let cx = x;
+    cx = checkboxInline(cx, yy, false, tr.routeGps, 8);
+    cx = checkboxInline(cx, yy, false, tr.workSchedule, 8);
+    checkboxInline(cx, yy, false, tr.clockOutTime, 8);
+  });
+  bcRow(tr.anyChange, (x, yy) => {
+    let cx = x;
+    cx = checkboxInline(cx, yy, false, tr.no, 8);
+    checkboxInline(cx, yy, false, tr.yesExplain, 8);
+  });
+  bcRow(tr.notes, () => {});
+  bcRow(tr.verifiedBy, () => {});
+  y -= 10;
+
+  // ---- Section C: Repayment of Personal Tolls ----
+  ensureSpace(18 + rowH * 4 + 10);
+  sectionHeader(tr.sectionC);
+  infoRow([{ label: tr.tollsOwed, value: '', w: half }, { label: tr.dueDate, value: '', w: half }]);
+  bcRow(tr.repayMethod, (x, yy) => {
+    let cx = x;
+    cx = checkboxInline(cx, yy, false, tr.mCheck, 8);
+    cx = checkboxInline(cx, yy, false, tr.mCard, 8);
+    cx = checkboxInline(cx, yy, false, tr.mElectronic, 8);
+    checkboxInline(cx, yy, false, tr.mPayroll, 8);
+  }, 0.3);
+  infoRow([{ label: tr.dateReceived, value: '', w: half }, { label: tr.receiptRef, value: '', w: half }]);
+  bcRow(tr.receivedBy, () => {}, 0.3);
+  y -= 10;
+
+  // ---- Section D: Optional Payroll Deduction Authorization ----
+  ensureSpace(18 + 40 + 26 + rowH + 30 + 10);
+  sectionHeader(tr.sectionD);
+  y = wrap(tr.dText, M, y, PW - 2 * M, 9, reg);
+  y -= 4;
+  y = wrap(tr.dWarning, M, y, PW - 2 * M, 8.3, bold);
+  y -= 8;
+  text(tr.dAmount, M, y - 11, { size: 8.5, font: bold });
+  const dAmountField = form.createTextField('d_amount');
+  dAmountField.addToPage(page, { x: M + reg.widthOfTextAtSize(tr.dAmount, 8.5) + 36, y: y - 16, width: 70, height: 16, borderWidth: 0.5 });
+  const dDateX = M + 260;
+  text(tr.dPaycheckDate, dDateX, y - 11, { size: 8.5, font: bold });
+  const dDateField = form.createTextField('d_paycheck_date');
+  dDateField.addToPage(page, { x: dDateX + reg.widthOfTextAtSize(tr.dPaycheckDate, 8.5) + 6, y: y - 16, width: 100, height: 16, borderWidth: 0.5 });
+  y -= 28;
   page.drawLine({ start: { x: M, y }, end: { x: M + sigColW - 20, y }, thickness: 0.7, color: rgb(0.2, 0.2, 0.2) });
   page.drawLine({ start: { x: M + sigColW, y }, end: { x: PW - M, y }, thickness: 0.7, color: rgb(0.2, 0.2, 0.2) });
-  text(tr.hrSig, M, y - 11, { size: 8, font: bold, color: rgb(0.3, 0.3, 0.3) });
+  text(tr.empSig, M, y - 11, { size: 8, font: bold, color: rgb(0.3, 0.3, 0.3) });
   text(tr.date, M + sigColW, y - 11, { size: 8, font: bold, color: rgb(0.3, 0.3, 0.3) });
-  y -= 28;
+  y -= 26;
+
+  ensureSpace(16);
+  text(tr.footerNote, M, y, { size: 7.5, font: italic, color: rgb(0.45, 0.45, 0.45) });
+  y -= 12;
   text(tr.footer(periodLabel), M, y, { size: 7.5, color: rgb(0.45, 0.45, 0.45) });
 
   return pdf.save();
@@ -691,10 +836,12 @@ function openEntry(empId) {
   entryUploadMeta = null;
   const emp = employees.find((e) => e.id === empId);
   entryCharges = currentTolls.filter((t) => t.emp_id === empId);
+  const sheet = currentSheets[empId] || {};
   document.getElementById('entry-title').textContent = `Enter a returned sheet — ${emp.first_name} ${emp.last_name}`;
   document.getElementById('entry-sub').textContent = `${entryCharges.length} charges, ${money(entryCharges.reduce((s, c) => s + c.amount, 0))}`;
   document.getElementById('entry-upload').value = '';
-  document.getElementById('entry-upload-pill').style.display = 'none';
+  document.getElementById('entry-upload-pill').style.display = sheet.signed_file_name ? 'inline-block' : 'none';
+  if (sheet.signed_file_name) document.getElementById('entry-upload-pill').textContent = `${sheet.signed_file_name} — already attached (choose a file to replace)`;
   document.getElementById('entry-rows').innerHTML = entryCharges.map((c) => `
     <tr>
       <td><input type="checkbox" data-personal="${c.id}" ${c.status === 'personal' ? 'checked' : ''}></td>
@@ -702,12 +849,32 @@ function openEntry(empId) {
       <td class="mono">${c.time}</td>
       <td>${escapeHtml(c.location)}</td>
       <td class="mono">${money(c.amount)}</td>
-      <td><input class="inp" data-job="${c.id}" value="${escapeHtml(c.job_site || '')}" style="font-size:11.5px;width:100%"></td>
+      <td><input class="inp" data-reason="${c.id}" value="${escapeHtml(c.reason || '')}" style="font-size:11.5px;width:100%"></td>
     </tr>
   `).join('');
   document.getElementById('entry-rows').querySelectorAll('[data-personal]').forEach((cb) => {
     cb.addEventListener('change', updateEntryTotal);
   });
+
+  document.getElementById('entry-chk-route').checked = !!sheet.checked_route_gps;
+  document.getElementById('entry-chk-schedule').checked = !!sheet.checked_work_schedule;
+  document.getElementById('entry-chk-clockout').checked = !!sheet.checked_clock_out;
+  document.getElementById(sheet.designation_changed ? 'entry-change-yes' : 'entry-change-no').checked = true;
+  document.getElementById('entry-notes').value = sheet.verification_notes || '';
+
+  const defaultDue = new Date();
+  defaultDue.setDate(defaultDue.getDate() + 30);
+  document.getElementById('entry-due-date').value = sheet.due_date || defaultDue.toISOString().slice(0, 10);
+  document.getElementById('entry-date-received').value = sheet.date_received || '';
+  document.getElementById('entry-receipt-ref').value = sheet.receipt_ref || '';
+  document.querySelectorAll('input[name="entry-method"]').forEach((r) => { r.checked = r.value === sheet.repayment_method; });
+
+  const isExempt = emp.flsa_status === 'exempt';
+  const payrollRadio = document.getElementById('entry-method-payroll');
+  payrollRadio.disabled = isExempt;
+  if (isExempt && payrollRadio.checked) payrollRadio.checked = false;
+  document.getElementById('entry-exempt-note').style.display = isExempt ? 'block' : 'none';
+
   updateEntryTotal();
   document.getElementById('entry-card').hidden = false;
   document.getElementById('entry-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -720,6 +887,7 @@ function updateEntryTotal() {
     if (cb && cb.checked) total += c.amount;
   });
   document.getElementById('entry-total-label').textContent = `Total marked Personal: ${money(total)}`;
+  document.getElementById('entry-owed-display').textContent = money(total);
 }
 
 document.getElementById('entry-cancel-btn').addEventListener('click', () => {
@@ -749,6 +917,12 @@ document.getElementById('entry-upload').addEventListener('change', async () => {
 
 document.getElementById('entry-save-btn').addEventListener('click', async () => {
   if (!entryEmpId) return;
+  const emp = employees.find((e) => e.id === entryEmpId);
+  const repaymentMethod = (document.querySelector('input[name="entry-method"]:checked') || {}).value || null;
+  if (repaymentMethod === 'payroll_deduction' && emp?.flsa_status === 'exempt') {
+    showToast('This employee is exempt — payroll deduction isn’t an option. Choose another repayment method.', 'error');
+    return;
+  }
   const btn = document.getElementById('entry-save-btn');
   btn.disabled = true;
   try {
@@ -757,21 +931,34 @@ document.getElementById('entry-save-btn').addEventListener('click', async () => 
     let personalTotal = 0;
     entryCharges.forEach((c) => {
       const cb = document.querySelector(`[data-personal="${c.id}"]`);
-      const jobInput = document.querySelector(`[data-job="${c.id}"]`);
+      const reasonInput = document.querySelector(`[data-reason="${c.id}"]`);
       const isPersonal = !!(cb && cb.checked);
-      const jobSite = jobInput ? jobInput.value.trim() : '';
+      const reason = reasonInput ? reasonInput.value.trim() : '';
       if (isPersonal) { personalIds.push(c.id); personalTotal += c.amount; }
       batch.update(doc(db, 'tolls', c.id), {
         status: isPersonal ? 'personal' : 'business',
-        job_site: jobSite,
+        reason,
         entered_by: profile.uid, entered_at: serverTimestamp(),
       });
     });
     await batch.commit();
+    personalTotal = Math.round(personalTotal * 100) / 100;
 
     const sheetRef = doc(db, 'toll_sheets', `${currentStatementId}__${entryEmpId}`);
     const sheetUpdate = {
       statement_id: currentStatementId, emp_id: entryEmpId, status: 'entered',
+      checked_route_gps: document.getElementById('entry-chk-route').checked,
+      checked_work_schedule: document.getElementById('entry-chk-schedule').checked,
+      checked_clock_out: document.getElementById('entry-chk-clockout').checked,
+      designation_changed: document.getElementById('entry-change-yes').checked,
+      verification_notes: document.getElementById('entry-notes').value.trim(),
+      verified_by: profile.uid, verified_at: serverTimestamp(),
+      personal_tolls_owed: personalTotal,
+      due_date: document.getElementById('entry-due-date').value || null,
+      repayment_method: repaymentMethod,
+      date_received: document.getElementById('entry-date-received').value || null,
+      receipt_ref: document.getElementById('entry-receipt-ref').value.trim(),
+      received_by: profile.uid,
       entered_by: profile.uid, entered_at: serverTimestamp(),
     };
     if (entryUploadDataUrl) {
@@ -786,17 +973,19 @@ document.getElementById('entry-save-btn').addEventListener('click', async () => 
     entryEmpId = null;
     await loadStatementData(currentStatementId);
 
-    if (personalIds.length > 0) {
+    if (personalIds.length > 0 && repaymentMethod === 'payroll_deduction') {
       const dedRef = await addDoc(collection(db, 'toll_deductions'), {
         statement_id: currentStatementId, emp_id: empId, charge_ids: personalIds,
-        total_amount: Math.round(personalTotal * 100) / 100,
+        total_amount: personalTotal,
         generated_by: profile.uid, generated_at: serverTimestamp(),
         entered_by: profile.uid, entered_at: serverTimestamp(),
       });
       showToast('Saved. Opening the Payroll Deduction Authorization…');
       window.location.href = `docgen.html?open=tolldeduction&deduction=${encodeURIComponent(dedRef.id)}`;
+    } else if (personalIds.length > 0 && !repaymentMethod) {
+      showToast('Saved. Come back and record the repayment method once this driver pays.');
     } else {
-      showToast('Saved. No personal charges for this driver.');
+      showToast('Saved.');
     }
   } catch (err) {
     console.error(err);

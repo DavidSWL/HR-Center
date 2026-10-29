@@ -196,6 +196,7 @@ document.getElementById('tab-employment').innerHTML = `
     <div><b>Division</b><span>${escapeHtml(emp.division) || '—'}</span></div>
     <div><b>Location</b><span>${escapeHtml(emp.location) || '—'}</span></div>
     <div><b>Position</b><span>${escapeHtml(emp.position) || '—'}</span></div>
+    <div><b>Employee type</b><span>${emp.flsa_status === 'exempt' ? 'Exempt (salaried)' : emp.flsa_status === 'nonexempt' ? 'Non-exempt' : '—'}</span></div>
     <div><b>Status</b><span>${statusPill(emp)}</span></div>
     <div><b>Manager</b><span>${escapeHtml(managerName(emp.manager_emp_id))}</span></div>
     <div><b>Dotted line</b><span>${escapeHtml(managerName(emp.dotted_line_emp_id))}</span></div>

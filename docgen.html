@@ -1889,7 +1889,12 @@ function renderTollDeductionSheet(lang) {
         <div class="form-grid c3">
           <div class="form-cell"><b>${isEs ? 'Nombre del Empleado' : 'Employee Name'}</b>${escapeHtml(empName)}</div>
           <div class="form-cell"><b>${isEs ? 'Número de Empleado' : 'Employee Number'}</b>${escapeHtml(ded.emp_id)}</div>
+          <div class="form-cell"><b>${isEs ? 'Tipo de Empleado' : 'Employee Type'}</b>${emp?.flsa_status === 'exempt' ? (isEs ? 'Exento' : 'Exempt') : (isEs ? 'No exento' : 'Non-exempt')}</div>
+        </div>
+        <div class="form-grid c3">
           <div class="form-cell"><b>${isEs ? 'Fecha' : 'Date'}</b>${formatDateTime(ded.generated_at)}</div>
+          <div class="form-cell"><b>${isEs ? 'Verificado por' : 'Verified by'}</b>${sheet?.verified_by ? escapeHtml(staff.find((s) => s.id === sheet.verified_by)?.name || sheet.verified_by) : '—'}</div>
+          <div class="form-cell"><b>${isEs ? 'Fecha límite (30 días)' : 'Due date (30 days)'}</b>${sheet?.due_date ? formatDate(sheet.due_date) : '—'}</div>
         </div>
 
         <div class="form-section">${isEs ? 'Cargos de Peaje — Uso Personal' : 'Toll Charges — Personal Use'}</div>
@@ -1897,11 +1902,11 @@ function renderTollDeductionSheet(lang) {
           <thead><tr>
             <th style="width:16%">${isEs ? 'Fecha' : 'Date'}</th>
             <th>${isEs ? 'Ubicación' : 'Location'}</th>
-            <th style="width:22%">${isEs ? 'Trabajo / Lugar' : 'Job / Site'}</th>
+            <th style="width:22%">${isEs ? 'Motivo' : 'Reason'}</th>
             <th style="width:14%">${isEs ? 'Monto' : 'Amount'}</th>
           </tr></thead>
           <tbody>
-            ${tolls.map((t) => `<tr><td>${formatDate(t.date)}</td><td>${escapeHtml(t.location)}</td><td>${escapeHtml(t.job_site) || '—'}</td><td>$${t.amount.toFixed(2)}</td></tr>`).join('')}
+            ${tolls.map((t) => `<tr><td>${formatDate(t.date)}</td><td>${escapeHtml(t.location)}</td><td>${escapeHtml(t.reason) || '—'}</td><td>$${t.amount.toFixed(2)}</td></tr>`).join('')}
           </tbody>
           <tfoot>
             <tr><td colspan="3" style="text-align:right;font-weight:700">${isEs ? 'Total a deducir' : 'Total to be deducted'}</td><td style="font-weight:700">$${ded.total_amount.toFixed(2)}</td></tr>
@@ -1911,8 +1916,8 @@ function renderTollDeductionSheet(lang) {
         <div class="form-callout">
           <b>${isEs ? 'Nota:' : 'Note:'}</b>
           ${isEs
-            ? 'El empleado revisó y marcó estos cargos como personales y firmó la hoja de revisión en papel, que se adjunta como respaldo.'
-            : 'The employee reviewed and marked these charges as personal and signed the paper review sheet, kept on file as backup.'}
+            ? 'El empleado revisó los cargos anteriores, los marcó como personales, y eligió voluntariamente la deducción de nómina como método de reembolso (Sección D del Registro Mensual de Revisión y Reembolso de Peajes) — no se le exigió elegir esta opción. Firmó la hoja de revisión en papel, que se adjunta como respaldo.'
+            : 'The employee reviewed the charges above, marked them personal, and voluntarily chose payroll deduction as the repayment method (Section D of the Monthly Toll Review and Repayment Record) — they were not required to choose this option. They signed the paper review sheet, kept on file as backup.'}
           ${sheet && sheet.signed_file_name ? ` ${isEs ? 'Archivo adjunto' : 'Attached file'}: ${escapeHtml(sheet.signed_file_name)}.` : ''}
         </div>
 

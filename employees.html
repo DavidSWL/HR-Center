@@ -150,7 +150,15 @@
               <option value="Yard">Yard</option>
             </select>
           </div>
-          <div class="field"></div>
+          <div class="field">
+            <label class="f-lab" for="flsa-status">Employee type</label>
+            <select class="f-in" id="flsa-status">
+              <option value="">Select…</option>
+              <option value="nonexempt">Non-exempt (hourly, or salaried non-exempt)</option>
+              <option value="exempt">Exempt (salaried)</option>
+            </select>
+            <span class="s" style="display:block;margin-top:5px;font-size:10.5px;color:var(--faint)">Used to gate payroll-deduction eligibility on toll review forms — exempt pay is never deducted.</span>
+          </div>
         </div>
         <div class="frow">
           <div class="field">
@@ -716,6 +724,7 @@ function openEdit(id) {
   document.getElementById('division').value = emp.division || '';
   document.getElementById('emp-location').value = emp.location || '';
   document.getElementById('position').value = emp.position || '';
+  document.getElementById('flsa-status').value = emp.flsa_status || '';
   setEmpField('manager', emp.manager_emp_id || '', managerPickerPool);
   setEmpField('dotted-line', emp.dotted_line_emp_id || '', managerPickerPool);
   document.getElementById('hire-date').value = emp.hire_date || '';
@@ -796,6 +805,7 @@ form.addEventListener('submit', async (e) => {
     division: document.getElementById('division').value,
     location: document.getElementById('emp-location').value,
     position: document.getElementById('position').value.trim(),
+    flsa_status: document.getElementById('flsa-status').value,
     manager_emp_id: document.getElementById('manager').value || null,
     dotted_line_emp_id: document.getElementById('dotted-line').value || null,
     hire_date: document.getElementById('hire-date').value,
