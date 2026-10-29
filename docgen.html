@@ -2038,7 +2038,7 @@ function renderTollInvoiceSheet(lang) {
   const total = personalTolls.reduce((s, t) => s + t.amount, 0);
   const paid = !!sheet.date_received;
   const methodLabels = {
-    check: isEs ? 'Cheque' : 'Check', card: isEs ? 'Tarjeta' : 'Card',
+    cash: isEs ? 'Efectivo' : 'Cash', check: isEs ? 'Cheque' : 'Check', card: isEs ? 'Tarjeta' : 'Card',
     electronic: isEs ? 'Pago electrónico' : 'Electronic payment',
     payroll_deduction: isEs ? 'Deducción de nómina' : 'Payroll deduction',
   };
@@ -2097,6 +2097,7 @@ function renderTollInvoiceSheet(lang) {
             <label class="f-lab" for="toll-inv-method">${isEs ? 'Método de Pago' : 'Payment Method'}</label>
             <select class="f-in" id="toll-inv-method">
               <option value="">${isEs ? 'No especificado' : 'Not yet specified'}</option>
+              <option value="cash">${isEs ? 'Efectivo' : 'Cash'}</option>
               <option value="check">${isEs ? 'Cheque' : 'Check'}</option>
               <option value="card">${isEs ? 'Tarjeta' : 'Card'}</option>
               <option value="electronic">${isEs ? 'Pago electrónico' : 'Electronic payment'}</option>

@@ -154,6 +154,7 @@
           </div>
           <div class="field" id="entry-method-field">
             <label class="f-lab">Repayment method</label>
+            <label style="margin-right:16px;font-size:12.5px"><input type="radio" name="entry-method" id="entry-method-cash" value="cash"> Cash</label>
             <label style="margin-right:16px;font-size:12.5px"><input type="radio" name="entry-method" id="entry-method-check" value="check"> Check</label>
             <label style="margin-right:16px;font-size:12.5px"><input type="radio" name="entry-method" id="entry-method-card" value="card"> Card</label>
             <label style="margin-right:16px;font-size:12.5px"><input type="radio" name="entry-method" id="entry-method-electronic" value="electronic"> Electronic payment</label>
@@ -541,7 +542,7 @@ const TOLL_SHEET_I18N = {
     notes: 'Notes', verifiedBy: 'Verified by / date',
     sectionC: 'C.  REPAYMENT OF PERSONAL TOLLS',
     tollsOwed: 'Personal tolls owed', dueDate: 'Due date (30 days)',
-    repayMethod: 'Repayment method', mCheck: 'Check', mCard: 'Card', mElectronic: 'Electronic payment', mPayroll: 'Payroll deduction (Section D)',
+    repayMethod: 'Repayment method', mCash: 'Cash', mCheck: 'Check', mCard: 'Card', mElectronic: 'Electronic payment', mPayroll: 'Payroll deduction (Section D)',
     dateReceived: 'Date received', receiptRef: 'Receipt / reference #', receivedBy: 'Received by',
     sectionD: 'D.  OPTIONAL PAYROLL DEDUCTION AUTHORIZATION  (non-exempt employees only)',
     dText: 'I choose to repay the personal tolls listed above through a deduction from my paycheck, as specified below. This is my voluntary choice. I may instead repay by check, card, or electronic payment. I understand I cannot be required to sign this section.',
@@ -567,7 +568,7 @@ const TOLL_SHEET_I18N = {
     notes: 'Notas', verifiedBy: 'Verificado por / fecha',
     sectionC: 'C.  REEMBOLSO DE PEAJES PERSONALES',
     tollsOwed: 'Peajes personales adeudados', dueDate: 'Fecha límite (30 días)',
-    repayMethod: 'Método de reembolso', mCheck: 'Cheque', mCard: 'Tarjeta', mElectronic: 'Pago electrónico', mPayroll: 'Deducción de nómina (Sección D)',
+    repayMethod: 'Método de reembolso', mCash: 'Efectivo', mCheck: 'Cheque', mCard: 'Tarjeta', mElectronic: 'Pago electrónico', mPayroll: 'Deducción de nómina (Sección D)',
     dateReceived: 'Fecha de recibido', receiptRef: 'Recibo / número de referencia', receivedBy: 'Recibido por',
     sectionD: 'D.  AUTORIZACIÓN OPCIONAL DE DEDUCCIÓN DE NÓMINA  (solo empleados no exentos)',
     dText: 'Elijo reembolsar los peajes personales indicados arriba mediante una deducción de mi cheque de pago, según se especifica abajo. Esta es mi elección voluntaria. En su lugar, puedo reembolsar con cheque, tarjeta o pago electrónico. Entiendo que no se me puede exigir que firme esta sección.',
@@ -761,11 +762,12 @@ async function buildReviewSheetPdf(emp, charges, periodLabel, lang = 'en') {
   infoRow([{ label: tr.tollsOwed, value: '', w: half }, { label: tr.dueDate, value: '', w: half }]);
   bcRow(tr.repayMethod, (x, yy) => {
     let cx = x;
+    cx = checkboxInline(cx, yy, false, tr.mCash, 8);
     cx = checkboxInline(cx, yy, false, tr.mCheck, 8);
     cx = checkboxInline(cx, yy, false, tr.mCard, 8);
     cx = checkboxInline(cx, yy, false, tr.mElectronic, 8);
     checkboxInline(cx, yy, false, tr.mPayroll, 8);
-  }, 0.3);
+  }, 0.2);
   infoRow([{ label: tr.dateReceived, value: '', w: half }, { label: tr.receiptRef, value: '', w: half }]);
   bcRow(tr.receivedBy, () => {}, 0.3);
   y -= 10;
