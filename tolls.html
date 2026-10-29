@@ -383,6 +383,7 @@ function renderSheetsTable() {
           <td style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="gh" style="padding:5px 10px;font-size:10.5px" type="button" data-gen="${empId}">Generate &amp; download sheet</button>
             <button class="gh" style="padding:5px 10px;font-size:10.5px" type="button" data-enter="${empId}">Enter returned sheet</button>
+            ${sheet && sheet.personal_tolls_owed > 0 ? `<a class="gh" style="padding:5px 10px;font-size:10.5px" href="docgen.html?open=tollinvoice&sheet=${encodeURIComponent(`${currentStatementId}__${empId}`)}">Invoice${sheet.date_received ? ' (paid)' : ''}</a>` : ''}
           </td>
         </tr>`;
     }).join('');

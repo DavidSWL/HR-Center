@@ -224,6 +224,7 @@ const GENERATORS = [
   { key: 'mealpenalty', title: 'Missed meal period', desc: 'Documents a missed/delayed break, the CA meal premium owed, and whether a late lunch was still given', category: 'Pay & time' },
   { key: 'mealwaiver2', title: 'Second Meal Period Waiver', desc: 'For emergency-hours days past 10 hours — matches the SWL waiver form, English or Spanish, saves to Documents', category: 'Pay & time' },
   { key: 'tolldeduction', title: 'Payroll Deduction Authorization', desc: 'Generated automatically from Toll Tracker once a driver’s signed review sheet is entered — not filled in by hand', category: 'Pay & time' },
+  { key: 'tollinvoice', title: 'Personal Toll Invoice', desc: 'Bill for an employee’s personal toll charges, any repayment method — generated from Toll Tracker, not filled in by hand', category: 'Pay & time' },
 
   { key: 'refusal', title: 'Medical Treatment Refusal', desc: 'Matches the SWL acknowledgment form — English or Spanish, saves to Documents', category: 'Safety' },
   { key: 'incidentreport', title: 'Incident Report', desc: 'Log a new incident — injury/near miss/property damage/vehicle accident, matches SWL Form 7.3, signed by manager and employee', category: 'Safety' },
@@ -386,7 +387,7 @@ function openGenerator(key) {
   // exactly as supplied — those forms are English-only, so the language
   // toggle only applies to PIP, Onboarding, and the letters (which manage
   // English/Spanish through their own letter-type list instead).
-  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty' || key === 'mealwaiver2' || key === 'mileage' || key === 'review' || key === 'termination' || key === 'incidentreport' || key === 'termsummary' || key === 'changenotice' || key === 'hrrequest' || key === 'tolldeduction') ? '' : 'none';
+  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty' || key === 'mealwaiver2' || key === 'mileage' || key === 'review' || key === 'termination' || key === 'incidentreport' || key === 'termsummary' || key === 'changenotice' || key === 'hrrequest' || key === 'tolldeduction' || key === 'tollinvoice') ? '' : 'none';
   renderCurrent();
 }
 
@@ -411,6 +412,7 @@ function renderCurrent() {
   if (currentKey === 'termsummary') renderTermSummary(lang);
   if (currentKey === 'changenotice') renderChangeNotice(lang);
   if (currentKey === 'tolldeduction') renderTollDeduction(lang);
+  if (currentKey === 'tollinvoice') renderTollInvoice(lang);
 }
 
 // ---- PIP ----
@@ -1992,6 +1994,143 @@ function renderTollDeductionSheet(lang) {
   });
 
   sheetRerender = (l) => renderTollDeductionSheet(l);
+}
+
+// ---- Personal Toll Invoice (Toll Tracker) ----
+// A bill for whatever an employee's toll sheet shows as personal,
+// regardless of which repayment method they chose — unlike the
+// Payroll Deduction Authorization above, this is relevant for all
+// four repayment methods (check/card/electronic also need something
+// to hand the employee), generated straight from the toll_sheets
+// record Toll Tracker already keeps.
+let pendingTollInvoiceData = null;
+
+async function loadTollInvoice(sheetKey) {
+  const sheetSnap = await getDoc(doc(db, 'toll_sheets', sheetKey));
+  if (!sheetSnap.exists()) { showToast('Could not find that toll sheet.', 'error'); return; }
+  const sheet = { id: sheetSnap.id, ...sheetSnap.data() };
+  const tollsSnap = await getDocs(query(collection(db, 'tolls'), where('statement_id', '==', sheet.statement_id)));
+  const personalTolls = tollsSnap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((t) => t.emp_id === sheet.emp_id && t.status === 'personal');
+  pendingTollInvoiceData = { sheet, personalTolls };
+  renderCurrent();
+}
+
+function renderTollInvoice(lang) {
+  if (!pendingTollInvoiceData) {
+    document.getElementById('gen-body').innerHTML = `
+      <div class="card">
+        <div class="card-body">
+          <p class="dim" style="margin:0">This invoice is generated from Toll Tracker for a driver with personal toll charges — it isn't filled in by hand here. <a href="tolls.html">Open Toll Tracker</a> to create one.</p>
+        </div>
+      </div>`;
+    return;
+  }
+  renderTollInvoiceSheet(lang);
+}
+
+function renderTollInvoiceSheet(lang) {
+  const isEs = lang === 'es';
+  const { sheet, personalTolls } = pendingTollInvoiceData;
+  const emp = allEmployeesEver.find((e) => e.id === sheet.emp_id);
+  const empName = emp ? `${emp.first_name} ${emp.last_name}` : sheet.emp_id;
+  const total = personalTolls.reduce((s, t) => s + t.amount, 0);
+  const paid = !!sheet.date_received;
+  const methodLabels = {
+    check: isEs ? 'Cheque' : 'Check', card: isEs ? 'Tarjeta' : 'Card',
+    electronic: isEs ? 'Pago electrónico' : 'Electronic payment',
+    payroll_deduction: isEs ? 'Deducción de nómina' : 'Payroll deduction',
+  };
+
+  document.getElementById('gen-body').innerHTML = `
+    <div class="form-doc" id="toll-inv-sheet">
+      <div class="form-doc-inner">
+        <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+        <h1 class="form-title" style="margin-bottom:3px">${isEs ? 'Factura de Peajes Personales' : 'Personal Toll Invoice'}</h1>
+        <p class="dim" style="font-size:11px;margin:0 0 12px">${isEs ? 'Southwest Landscape, Inc. — Departamento de Recursos Humanos' : 'Southwest Landscape, Inc. — Human Resources Department'}</p>
+
+        <div class="form-section">${isEs ? 'Facturado A' : 'Billed To'}</div>
+        <div class="form-grid c3">
+          <div class="form-cell"><b>${isEs ? 'Nombre del Empleado' : 'Employee Name'}</b>${escapeHtml(empName)}</div>
+          <div class="form-cell"><b>${isEs ? 'Número de Empleado' : 'Employee Number'}</b>${escapeHtml(sheet.emp_id)}</div>
+          <div class="form-cell"><b>${isEs ? 'Fecha de Factura' : 'Invoice Date'}</b>${formatDate(new Date().toISOString().slice(0, 10))}</div>
+        </div>
+        <div class="form-grid c3">
+          <div class="form-cell"><b>${isEs ? 'Fecha Límite' : 'Due Date'}</b>${sheet.due_date ? formatDate(sheet.due_date) : '—'}</div>
+          <div class="form-cell"><b>${isEs ? 'Método de Pago' : 'Payment Method'}</b>${sheet.repayment_method ? methodLabels[sheet.repayment_method] : (isEs ? 'No especificado' : 'Not yet specified')}</div>
+          <div class="form-cell"><b>${isEs ? 'Estado' : 'Status'}</b>${paid ? (isEs ? 'Pagado' : 'Paid') : (isEs ? 'Pendiente' : 'Outstanding')}</div>
+        </div>
+
+        <div class="form-section">${isEs ? 'Cargos de Peaje Personales' : 'Personal Toll Charges'}</div>
+        <table class="form-notice-table">
+          <thead><tr>
+            <th style="width:18%">${isEs ? 'Fecha' : 'Date'}</th>
+            <th>${isEs ? 'Ubicación' : 'Location'}</th>
+            <th style="width:16%">${isEs ? 'Monto' : 'Amount'}</th>
+          </tr></thead>
+          <tbody>
+            ${personalTolls.map((t) => `<tr><td>${formatDate(t.date)}</td><td>${escapeHtml(t.location)}</td><td>$${t.amount.toFixed(2)}</td></tr>`).join('') || `<tr><td colspan="3" class="dim">${isEs ? 'Sin cargos personales.' : 'No personal charges.'}</td></tr>`}
+          </tbody>
+          <tfoot>
+            <tr><td colspan="2" style="text-align:right;font-weight:700">${isEs ? 'Total Adeudado' : 'Total Due'}</td><td style="font-weight:700">$${total.toFixed(2)}</td></tr>
+          </tfoot>
+        </table>
+
+        <div class="form-callout">
+          ${isEs
+            ? 'Estos cargos de peaje en el vehículo de la empresa se marcaron como uso personal. Por favor remita el pago a Recursos Humanos antes de la fecha límite indicada arriba.'
+            : 'These toll charges on your company vehicle were marked as personal use. Please remit payment to HR by the due date above.'}
+        </div>
+
+        <div class="form-fine" style="display:flex;justify-content:space-between;gap:12px;margin-top:14px">
+          <span>${isEs ? 'Generado por Toll Tracker.' : 'Generated by Toll Tracker.'}</span>
+          <span>SWL-TOLL-INV</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card no-print" style="margin-top:16px">
+      <div class="card-body">
+        ${paid
+          ? `<p style="margin:0"><span class="pill ok">${isEs ? 'Pagado' : 'Paid'}</span> ${formatDate(sheet.date_received)}${sheet.receipt_ref ? ` — ${escapeHtml(sheet.receipt_ref)}` : ''}</p>`
+          : `
+            <div class="frow" style="align-items:flex-end">
+              <div class="field" style="margin:0"><label class="f-lab" for="toll-inv-received-date">${isEs ? 'Fecha de recibido' : 'Date received'}</label><input class="f-in" id="toll-inv-received-date" type="date"></div>
+              <div class="field" style="margin:0"><label class="f-lab" for="toll-inv-receipt-ref">${isEs ? 'Recibo / referencia' : 'Receipt / reference #'}</label><input class="f-in" id="toll-inv-receipt-ref"></div>
+              <button class="gh solid" id="toll-inv-paid-btn" type="button">${isEs ? 'Marcar como pagado' : 'Mark as paid'}</button>
+            </div>
+          `}
+      </div>
+    </div>
+    <button class="gh no-print" id="toll-inv-back-btn" type="button" style="margin:14px">&larr; ${isEs ? 'Volver al generador de documentos' : 'Back to document generator'}</button>
+  `;
+
+  document.getElementById('toll-inv-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+
+  const paidBtn = document.getElementById('toll-inv-paid-btn');
+  if (paidBtn) {
+    paidBtn.addEventListener('click', async () => {
+      const dateReceived = document.getElementById('toll-inv-received-date').value;
+      if (!dateReceived) { showToast(isEs ? 'Ingrese la fecha de recibido.' : 'Enter the date received.', 'error'); return; }
+      const receiptRef = document.getElementById('toll-inv-receipt-ref').value.trim();
+      try {
+        await updateDoc(doc(db, 'toll_sheets', sheet.id), {
+          date_received: dateReceived, receipt_ref: receiptRef, received_by: profile.uid,
+          entered_by: profile.uid, entered_at: serverTimestamp(),
+        });
+        sheet.date_received = dateReceived;
+        sheet.receipt_ref = receiptRef;
+        showToast(isEs ? 'Marcado como pagado.' : 'Marked as paid.');
+        renderTollInvoiceSheet(lang);
+      } catch (err) {
+        console.error(err);
+        showToast((isEs ? 'No se pudo guardar — ' : 'Could not save — ') + err.message, 'error');
+      }
+    });
+  }
+
+  sheetRerender = (l) => renderTollInvoiceSheet(l);
 }
 
 // ---- CA Notice of Change in Employment Status ----
@@ -6724,6 +6863,7 @@ const requestedOpen = new URLSearchParams(window.location.search).get('open');
 const requestedDocId = new URLSearchParams(window.location.search).get('doc');
 const requestedIncidentId = new URLSearchParams(window.location.search).get('incident');
 const requestedDeductionId = new URLSearchParams(window.location.search).get('deduction');
+const requestedSheetId = new URLSearchParams(window.location.search).get('sheet');
 const SIGNABLE_DOC_TYPES = ['timecard', 'mealpenalty', 'mileage', 'refusal', 'mealwaiver2', 'offer', 'pip', 'review', 'termination', 'incidentreport', 'changenotice'];
 if (requestedOpen && GENERATORS.some((g) => g.key === requestedOpen)) {
   openGenerator(requestedOpen);
@@ -6733,6 +6873,8 @@ if (requestedOpen && GENERATORS.some((g) => g.key === requestedOpen)) {
     await loadIncidentForRefusal(requestedIncidentId);
   } else if (requestedOpen === 'tolldeduction' && requestedDeductionId) {
     await loadTollDeduction(requestedDeductionId);
+  } else if (requestedOpen === 'tollinvoice' && requestedSheetId) {
+    await loadTollInvoice(requestedSheetId);
   }
 }
 </script>
