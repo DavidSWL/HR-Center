@@ -36,6 +36,7 @@
         <div class="tools">
           <button class="gh solid" id="add-btn" type="button">Add new hire</button>
           <button class="gh" id="import-btn" type="button">Import roster</button>
+          <button class="gh" id="export-btn" type="button">Export CSV</button>
           <button class="gh" id="add-test-btn" type="button">Add test employee</button>
           <input class="inp" id="search" placeholder="Search name or ID" style="min-width:190px">
           <select class="inp" id="division-filter">
@@ -536,7 +537,10 @@ document.querySelectorAll('#head-row .sortable').forEach((th) => {
   });
 });
 
-function render() {
+// Same filter + sort the table itself applies — shared so "Export CSV"
+// downloads exactly what's currently shown, not the whole roster
+// regardless of the search/filter row above it.
+function getVisibleEmployees() {
   const q = document.getElementById('search').value.trim().toLowerCase();
   const divisionFilter = document.getElementById('division-filter').value;
   const locationFilter = document.getElementById('location-filter').value;
@@ -558,6 +562,11 @@ function render() {
     const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv));
     return sortDir === 'asc' ? cmp : -cmp;
   });
+  return visible;
+}
+
+function render() {
+  const visible = getVisibleEmployees();
   updateSortIndicators();
 
   rowsEl.innerHTML = visible.map((e) => `
@@ -967,6 +976,33 @@ document.getElementById('import-btn').addEventListener('click', () => {
 });
 document.getElementById('import-close').addEventListener('click', () => { importOverlay.hidden = true; });
 document.getElementById('import-cancel').addEventListener('click', () => { importOverlay.hidden = true; });
+
+function csvCell(v) {
+  const s = v == null ? '' : String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+// Exports exactly what the table is currently showing — same search,
+// division, location, and status filters as the screen — so "export
+// active OC Maintenance" is just setting those filters first.
+document.getElementById('export-btn').addEventListener('click', () => {
+  const visible = getVisibleEmployees();
+  const header = ['Employee ID', 'First Name', 'Last Name', 'Division', 'Location', 'Position', 'Reports To', 'Dotted Line', 'Hire Date', 'Years of Service', 'Status'];
+  const rows = visible.map((e) => [
+    e.id, e.first_name || '', e.last_name || '', e.division || '', e.location || '', e.position || '',
+    managerName(e.manager_emp_id), managerName(e.dotted_line_emp_id), e.hire_date || '',
+    e.status === 'terminated' ? '' : yearsSince(e.hire_date), e.status || '',
+  ]);
+  const csv = [header, ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `employee-roster-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  showToast(`Exported ${visible.length} employee(s).`);
+});
 
 function pick(row, ...keys) {
   for (const k of keys) if (row[k]) return row[k];
