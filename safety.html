@@ -234,18 +234,9 @@
         </div>
 
         <div class="field">
-          <label class="f-lab" for="corrective-action">Corrective action</label>
-          <textarea class="f-in" id="corrective-action" rows="2" style="resize:vertical"></textarea>
-        </div>
-        <div class="frow">
-          <div class="field">
-            <label class="f-lab" for="corrective-owner">Owner</label>
-            <select class="f-in" id="corrective-owner"><option value="">No corrective action</option></select>
-          </div>
-          <div class="field">
-            <label class="f-lab" for="corrective-due">Due date</label>
-            <input class="f-in" id="corrective-due" type="date">
-          </div>
+          <label class="f-lab">Root cause, corrective actions, HR review, and VP decision</label>
+          <div id="corrective-summary" class="dim" style="font-size:12.5px;margin-bottom:6px"></div>
+          <button class="gh" id="open-incident-report-btn" type="button">Open full Incident Report</button>
         </div>
 
         <div class="field">
@@ -258,6 +249,8 @@
       <div class="modal-actions">
         <button type="button" class="gh" id="view-report-btn">View formatted report</button>
         <button type="button" class="gh" id="get-signature-btn">Get signature</button>
+        <button type="button" class="gh" id="add-interview-btn">Add interview notes</button>
+        <button type="button" class="gh" id="start-retraining-btn">Start retraining record</button>
         <button type="button" class="gh" id="void-btn" style="color:var(--alertTx)">Mark as entered in error</button>
         <button type="button" class="gh" id="cancel-btn">Cancel</button>
         <button type="submit" class="gh solid" id="save-btn">Save</button>
@@ -349,6 +342,25 @@ document.getElementById('header-date').textContent =
 let employees = [];
 let staff = [];
 let incidents = [];
+let interviewCountByIncident = {};
+
+const ROOT_CAUSE_TAG_LABELS = [
+  ['training_gap', 'Training gap'], ['procedure_unclear', 'Procedure unclear or missing'],
+  ['equipment', 'Equipment or tool'], ['supervision', 'Supervision'],
+  ['site_weather', 'Site or weather conditions'], ['unsafe_act', 'Unsafe act'], ['other', 'Other'],
+];
+
+// Interview Notes on File is computed, never stored — counted here so
+// the incident list and read-only report can't go stale if an interview
+// is added after the incident itself was last saved.
+async function loadInterviewCounts() {
+  const snap = await getDocs(collection(db, 'incident_interviews'));
+  interviewCountByIncident = {};
+  snap.docs.forEach((d) => {
+    const incId = d.data().incident_id;
+    if (incId) interviewCountByIncident[incId] = (interviewCountByIncident[incId] || 0) + 1;
+  });
+}
 
 function empById(id) { return employees.find((e) => e.id === id); }
 
@@ -458,8 +470,6 @@ function autofillSupervisor(empId) {
 async function loadStaff() {
   const snap = await getDocs(collection(db, 'users'));
   staff = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  document.getElementById('corrective-owner').innerHTML =
-    '<option value="">No corrective action</option>' + staff.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
 }
 
 async function loadIncidents() {
@@ -468,6 +478,7 @@ async function loadIncidents() {
     .map((d) => ({ id: d.id, ...d.data() }))
     .filter((i) => !i.voided) // entered-in-error records stay in Firestore for audit, just out of view here
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  await loadInterviewCounts();
   renderReport();
   render();
 }
@@ -782,9 +793,14 @@ function openEdit(id) {
   document.getElementById('no-cost').checked = inc.cost === 0;
   syncNoCost();
   document.getElementById('root-cause').value = inc.root_cause || '';
-  document.getElementById('corrective-action').value = inc.corrective_action || '';
-  document.getElementById('corrective-owner').value = inc.corrective_owner || '';
-  document.getElementById('corrective-due').value = inc.corrective_due || '';
+  const actionCount = (inc.corrective_actions || []).length;
+  const doneCount = (inc.corrective_actions || []).filter((a) => a.done).length;
+  document.getElementById('corrective-summary').textContent = actionCount
+    ? `${doneCount} of ${actionCount} corrective action${actionCount > 1 ? 's' : ''} done — VP decision: ${{ agrees: "agrees with manager's plan", suggests_different: 'suggests a different method' }[inc.vp_decision] || 'not yet decided'}.`
+    : 'No corrective actions on file yet — open the full Incident Report to add the review and corrective action plan.';
+  document.getElementById('open-incident-report-btn').onclick = () => {
+    window.location.href = `docgen.html?open=incidentreport&doc=${editingIncidentId}`;
+  };
   document.getElementById('injury-fields').hidden = inc.incident_type !== 'Injury';
   document.getElementById('refusal-field').hidden = inc.treatment_level !== 'refused';
   document.getElementById('refusal-file').value = '';
@@ -862,8 +878,55 @@ function renderIncidentReportHtml(inc) {
       ` : ''}
       <div class="form-section">Immediate Action Taken</div>
       <div class="form-box">${escapeHtml(inc.immediate_action) || '—'}</div>
-      <div class="form-section">Root Cause &amp; Corrective Action</div>
-      <div class="form-box">${escapeHtml(inc.root_cause) || '—'}${inc.corrective_action ? `<br><br><b>Corrective action:</b> ${escapeHtml(inc.corrective_action)}` : ''}</div>
+
+      <div class="form-page-break" style="break-inside:avoid">
+      <h2 class="form-title" style="font-size:16px;margin-top:0">Incident Review and Corrective Action Plan</h2>
+      <div class="form-section">The Correct Way To Do The Task</div>
+      <div class="form-box">${escapeHtml(inc.correct_way) || '—'}</div>
+      <div class="form-section">Root Cause</div>
+      <div class="form-checks">
+        ${ROOT_CAUSE_TAG_LABELS.map(([key, label]) => `<label>${(inc.root_cause_tags || []).includes(key) ? '☑' : '☐'} ${label}</label>`).join('')}
+      </div>
+      <div class="form-box">${escapeHtml(inc.root_cause) || '—'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Was It Preventable?</b>${{ yes: 'Yes', partly: 'Partly', no: 'No' }[inc.preventable] || '—'}</div>
+        <div class="form-cell"><b>Interview Notes On File</b>${interviewCountByIncident[inc.id] ? `Yes (${interviewCountByIncident[inc.id]})` : 'Not yet'}</div>
+      </div>
+      <div class="form-section">Score Items</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>At-Fault Vehicle Accident</b>${inc.at_fault_vehicle_accident ? 'Yes' : 'No'}</div>
+        <div class="form-cell"><b>Repeat Incident</b>${inc.repeat_incident ? `Yes — ${escapeHtml(inc.repeat_incident_dates) || '—'}` : 'No'}</div>
+      </div>
+      <div class="form-section">HR Review</div>
+      <div class="form-box">${escapeHtml(inc.hr_review_comments) || '—'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>Reviewed By</b>${escapeHtml(inc.hr_reviewed_by) || '—'}</div>
+        <div class="form-cell"><b>Date</b>${inc.hr_reviewed_date ? formatDate(inc.hr_reviewed_date) : '—'}</div>
+      </div>
+      <div class="form-section">VP Decision</div>
+      <div class="form-checks">
+        <label>${inc.vp_decision === 'agrees' ? '☑' : '☐'} Agrees with manager's plan</label>
+        <label>${inc.vp_decision === 'suggests_different' ? '☑' : '☐'} Suggests a different method</label>
+      </div>
+      ${inc.vp_decision === 'suggests_different' ? `<div class="form-box">${escapeHtml(inc.vp_suggested_method) || '—'}</div>` : ''}
+      <div class="form-grid c2">
+        <div class="form-cell"><b>VP Name</b>${escapeHtml(inc.vp_name) || '—'}</div>
+        <div class="form-cell"><b>Decision Date</b>${inc.vp_decision_date ? formatDate(inc.vp_decision_date) : '—'}</div>
+      </div>
+      <div class="form-section">Corrective Actions</div>
+      <table class="form-notice-table"><thead><tr><th>Action</th><th>Responsible Person</th><th>Due Date</th><th>Done</th></tr></thead><tbody>
+        ${(inc.corrective_actions || []).length ? inc.corrective_actions.map((row) => `<tr>
+          <td>${escapeHtml(row.action)}</td><td>${escapeHtml((staff.find((s) => s.id === row.owner_id) || {}).name) || '—'}</td><td>${row.due ? formatDate(row.due) : '—'}</td><td>${row.done ? '☑' : '☐'}</td>
+        </tr>`).join('') : '<tr><td colspan="4" class="dim">None</td></tr>'}
+      </tbody></table>
+      <div class="form-section">Signature of HR Manager</div>
+      ${inc.hr_manager_signature_data_url ? `<img src="${inc.hr_manager_signature_data_url}" alt="HR Manager signature" style="max-height:80px;border-bottom:1px solid #333">` : '<div class="dim">Not signed.</div>'}
+      ${signedOnHtml(inc.hr_manager_signed_at)}
+      <div class="form-section">Signature of VP</div>
+      ${inc.vp_signature_data_url ? `<img src="${inc.vp_signature_data_url}" alt="VP signature" style="max-height:80px;border-bottom:1px solid #333">` : '<div class="dim">Not signed.</div>'}
+      ${signedOnHtml(inc.vp_signed_at)}
+      </div>
+
       <div class="form-page-break" style="break-inside:avoid">
       <div class="form-section">Follow-Up Report and Plan of Action</div>
       <div class="form-box" style="white-space:normal">
@@ -932,6 +995,14 @@ window.addEventListener('afterprint', () => {
 document.getElementById('get-signature-btn').addEventListener('click', () => {
   if (!editingIncidentId) return;
   window.location.href = `docgen.html?open=incidentreport&doc=${editingIncidentId}`;
+});
+document.getElementById('add-interview-btn').addEventListener('click', () => {
+  if (!editingIncidentId) return;
+  window.location.href = `docgen.html?open=incidentinterview&incident=${editingIncidentId}`;
+});
+document.getElementById('start-retraining-btn').addEventListener('click', () => {
+  if (!editingIncidentId) return;
+  window.location.href = `docgen.html?open=retraining&incident=${editingIncidentId}`;
 });
 document.getElementById('generate-refusal-btn').addEventListener('click', () => {
   if (!editingIncidentId) return;
@@ -1068,8 +1139,6 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
     const empId = document.getElementById('emp-select').value;
     const emp = empById(empId);
     const isInjury = document.getElementById('inc-type').value === 'Injury';
-    const correctiveOwner = document.getElementById('corrective-owner').value;
-    const correctiveDue = document.getElementById('corrective-due').value;
 
     // Embedded as a data URL directly on the incident doc rather than
     // uploaded to Firebase Storage — this account is on the free Spark
@@ -1130,9 +1199,6 @@ document.getElementById('incident-form').addEventListener('submit', async (e) =>
       }),
       cost: document.getElementById('no-cost').checked ? 0 : (document.getElementById('cost').value === '' ? null : parseFloat(document.getElementById('cost').value)),
       root_cause: document.getElementById('root-cause').value.trim(),
-      corrective_action: document.getElementById('corrective-action').value.trim(),
-      corrective_owner: correctiveOwner,
-      corrective_due: correctiveDue,
       category_needs_review: false, // clears the import-time flag once a human has saved the row
       entered_by: profile.uid,
     };
@@ -1258,9 +1324,7 @@ function mapIncidentRow(row, source) {
     fatality: false,
     cost: costText ? (Number.isNaN(parseFloat(costText)) ? null : parseFloat(costText)) : null, // blank in the source sheet means "not yet reviewed", not "confirmed zero"
     root_cause: ipick(row, 'unsafe_act'),
-    corrective_action: ipick(row, 'action_taken'),
-    corrective_owner: '',
-    corrective_due: '',
+    corrective_actions: ipick(row, 'action_taken') ? [{ action: ipick(row, 'action_taken'), owner_id: '', due: '', done: false, task_created: false }] : [],
     category_needs_review: needsReview,
     errors: dateText && !Number.isNaN(new Date(dateText).getTime()) ? [] : ['missing/invalid date'],
   };

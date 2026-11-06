@@ -227,7 +227,9 @@ const GENERATORS = [
   { key: 'tollinvoice', title: 'Personal Toll Invoice', desc: 'Bill for an employee’s personal toll charges, any repayment method — generated from Toll Tracker, not filled in by hand', category: 'Pay & time' },
 
   { key: 'refusal', title: 'Medical Treatment Refusal', desc: 'Matches the SWL acknowledgment form — English or Spanish, saves to Documents', category: 'Safety' },
-  { key: 'incidentreport', title: 'Incident Report', desc: 'Log a new incident — injury/near miss/property damage/vehicle accident, matches SWL Form 7.3, signed by manager and employee', category: 'Safety' },
+  { key: 'incidentreport', title: 'Incident Report', desc: 'Log a new incident and its review/corrective action plan — matches SWL Form 7.3 and SWL-INC-2, signed by manager, HR manager, VP, and employee', category: 'Safety' },
+  { key: 'incidentinterview', title: 'Incident Interview Notes', desc: 'One per person interviewed about an incident — matches SWL-INC-1, English or Spanish, signed by both parties', category: 'Safety' },
+  { key: 'retraining', title: 'Retraining Record', desc: 'Session summary, sign-in sheet, and the 30-day follow-up check — matches SWL-INC-3, English or Spanish', category: 'Safety' },
   { key: 'osha300a', title: 'OSHA 300A Annual Summary', desc: 'Totals computed from recordable incidents for the year — post Feb 1–Apr 30', category: 'Safety' },
 
   { key: 'employeefile', title: 'Employee file', desc: 'Everything on file for one employee — reviews, discipline, training, incidents — in one printable packet', category: 'Employee records' },
@@ -371,14 +373,17 @@ function setEmpField(id, empId, list = employees) {
   hidden.value = emp ? emp.id : '';
 }
 
-function openGenerator(key) {
+function openGenerator(key, opts = {}) {
   currentKey = key;
   pendingSigDocId = null;
   pendingSigTaskId = null;
-  loadedIncidentSignedAt = { manager: null, employee: null };
+  loadedIncidentSignedAt = { manager: null, employee: null, hrManager: null, vp: null };
   refusalLinkedIncidentId = null;
   pendingIncidentRefusalDocId = null;
   linkedTerminationId = null;
+  linkedIncidentId = opts.incidentId || null;
+  pendingInterviewDocId = null;
+  pendingRetrainingDocId = null;
   sheetRerender = null;
   document.getElementById('menu-view').hidden = true;
   document.getElementById('gen-view').hidden = false;
@@ -387,7 +392,7 @@ function openGenerator(key) {
   // exactly as supplied — those forms are English-only, so the language
   // toggle only applies to PIP, Onboarding, and the letters (which manage
   // English/Spanish through their own letter-type list instead).
-  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty' || key === 'mealwaiver2' || key === 'mileage' || key === 'review' || key === 'termination' || key === 'incidentreport' || key === 'termsummary' || key === 'changenotice' || key === 'hrrequest' || key === 'tolldeduction' || key === 'tollinvoice') ? '' : 'none';
+  document.getElementById('lang-select').style.display = (key === 'pip' || key === 'onboarding' || key === 'refusal' || key === 'jobdesc' || key === 'timecard' || key === 'mealpenalty' || key === 'mealwaiver2' || key === 'mileage' || key === 'review' || key === 'termination' || key === 'incidentreport' || key === 'incidentinterview' || key === 'retraining' || key === 'termsummary' || key === 'changenotice' || key === 'hrrequest' || key === 'tolldeduction' || key === 'tollinvoice') ? '' : 'none';
   renderCurrent();
 }
 
@@ -406,6 +411,8 @@ function renderCurrent() {
   if (currentKey === 'mealpenalty') renderMealPenalty(lang);
   if (currentKey === 'mealwaiver2') renderMealWaiver2(lang);
   if (currentKey === 'incidentreport') renderIncidentReport();
+  if (currentKey === 'incidentinterview') renderIncidentInterview(lang);
+  if (currentKey === 'retraining') renderRetraining(lang);
   if (currentKey === 'osha300a') renderOsha300a();
   if (currentKey === 'employeefile') renderEmployeeFile();
   if (currentKey === 'hrrequest') renderHrRequest(lang);
@@ -3934,6 +3941,27 @@ let linkedTerminationId = null;
 // existing document instead of generating a duplicate.
 let pendingIncidentRefusalDocId = null;
 
+// Which incident (if any) an Interview Notes or Retraining Record is
+// attached to — set from Safety's "Add interview" / "Start retraining"
+// buttons (?incident=X) or from the Incident Report sheet's own shortcuts.
+// Cleared whenever a generator is (re)opened.
+let linkedIncidentId = null;
+// Set once an Interview Notes or Retraining Record has actually been
+// saved, so re-saving (e.g. after signing) updates the same doc instead
+// of creating a duplicate.
+let pendingInterviewDocId = null;
+let pendingRetrainingDocId = null;
+
+const ROOT_CAUSE_TAGS = [
+  { key: 'training_gap', en: 'Training gap', es: 'Falta de capacitación' },
+  { key: 'procedure_unclear', en: 'Procedure unclear or missing', es: 'Procedimiento poco claro o inexistente' },
+  { key: 'equipment', en: 'Equipment or tool', es: 'Equipo o herramienta' },
+  { key: 'supervision', en: 'Supervision', es: 'Supervisión' },
+  { key: 'site_weather', en: 'Site or weather conditions', es: 'Condiciones del sitio o clima' },
+  { key: 'unsafe_act', en: 'Unsafe act', es: 'Acto inseguro' },
+  { key: 'other', en: 'Other', es: 'Otro' },
+];
+
 function renderIncidentReport() {
   document.getElementById('gen-body').innerHTML = `
     <div class="card no-print" style="margin-bottom:16px">
@@ -4008,19 +4036,52 @@ function renderIncidentReport() {
         </div>
         <div class="field"><label class="f-lab">Immediate action taken</label><textarea class="f-in" id="ir-immediate-action" rows="2" style="resize:vertical" placeholder="e.g. Reported to supervisor and sent to company clinic"></textarea></div>
 
-        <div class="frow">
-          <div class="field"><label class="f-lab">Cost ($)</label><input class="f-in" id="ir-cost" type="number" min="0" step="0.01" placeholder="Leave blank if not yet reviewed"></div>
-          <div class="field"><label class="f-lab">Root cause</label><input class="f-in" id="ir-root-cause"></div>
+        <div class="field"><label class="f-lab">Cost ($)</label><input class="f-in" id="ir-cost" type="number" min="0" step="0.01" placeholder="Leave blank if not yet reviewed"></div>
+
+        <div id="ir-interview-status" class="dim no-print" style="font-size:12.5px;margin:6px 0 4px"></div>
+
+        <div class="field"><label class="f-lab">What's the correct way to do this task?</label><textarea class="f-in" id="ir-correct-way" rows="2" style="resize:vertical"></textarea></div>
+        <div class="field">
+          <label class="f-lab">Root cause</label>
+          ${ROOT_CAUSE_TAGS.map((t) => `<label style="display:block;font-size:12.5px;margin-bottom:3px"><input type="checkbox" class="ir-root-tag" value="${t.key}"> ${t.en}</label>`).join('')}
+          <textarea class="f-in" id="ir-root-cause" rows="2" style="resize:vertical;margin-top:4px" placeholder="Explain"></textarea>
         </div>
-        <div class="field"><label class="f-lab">Corrective action (systemic fix, if any)</label><textarea class="f-in" id="ir-corrective-action" rows="2" style="resize:vertical"></textarea></div>
-        <div class="frow">
-          <div class="field"><label class="f-lab">Corrective action owner</label><select class="f-in" id="ir-corrective-owner"><option value="">No corrective action</option>${staff.map((s) => `<option value="${s.id}">${s.name}</option>`).join('')}</select></div>
-          <div class="field"><label class="f-lab">Due date</label><input class="f-in" id="ir-corrective-due" type="date"></div>
+        <div class="field"><label class="f-lab">Was it preventable?</label>
+          <select class="f-in" id="ir-preventable"><option value="">Not yet assessed</option><option value="yes">Yes</option><option value="partly">Partly</option><option value="no">No</option></select>
+        </div>
+
+        <div class="field">
+          <label class="f-lab">Score items</label>
+          <label style="display:block;font-size:12.5px;margin-bottom:4px"><input type="checkbox" id="ir-at-fault-accident"> At-fault vehicle accident</label>
+          <label style="display:block;font-size:12.5px;margin-bottom:4px"><input type="checkbox" id="ir-repeat-incident"> Repeat incident</label>
+          <div class="field" id="ir-repeat-dates-field" hidden style="margin-top:4px"><label class="f-lab">If yes, prior date(s)</label><input class="f-in" id="ir-repeat-dates" placeholder="e.g. Mar 2026, Jul 2026"></div>
+        </div>
+
+        <div class="field">
+          <label class="f-lab">Corrective actions</label>
+          <div id="ir-corrective-rows"></div>
+          <button class="gh" id="ir-add-corrective-btn" type="button" style="margin-top:4px">+ Add corrective action</button>
         </div>
 
         <div class="field"><label class="f-lab">Follow-up: discussed with staff involved — who</label><input class="f-in" id="ir-discussed-staff-who"></div>
         <div class="field"><label class="f-lab">Follow-up: other — describe</label><input class="f-in" id="ir-other-detail"></div>
         <div class="field"><label class="f-lab">Comments</label><textarea class="f-in" id="ir-comments" rows="2" style="resize:vertical"></textarea></div>
+
+        <div class="field"><label class="f-lab">HR review comments</label><textarea class="f-in" id="ir-hr-comments" rows="2" style="resize:vertical"></textarea></div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Reviewed by</label><input class="f-in" id="ir-hr-reviewed-by"></div>
+          <div class="field"><label class="f-lab">Date</label><input class="f-in" id="ir-hr-reviewed-date" type="date"></div>
+        </div>
+
+        <div class="field"><label class="f-lab">VP decision</label>
+          <select class="f-in" id="ir-vp-decision"><option value="">Not yet decided</option><option value="agrees">Agrees with manager's plan</option><option value="suggests_different">Suggests a different method</option></select>
+        </div>
+        <div class="field" id="ir-vp-method-field" hidden><label class="f-lab">Suggested method</label><textarea class="f-in" id="ir-vp-method" rows="2" style="resize:vertical"></textarea></div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">VP name</label><input class="f-in" id="ir-vp-name" placeholder="Entered by HR on the VP's behalf"></div>
+          <div class="field"><label class="f-lab">Decision date</label><input class="f-in" id="ir-vp-date" type="date"></div>
+        </div>
+
         <button class="gh solid" id="ir-generate-btn" type="button">Generate</button>
       </div>
     </div>
@@ -4028,7 +4089,21 @@ function renderIncidentReport() {
   `;
   const today = new Date().toISOString().slice(0, 10);
   document.getElementById('ir-date').value = today;
+  document.getElementById('ir-hr-reviewed-by').value = profile.name || '';
+  document.getElementById('ir-hr-reviewed-date').value = today;
   wireEmpSearch('ir-emp');
+
+  document.getElementById('ir-repeat-incident').addEventListener('change', (e) => {
+    document.getElementById('ir-repeat-dates-field').hidden = !e.target.checked;
+  });
+  document.getElementById('ir-vp-decision').addEventListener('change', (e) => {
+    document.getElementById('ir-vp-method-field').hidden = e.target.value !== 'suggests_different';
+  });
+  document.getElementById('ir-corrective-rows').appendChild(correctiveRowEl());
+  document.getElementById('ir-add-corrective-btn').addEventListener('click', () => {
+    document.getElementById('ir-corrective-rows').appendChild(correctiveRowEl());
+  });
+  renderInterviewAndRetrainingLinks();
 
   document.getElementById('ir-emp').addEventListener('change', (e) => {
     const emp = employees.find((x) => x.id === e.target.value);
@@ -4076,6 +4151,63 @@ function renderIncidentReport() {
   });
 }
 
+// One row of the Corrective Actions table on the raw draft form —
+// action/owner/due/done. `data` pre-fills a row when restoring a draft or
+// reopening a saved incident; omit it for a fresh blank row.
+function correctiveRowEl(data = {}) {
+  const row = document.createElement('div');
+  row.className = 'frow ir-corrective-row';
+  row.style.alignItems = 'flex-end';
+  row.dataset.taskCreated = data.taskCreated ? '1' : '';
+  row.innerHTML = `
+    <div class="field" style="flex:2"><label class="f-lab">Action</label><input class="f-in ir-corrective-action-in" value="${escapeHtml(data.action || '')}"></div>
+    <div class="field"><label class="f-lab">Responsible person</label><select class="f-in ir-corrective-owner-in"><option value="">Choose…</option>${staff.map((s) => `<option value="${s.id}"${data.ownerId === s.id ? ' selected' : ''}>${s.name}</option>`).join('')}</select></div>
+    <div class="field"><label class="f-lab">Due date</label><input class="f-in ir-corrective-due-in" type="date" value="${data.due || ''}"></div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;margin:0 0 10px"><input type="checkbox" class="ir-corrective-done-in"${data.done ? ' checked' : ''}> Done</label>
+    <button class="gh" type="button" style="margin-bottom:10px" aria-label="Remove row">&times;</button>
+  `;
+  row.querySelector('button').addEventListener('click', () => row.remove());
+  return row;
+}
+
+// Reads the Corrective Actions table back into an array — rows with no
+// action text are skipped (an empty extra row someone never filled in).
+function collectCorrectiveRows() {
+  return [...document.querySelectorAll('.ir-corrective-row')].map((row) => ({
+    action: row.querySelector('.ir-corrective-action-in').value.trim(),
+    ownerId: row.querySelector('.ir-corrective-owner-in').value,
+    due: row.querySelector('.ir-corrective-due-in').value,
+    done: row.querySelector('.ir-corrective-done-in').checked,
+    taskCreated: row.dataset.taskCreated === '1',
+    el: row,
+  })).filter((r) => r.action);
+}
+
+// Shows whether Interview Notes are on file for this incident (computed
+// from incident_interviews — never stored, so it can't go stale) and
+// links to add an interview or start a Retraining Record. Only
+// meaningful once the incident itself has been saved.
+async function renderInterviewAndRetrainingLinks() {
+  const box = document.getElementById('ir-interview-status');
+  if (!box) return;
+  if (!pendingSigDocId) {
+    box.innerHTML = 'Save this incident first to add Interview Notes or start a Retraining Record.';
+    return;
+  }
+  const snap = await getDocs(query(collection(db, 'incident_interviews'), where('incident_id', '==', pendingSigDocId)));
+  box.innerHTML = `
+    <span class="pill${snap.empty ? ' mid' : ''}">${snap.empty ? 'Interview notes: not yet' : `Interview notes: ${snap.size} on file`}</span>
+    <button class="gh no-print" type="button" id="ir-add-interview-btn" style="margin-left:8px">Add interview notes</button>
+    <button class="gh no-print" type="button" id="ir-start-retraining-btn" style="margin-left:8px">Start retraining record</button>
+  `;
+  document.getElementById('ir-add-interview-btn').addEventListener('click', () => {
+    openGenerator('incidentinterview', { incidentId: pendingSigDocId });
+  });
+  document.getElementById('ir-start-retraining-btn').addEventListener('click', () => {
+    openGenerator('retraining', { incidentId: pendingSigDocId });
+  });
+}
+
 // Repopulates the raw incident report draft form from a snapshot taken
 // by readIncidentReportForm() -- used when someone comes back from
 // generating a Refusal form mid-draft via "Generate Refusal Form".
@@ -4106,13 +4238,28 @@ async function restoreIncidentReportDraft(f) {
   document.getElementById('ir-describe').value = f.describe || '';
   document.getElementById('ir-immediate-action').value = f.immediateAction || '';
   document.getElementById('ir-cost').value = f.cost === null || f.cost === undefined ? '' : f.cost;
+  document.getElementById('ir-correct-way').value = f.correctWay || '';
+  document.querySelectorAll('.ir-root-tag').forEach((cb) => { cb.checked = (f.rootCauseTags || []).includes(cb.value); });
   document.getElementById('ir-root-cause').value = f.rootCause || '';
-  document.getElementById('ir-corrective-action').value = f.correctiveAction || '';
-  document.getElementById('ir-corrective-owner').value = f.correctiveOwner || '';
-  document.getElementById('ir-corrective-due').value = f.correctiveDue || '';
+  document.getElementById('ir-preventable').value = f.preventable || '';
+  document.getElementById('ir-at-fault-accident').checked = !!f.atFaultAccident;
+  document.getElementById('ir-repeat-incident').checked = !!f.repeatIncident;
+  document.getElementById('ir-repeat-dates-field').hidden = !f.repeatIncident;
+  document.getElementById('ir-repeat-dates').value = f.repeatIncidentDates || '';
+  const rowsBox = document.getElementById('ir-corrective-rows');
+  rowsBox.innerHTML = '';
+  (f.correctiveActions && f.correctiveActions.length ? f.correctiveActions : [{}]).forEach((row) => rowsBox.appendChild(correctiveRowEl(row)));
   document.getElementById('ir-discussed-staff-who').value = f.discussedStaffWho || '';
   document.getElementById('ir-other-detail').value = f.otherDetail || '';
   document.getElementById('ir-comments').value = f.comments || '';
+  document.getElementById('ir-hr-comments').value = f.hrComments || '';
+  document.getElementById('ir-hr-reviewed-by').value = f.hrReviewedBy || profile.name || '';
+  document.getElementById('ir-hr-reviewed-date').value = f.hrReviewedDate || new Date().toISOString().slice(0, 10);
+  document.getElementById('ir-vp-decision').value = f.vpDecision || '';
+  document.getElementById('ir-vp-method-field').hidden = f.vpDecision !== 'suggests_different';
+  document.getElementById('ir-vp-method').value = f.vpMethod || '';
+  document.getElementById('ir-vp-name').value = f.vpName || '';
+  document.getElementById('ir-vp-date').value = f.vpDate || '';
   incidentDraftForResume = null;
 }
 
@@ -4161,13 +4308,24 @@ function readIncidentReportForm() {
     describe: document.getElementById('ir-describe').value,
     immediateAction: document.getElementById('ir-immediate-action').value.trim(),
     cost: document.getElementById('ir-cost').value === '' ? null : parseFloat(document.getElementById('ir-cost').value),
+    correctWay: document.getElementById('ir-correct-way').value.trim(),
+    rootCauseTags: [...document.querySelectorAll('.ir-root-tag')].filter((cb) => cb.checked).map((cb) => cb.value),
     rootCause: document.getElementById('ir-root-cause').value.trim(),
-    correctiveAction: document.getElementById('ir-corrective-action').value.trim(),
-    correctiveOwner: document.getElementById('ir-corrective-owner').value,
-    correctiveDue: document.getElementById('ir-corrective-due').value,
+    preventable: document.getElementById('ir-preventable').value,
+    atFaultAccident: document.getElementById('ir-at-fault-accident').checked,
+    repeatIncident: document.getElementById('ir-repeat-incident').checked,
+    repeatIncidentDates: document.getElementById('ir-repeat-incident').checked ? document.getElementById('ir-repeat-dates').value.trim() : '',
+    correctiveActions: collectCorrectiveRows(),
     discussedStaffWho: document.getElementById('ir-discussed-staff-who').value.trim(),
     otherDetail: document.getElementById('ir-other-detail').value.trim(),
     comments: document.getElementById('ir-comments').value.trim(),
+    hrComments: document.getElementById('ir-hr-comments').value.trim(),
+    hrReviewedBy: document.getElementById('ir-hr-reviewed-by').value.trim(),
+    hrReviewedDate: document.getElementById('ir-hr-reviewed-date').value,
+    vpDecision: document.getElementById('ir-vp-decision').value,
+    vpMethod: document.getElementById('ir-vp-decision').value === 'suggests_different' ? document.getElementById('ir-vp-method').value.trim() : '',
+    vpName: document.getElementById('ir-vp-name').value.trim(),
+    vpDate: document.getElementById('ir-vp-date').value,
   };
 }
 
@@ -4319,8 +4477,54 @@ function renderIncidentReportSheet(lang = 'en') {
       ` : ''}
       <div class="form-section">${isEs ? 'Acción Inmediata Tomada' : 'Immediate Action Taken'}</div>
       <div class="form-box">${escapeHtml(f.immediateAction) || '—'}</div>
-      <div class="form-section">${isEs ? 'Causa Raíz y Acción Correctiva' : 'Root Cause & Corrective Action'}</div>
-      <div class="form-box">${escapeHtml(f.rootCause) || '—'}${f.correctiveAction ? `<br><br><b>${isEs ? 'Acción correctiva:' : 'Corrective action:'}</b> ${escapeHtml(f.correctiveAction)}` : ''}</div>
+
+      <div class="form-page-break" style="break-inside:avoid">
+      <h2 class="form-title" style="font-size:16px;margin-top:0">${isEs ? 'Revisión del Incidente y Plan de Acción Correctiva' : 'Incident Review and Corrective Action Plan'}</h2>
+      <div class="form-section">${isEs ? 'La Forma Correcta de Hacer la Tarea' : 'The Correct Way To Do The Task'}</div>
+      <div class="form-box">${escapeHtml(f.correctWay) || '—'}</div>
+      <div class="form-section">${isEs ? 'Causa Raíz' : 'Root Cause'}</div>
+      <div class="form-checks">
+        ${ROOT_CAUSE_TAGS.map((t) => `<label>${f.rootCauseTags.includes(t.key) ? '☑' : '☐'} ${isEs ? t.es : t.en}</label>`).join('')}
+      </div>
+      <div class="form-box">${escapeHtml(f.rootCause) || '—'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? '¿Fue Prevenible?' : 'Was It Preventable?'}</b>${{ yes: isEs ? 'Sí' : 'Yes', partly: isEs ? 'Parcialmente' : 'Partly', no: 'No' }[f.preventable] || '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Notas En Archivo' : 'Interview Notes On File'}</b><span id="ir-interview-on-file-sheet">${isEs ? 'Cargando…' : 'Loading…'}</span></div>
+      </div>
+      <div class="form-section">${isEs ? 'Elementos de Puntuación' : 'Score Items'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Accidente Vehicular Con Culpa' : 'At-Fault Vehicle Accident'}</b>${f.atFaultAccident ? (isEs ? 'Sí' : 'Yes') : 'No'}</div>
+        <div class="form-cell"><b>${isEs ? 'Incidente Repetido' : 'Repeat Incident'}</b>${f.repeatIncident ? `${isEs ? 'Sí' : 'Yes'} — ${escapeHtml(f.repeatIncidentDates) || '—'}` : 'No'}</div>
+      </div>
+      <div class="form-section">${isEs ? 'Comentarios de RH' : 'HR Review'}</div>
+      <div class="form-box">${escapeHtml(f.hrComments) || '—'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Revisado Por' : 'Reviewed By'}</b>${escapeHtml(f.hrReviewedBy) || '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha' : 'Date'}</b>${f.hrReviewedDate ? formatDate(f.hrReviewedDate) : '—'}</div>
+      </div>
+      <div class="form-section">${isEs ? 'Decisión del VP' : 'VP Decision'}</div>
+      <div class="form-checks">
+        <label>${f.vpDecision === 'agrees' ? '☑' : '☐'} ${isEs ? "Está de acuerdo con el plan del gerente" : "Agrees with manager's plan"}</label>
+        <label>${f.vpDecision === 'suggests_different' ? '☑' : '☐'} ${isEs ? 'Sugiere un método diferente' : 'Suggests a different method'}</label>
+      </div>
+      ${f.vpDecision === 'suggests_different' ? `<div class="form-box">${escapeHtml(f.vpMethod) || '—'}</div>` : ''}
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Nombre del VP' : 'VP Name'}</b>${escapeHtml(f.vpName) || '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Fecha de Decisión' : 'Decision Date'}</b>${f.vpDate ? formatDate(f.vpDate) : '—'}</div>
+      </div>
+      <div class="form-section">${isEs ? 'Acciones Correctivas' : 'Corrective Actions'}</div>
+      <table class="form-notice-table"><thead><tr>
+        <th>${isEs ? 'Acción' : 'Action'}</th><th>${isEs ? 'Persona Responsable' : 'Responsible Person'}</th><th>${isEs ? 'Fecha Límite' : 'Due Date'}</th><th>${isEs ? 'Hecho' : 'Done'}</th>
+      </tr></thead><tbody>
+        ${f.correctiveActions.length ? f.correctiveActions.map((row) => `<tr>
+          <td>${escapeHtml(row.action)}</td>
+          <td>${escapeHtml((staff.find((s) => s.id === row.ownerId) || {}).name) || '—'}</td>
+          <td>${row.due ? formatDate(row.due) : '—'}</td>
+          <td>${row.done ? '☑' : '☐'}</td>
+        </tr>`).join('') : `<tr><td colspan="4" class="dim">${isEs ? 'Ninguna' : 'None'}</td></tr>`}
+      </tbody></table>
+      </div>
+
       <div class="form-page-break" style="break-inside:avoid">
       <div class="form-section">${isEs ? 'Reporte de Seguimiento y Plan de Acción' : 'Follow-Up Report and Plan of Action'}</div>
       <div class="form-box" style="white-space:normal">
@@ -4338,16 +4542,16 @@ function renderIncidentReportSheet(lang = 'en') {
       </div>
       <div>
       <div class="form-section">${isEs ? 'Firma del Gerente' : 'Signature of Manager'}</div>
-      <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
-        <canvas id="ir-mgr-sig-pad" style="width:100%;height:90px;display:block;cursor:crosshair;touch-action:none"></canvas>
-      </div>
-      <button type="button" class="gh no-print" id="ir-mgr-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      ${signaturePadHtml('ir-mgr-sig-pad', 'ir-mgr-sig-clear')}
       <div id="ir-mgr-signedon">${signedOnHtml(loadedIncidentSignedAt.manager)}</div>
+      <div class="form-section">${isEs ? 'Firma del Gerente de RH' : 'Signature of HR Manager'}</div>
+      ${signaturePadHtml('ir-hrm-sig-pad', 'ir-hrm-sig-clear')}
+      <div id="ir-hrm-signedon">${signedOnHtml(loadedIncidentSignedAt.hrManager)}</div>
+      <div class="form-section">${isEs ? 'Firma del VP' : 'Signature of VP'}</div>
+      ${signaturePadHtml('ir-vp-sig-pad', 'ir-vp-sig-clear')}
+      <div id="ir-vp-signedon">${signedOnHtml(loadedIncidentSignedAt.vp)}</div>
       <div class="form-section">${isEs ? 'Firma del Empleado' : 'Signature of Employee'}</div>
-      <div style="border:1px solid #999;background:#fafafa;margin-bottom:6px">
-        <canvas id="ir-emp-sig-pad" style="width:100%;height:90px;display:block;cursor:crosshair;touch-action:none"></canvas>
-      </div>
-      <button type="button" class="gh no-print" id="ir-emp-sig-clear" style="margin-bottom:10px">${isEs ? 'Borrar firma' : 'Clear signature'}</button>
+      ${signaturePadHtml('ir-emp-sig-pad', 'ir-emp-sig-clear')}
       <div id="ir-emp-signedon">${signedOnHtml(loadedIncidentSignedAt.employee)}</div>
       <button type="button" class="gh solid no-print" id="ir-save-btn" style="margin-top:10px">${isEs ? 'Guardar' : 'Save'}</button>
       ${signatureTaskFieldsHtml('ir', 'Save and create signature reminder')}
@@ -4363,7 +4567,18 @@ function renderIncidentReportSheet(lang = 'en') {
     });
   });
   setUpSignaturePad('ir-mgr-sig-pad', 'ir-mgr-sig-clear');
+  setUpSignaturePad('ir-hrm-sig-pad', 'ir-hrm-sig-clear');
+  setUpSignaturePad('ir-vp-sig-pad', 'ir-vp-sig-clear');
   setUpSignaturePad('ir-emp-sig-pad', 'ir-emp-sig-clear');
+  if (pendingSigDocId) {
+    getDocs(query(collection(db, 'incident_interviews'), where('incident_id', '==', pendingSigDocId))).then((snap) => {
+      const el = document.getElementById('ir-interview-on-file-sheet');
+      if (el) el.textContent = snap.empty ? (isEs ? 'Todavía no' : 'Not yet') : (isEs ? 'Sí' : 'Yes');
+    });
+  } else {
+    const el = document.getElementById('ir-interview-on-file-sheet');
+    if (el) el.textContent = isEs ? 'Todavía no' : 'Not yet';
+  }
   const refusalBtnSheet = document.getElementById('ir-generate-refusal-btn-sheet');
   if (refusalBtnSheet) {
     refusalBtnSheet.addEventListener('click', () => {
@@ -4397,7 +4612,7 @@ function renderIncidentReportSheet(lang = 'en') {
   sheetRerender = (l) => {
     const checks = {};
     document.querySelectorAll('.ir-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
-    withPreservedSignature('ir-emp-sig-pad', () => withPreservedSignature('ir-mgr-sig-pad', () => renderIncidentReportSheet(l)));
+    withPreservedSignature('ir-emp-sig-pad', () => withPreservedSignature('ir-vp-sig-pad', () => withPreservedSignature('ir-hrm-sig-pad', () => withPreservedSignature('ir-mgr-sig-pad', () => renderIncidentReportSheet(l)))));
     document.querySelectorAll('.ir-check').forEach((cb) => {
       if (checks[cb.dataset.key]) { cb.checked = true; cb.closest('label').querySelector('.print-only').textContent = '☑'; }
     });
@@ -4408,21 +4623,27 @@ async function saveIncidentReport(f, wantsSignatureTask = false) {
   const checks = {};
   document.querySelectorAll('.ir-check').forEach((cb) => { checks[cb.dataset.key] = cb.checked; });
   const mgrState = sigPads['ir-mgr-sig-pad'];
+  const hrmState = sigPads['ir-hrm-sig-pad'];
+  const vpState = sigPads['ir-vp-sig-pad'];
   const empState = sigPads['ir-emp-sig-pad'];
   const hasMgrSig = mgrState && mgrState.hasStroke;
+  const hasHrmSig = hrmState && hrmState.hasStroke;
+  const hasVpSig = vpState && vpState.hasStroke;
   const hasEmpSig = empState && empState.hasStroke;
+  const allSigned = hasMgrSig && hasHrmSig && hasVpSig && hasEmpSig;
 
   let assigneeId = '', dueDate = '';
   if (wantsSignatureTask) {
     assigneeId = document.getElementById('ir-sig-assignee').value;
     dueDate = document.getElementById('ir-sig-due').value;
     if (!assigneeId || !dueDate) { showToast('Pick who should get the signature and by when.', 'error'); return; }
-    if (hasMgrSig && hasEmpSig) { showToast('Both signatures are already here — just hit Save.', 'error'); return; }
+    if (allSigned) { showToast('All signatures are already here — just hit Save.', 'error'); return; }
   }
 
   const saveBtn = document.getElementById('ir-save-btn');
   saveBtn.disabled = true;
   try {
+    const wasNewIncident = !pendingSigDocId;
     const incidentRef = pendingSigDocId ? doc(db, 'incidents', pendingSigDocId) : doc(collection(db, 'incidents'));
 
     // Embedded as a data URL directly on the incident doc rather than
@@ -4448,6 +4669,25 @@ async function saveIncidentReport(f, wantsSignatureTask = false) {
     }
 
     const batch = writeBatch(db);
+    // Each corrective action row gets its own task, created once — rows
+    // already carrying taskCreated (from an earlier save) are skipped so
+    // reopening the review later to add a row or sign doesn't re-task
+    // the ones already assigned.
+    let newCorrectiveTaskCount = 0;
+    const correctiveActionsOut = f.correctiveActions.map((row) => {
+      if (!row.taskCreated && row.ownerId && row.due) {
+        batch.set(doc(collection(db, 'tasks')), {
+          assigned_to: row.ownerId, due_date: row.due,
+          instructions: `Corrective action — ${row.action} (${f.incidentType}, ${f.emp ? f.emp.first_name + ' ' + f.emp.last_name : 'unassigned'})`,
+          recurring: 'none', status: 'open', linked_doc_id: incidentRef.id, linked_doc_type: 'incidentreport',
+          entered_by: profile.uid, entered_at: serverTimestamp(),
+        });
+        if (row.el) row.el.dataset.taskCreated = '1';
+        newCorrectiveTaskCount += 1;
+        return { action: row.action, owner_id: row.ownerId, due: row.due, done: row.done, task_created: true };
+      }
+      return { action: row.action, owner_id: row.ownerId, due: row.due, done: row.done, task_created: row.taskCreated };
+    });
     const incidentData = {
       // ---- same field names Safety's list, corrective tasks, and Form
       // 300 export already read — nothing there has to change. ----
@@ -4461,39 +4701,43 @@ async function saveIncidentReport(f, wantsSignatureTask = false) {
       return_to_work_date: f.returnDate || null, full_duty_date: f.fullDutyDate || null,
       recordable: f.recordable, fatality: f.fatality, privacy_case: f.privacyCase,
       cost: f.cost, root_cause: f.rootCause,
-      corrective_action: f.correctiveAction, corrective_owner: f.correctiveOwner, corrective_due: f.correctiveDue,
       category_needs_review: false,
       refusal_form_url: refusalUrl,
       // ---- Form 7.3 fields, new on the merged record ----
       witnesses: f.witnesses, describe: f.describe, immediate_action: f.immediateAction,
       followup_checks: checks, discussed_staff_who: f.discussedStaffWho, other_detail: f.otherDetail,
       comments: f.comments, prepared_by: profile.name || '', prepared_date: new Date().toISOString().slice(0, 10),
+      // ---- Incident Review and Corrective Action Plan (SWL-INC-2) ----
+      correct_way: f.correctWay, root_cause_tags: f.rootCauseTags, preventable: f.preventable,
+      at_fault_vehicle_accident: f.atFaultAccident, repeat_incident: f.repeatIncident,
+      repeat_incident_dates: f.repeatIncidentDates, corrective_actions: correctiveActionsOut,
+      hr_review_comments: f.hrComments, hr_reviewed_by: f.hrReviewedBy, hr_reviewed_date: f.hrReviewedDate,
+      vp_decision: f.vpDecision, vp_suggested_method: f.vpMethod, vp_name: f.vpName, vp_decision_date: f.vpDate,
       manager_signature_data_url: hasMgrSig ? document.getElementById('ir-mgr-sig-pad').toDataURL('image/png') : null,
+      hr_manager_signature_data_url: hasHrmSig ? document.getElementById('ir-hrm-sig-pad').toDataURL('image/png') : null,
+      vp_signature_data_url: hasVpSig ? document.getElementById('ir-vp-sig-pad').toDataURL('image/png') : null,
       employee_signature_data_url: hasEmpSig ? document.getElementById('ir-emp-sig-pad').toDataURL('image/png') : null,
       entered_by: profile.uid, entered_at: serverTimestamp(),
     };
     if (hasMgrSig) incidentData.manager_signed_at = serverTimestamp();
+    if (hasHrmSig) incidentData.hr_manager_signed_at = serverTimestamp();
+    if (hasVpSig) incidentData.vp_signed_at = serverTimestamp();
     if (hasEmpSig) incidentData.employee_signed_at = serverTimestamp();
     batch.set(incidentRef, incidentData, pendingSigDocId ? { merge: true } : undefined);
-    if (!pendingSigDocId && f.correctiveOwner && f.correctiveDue) {
-      batch.set(doc(collection(db, 'tasks')), {
-        assigned_to: f.correctiveOwner, due_date: f.correctiveDue,
-        instructions: `Corrective action — ${f.correctiveAction} (${f.incidentType}, ${f.emp ? f.emp.first_name + ' ' + f.emp.last_name : 'unassigned'})`,
-        recurring: 'none', status: 'open', entered_by: profile.uid, entered_at: serverTimestamp(),
-      });
-    }
     await batch.commit();
     if (hasMgrSig) document.getElementById('ir-mgr-signedon').innerHTML = signedNowHtml();
+    if (hasHrmSig) document.getElementById('ir-hrm-signedon').innerHTML = signedNowHtml();
+    if (hasVpSig) document.getElementById('ir-vp-signedon').innerHTML = signedNowHtml();
     if (hasEmpSig) document.getElementById('ir-emp-signedon').innerHTML = signedNowHtml();
     if (pendingSigTaskId) {
       await updateDoc(doc(db, 'tasks', pendingSigTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
       pendingSigDocId = null; pendingSigTaskId = null;
-    } else if (hasMgrSig && hasEmpSig) {
+    } else if (allSigned) {
       // Reached here without a task link -- e.g. the "Get signature" button
       // on the incident's edit modal in Safety, not the task's own "Open
-      // document" link. Both signatures being on file now means any open
-      // signature-reminder task for this incident is done, so close it
-      // instead of leaving it stuck open with no way to complete it.
+      // document" link. All four signatures being on file now means any
+      // open signature-reminder task for this incident is done, so close
+      // it instead of leaving it stuck open with no way to complete it.
       const openTasks = await getDocs(query(
         collection(db, 'tasks'),
         where('linked_doc_id', '==', incidentRef.id),
@@ -4504,6 +4748,8 @@ async function saveIncidentReport(f, wantsSignatureTask = false) {
         await updateDoc(taskDoc.ref, { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
       }
     }
+    pendingSigDocId = incidentRef.id;
+    renderInterviewAndRetrainingLinks();
     if (wantsSignatureTask) {
       await addDoc(collection(db, 'tasks'), {
         assigned_to: assigneeId, due_date: dueDate,
@@ -4513,7 +4759,7 @@ async function saveIncidentReport(f, wantsSignatureTask = false) {
       });
       showToast('Incident logged. Signature reminder task created — find it in Safety & incidents.');
     } else {
-      showToast('Incident logged.' + (!pendingSigDocId && f.correctiveOwner ? ' Corrective action task created.' : '') + ' Find it in Safety & incidents.');
+      showToast((wasNewIncident ? 'Incident logged.' : 'Incident updated.') + (newCorrectiveTaskCount ? ` ${newCorrectiveTaskCount} corrective action task${newCorrectiveTaskCount > 1 ? 's' : ''} created.` : '') + ' Find it in Safety & incidents.');
     }
   } catch (err) {
     console.error(err);
@@ -4521,6 +4767,463 @@ async function saveIncidentReport(f, wantsSignatureTask = false) {
   } finally {
     saveBtn.disabled = false;
   }
+}
+
+// ---- Incident Interview Notes (SWL-INC-1) -- one per person interviewed
+// about an incident. Lives in its own incident_interviews collection,
+// FK'd to the incidents collection via incident_id so an incident can
+// have as many as were actually conducted. Deliberately asks for the
+// interviewee's account only, not a diagnosis or doctor's notes -- same
+// medical-detail boundary as the Incident Report's own injury section.
+function renderIncidentInterview(lang = 'en') {
+  const isEs = lang === 'es';
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <div id="ii-linked-incident" class="dim" style="font-size:12.5px;margin-bottom:8px"></div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Date of interview</label><input class="f-in" id="ii-date" type="date"></div>
+          <div class="field"><label class="f-lab">Time</label><input class="f-in" id="ii-time" type="time"></div>
+        </div>
+        <div class="field"><label class="f-lab">Location of interview</label><input class="f-in" id="ii-location"></div>
+        <div class="frow">
+          ${empSearchFieldHtml('ii-person', '<label class="f-lab">Person interviewed</label>', allEmployeesEver)}
+          <div class="field"><label class="f-lab">Position / Division</label><input class="f-in" id="ii-person-role"></div>
+        </div>
+        <div class="field"><label class="f-lab">Interviewer</label><input class="f-in" id="ii-interviewer"></div>
+        <div class="field"><label class="f-lab">Others present</label><input class="f-in" id="ii-others-present"></div>
+        <div class="field"><label class="f-lab">In their own words — write what they say, not your conclusion</label><textarea class="f-in" id="ii-own-words" rows="4" style="resize:vertical"></textarea></div>
+
+        <div class="field"><label class="f-lab">Injury (leave blank if not applicable)</label></div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Body part</label><input class="f-in" id="ii-body-part"></div>
+          <div class="field"><label class="f-lab">Type of injury</label><input class="f-in" id="ii-injury-type"></div>
+        </div>
+        <div class="field"><label class="f-lab">Treatment level</label>
+          <select class="f-in" id="ii-treatment-level">
+            <option value="">N/A</option><option value="none">None</option><option value="first_aid">First aid</option>
+            <option value="clinic">Medical treatment</option><option value="refused">Refused treatment</option>
+          </select>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">When reported</label><input class="f-in" id="ii-when-reported" type="date"></div>
+          <div class="field"><label class="f-lab">Reported to</label><input class="f-in" id="ii-reported-to"></div>
+        </div>
+        <div class="dim" style="font-size:11px;margin:-8px 0 10px">Do not write a diagnosis, doctor's notes, or work restrictions on this form. Those stay with the clinic.</div>
+
+        <div class="field"><label class="f-lab">Property or company damage (leave blank if not applicable)</label></div>
+        <div class="field"><label class="f-lab">What was damaged</label><input class="f-in" id="ii-damaged-what"></div>
+        <div class="field"><label class="f-lab">Belongs to</label>
+          <select class="f-in" id="ii-belongs-to"><option value="">N/A</option><option value="company">Company</option><option value="client">Client</option><option value="other">Other</option></select>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Estimated cost ($)</label><input class="f-in" id="ii-damage-cost" type="number" min="0" step="0.01"></div>
+          <div class="field"><label class="f-lab">Description</label><input class="f-in" id="ii-damage-desc"></div>
+        </div>
+
+        <div class="field"><label class="f-lab">Had you been trained on this task?</label>
+          <select class="f-in" id="ii-q-trained"><option value="">—</option><option value="yes">Yes</option><option value="no">No</option></select>
+        </div>
+        <div class="field"><label class="f-lab">What do you think could have prevented it?</label><textarea class="f-in" id="ii-q-prevent" rows="2" style="resize:vertical"></textarea></div>
+        <div class="field"><label class="f-lab">Anything else you want on record?</label><textarea class="f-in" id="ii-q-other" rows="2" style="resize:vertical"></textarea></div>
+
+        <button class="gh solid" id="ii-generate-btn" type="button">Generate</button>
+      </div>
+    </div>
+    <div class="form-doc" id="ii-sheet" hidden></div>
+  `;
+  document.getElementById('ii-date').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('ii-interviewer').value = profile.name || '';
+  wireEmpSearch('ii-person', allEmployeesEver);
+  document.getElementById('ii-person').addEventListener('change', (e) => {
+    const emp = allEmployeesEver.find((x) => x.id === e.target.value);
+    document.getElementById('ii-person-role').value = emp ? `${emp.position || ''}${emp.division ? ' / ' + emp.division : ''}` : '';
+  });
+  if (linkedIncidentId) {
+    getDoc(doc(db, 'incidents', linkedIncidentId)).then((snap) => {
+      if (!snap.exists()) return;
+      const inc = snap.data();
+      document.getElementById('ii-linked-incident').textContent =
+        `Linked to the ${formatDate(inc.date)} ${inc.incident_type} incident${inc.emp_id ? ' — ' + (employees.find((e) => e.id === inc.emp_id) || allEmployeesEver.find((e) => e.id === inc.emp_id) || {}).first_name : ''}.`;
+    });
+  } else {
+    document.getElementById('ii-linked-incident').textContent = 'Not linked to a saved incident — open this from Safety or from an Incident Report to link it.';
+  }
+  document.getElementById('ii-generate-btn').addEventListener('click', () => renderIncidentInterviewSheet(document.getElementById('lang-select').value));
+}
+
+function readIncidentInterviewForm() {
+  const personId = document.getElementById('ii-person').value;
+  return {
+    incidentId: linkedIncidentId,
+    date: document.getElementById('ii-date').value,
+    time: document.getElementById('ii-time').value,
+    location: document.getElementById('ii-location').value.trim(),
+    person: allEmployeesEver.find((e) => e.id === personId) || null,
+    personRole: document.getElementById('ii-person-role').value.trim(),
+    interviewer: document.getElementById('ii-interviewer').value.trim(),
+    othersPresent: document.getElementById('ii-others-present').value.trim(),
+    ownWords: document.getElementById('ii-own-words').value.trim(),
+    bodyPart: document.getElementById('ii-body-part').value.trim(),
+    injuryType: document.getElementById('ii-injury-type').value.trim(),
+    treatmentLevel: document.getElementById('ii-treatment-level').value,
+    whenReported: document.getElementById('ii-when-reported').value,
+    reportedTo: document.getElementById('ii-reported-to').value.trim(),
+    damagedWhat: document.getElementById('ii-damaged-what').value.trim(),
+    belongsTo: document.getElementById('ii-belongs-to').value,
+    damageCost: document.getElementById('ii-damage-cost').value === '' ? null : parseFloat(document.getElementById('ii-damage-cost').value),
+    damageDesc: document.getElementById('ii-damage-desc').value.trim(),
+    qTrained: document.getElementById('ii-q-trained').value,
+    qPrevent: document.getElementById('ii-q-prevent').value.trim(),
+    qOther: document.getElementById('ii-q-other').value.trim(),
+  };
+}
+
+const BELONGS_TO_LABELS = { company: 'Company', client: 'Client', other: 'Other' };
+const BELONGS_TO_LABELS_ES = { company: 'Empresa', client: 'Cliente', other: 'Otro' };
+
+function renderIncidentInterviewSheet(lang = 'en') {
+  const isEs = lang === 'es';
+  const f = readIncidentInterviewForm();
+  const sheet = document.getElementById('ii-sheet');
+  sheet.hidden = false;
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  sheet.innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">${isEs ? 'Notas de Entrevista de Incidente' : 'Incident Interview Notes'}</h1>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Fecha de la Entrevista' : 'Date of Interview'}</b>${formatDate(f.date)}</div>
+        <div class="form-cell"><b>${isEs ? 'Hora' : 'Time'}</b>${escapeHtml(f.time) || '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Ubicación' : 'Location'}</b>${escapeHtml(f.location) || '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Persona Entrevistada' : 'Person Interviewed'}</b>${f.person ? `${f.person.first_name} ${f.person.last_name}` : '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Puesto / División' : 'Position / Division'}</b>${escapeHtml(f.personRole) || '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Entrevistador' : 'Interviewer'}</b>${escapeHtml(f.interviewer) || '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Otros Presentes' : 'Others Present'}</b>${escapeHtml(f.othersPresent) || '—'}</div>
+      </div>
+      <div class="form-section">${isEs ? 'En Sus Propias Palabras' : 'In Their Own Words'}</div>
+      <div class="form-box">${escapeHtml(f.ownWords) || '—'}</div>
+      ${f.bodyPart || f.injuryType || f.treatmentLevel ? `
+      <div class="form-section">${isEs ? 'Lesión' : 'Injury'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Parte del Cuerpo' : 'Body Part'}</b>${escapeHtml(f.bodyPart) || '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Tipo de Lesión' : 'Type of Injury'}</b>${escapeHtml(f.injuryType) || '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Nivel de Tratamiento' : 'Treatment Level'}</b>${f.treatmentLevel ? escapeHtml((isEs ? TREATMENT_LEVEL_LABELS_ES : TREATMENT_LEVEL_LABELS)[f.treatmentLevel] || f.treatmentLevel) : '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Cuándo se Reportó' : 'When Reported'}</b>${f.whenReported ? formatDate(f.whenReported) : '—'}</div>
+      </div>
+      <div class="dim" style="font-size:11px;margin:4px 0 10px">${isEs ? 'No se anota diagnóstico, notas médicas ni restricciones laborales aquí. Eso se queda con la clínica.' : "No diagnosis, doctor's notes, or work restrictions are recorded here. Those stay with the clinic."}</div>
+      ` : ''}
+      ${f.damagedWhat || f.damageDesc ? `
+      <div class="form-section">${isEs ? 'Daño a la Propiedad o la Empresa' : 'Property or Company Damage'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Qué se Dañó' : 'What Was Damaged'}</b>${escapeHtml(f.damagedWhat) || '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Pertenece a' : 'Belongs To'}</b>${f.belongsTo ? (isEs ? BELONGS_TO_LABELS_ES : BELONGS_TO_LABELS)[f.belongsTo] : '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Costo Estimado' : 'Estimated Cost'}</b>${f.damageCost != null ? '$' + f.damageCost.toFixed(2) : '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Descripción' : 'Description'}</b>${escapeHtml(f.damageDesc) || '—'}</div>
+      </div>
+      ` : ''}
+      <div class="form-section">${isEs ? 'Preguntas' : 'Questions'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? '¿Había sido capacitado para esta tarea?' : 'Had you been trained on this task?'}</b>${{ yes: isEs ? 'Sí' : 'Yes', no: 'No' }[f.qTrained] || '—'}</div>
+      </div>
+      <div class="form-box"><b>${isEs ? '¿Qué cree que podría haberlo evitado?' : 'What do you think could have prevented it?'}</b><br>${escapeHtml(f.qPrevent) || '—'}</div>
+      <div class="form-box"><b>${isEs ? '¿Algo más que quiera que quede registrado?' : 'Anything else you want on record?'}</b><br>${escapeHtml(f.qOther) || '—'}</div>
+      <div class="form-box" style="margin-top:10px">${isEs
+        ? 'Confirmo que lo anterior refleja con precisión lo que se discutió en esta entrevista.'
+        : 'I confirm the above accurately reflects what was discussed in this interview.'}</div>
+      <div class="form-section">${isEs ? 'Firma de la Persona Entrevistada' : 'Signature of Person Interviewed'}</div>
+      ${signaturePadHtml('ii-person-sig-pad', 'ii-person-sig-clear')}
+      <div id="ii-person-signedon"></div>
+      <div class="form-section">${isEs ? 'Firma del Entrevistador' : 'Signature of Interviewer'}</div>
+      ${signaturePadHtml('ii-interviewer-sig-pad', 'ii-interviewer-sig-clear')}
+      <div id="ii-interviewer-signedon"></div>
+      <button type="button" class="gh solid no-print" id="ii-save-btn" style="margin-top:10px">${isEs ? 'Guardar' : 'Save'}</button>
+    </div>
+    <button class="gh no-print" id="ii-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
+  `;
+  document.getElementById('ii-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  setUpSignaturePad('ii-person-sig-pad', 'ii-person-sig-clear');
+  setUpSignaturePad('ii-interviewer-sig-pad', 'ii-interviewer-sig-clear');
+  document.getElementById('ii-save-btn').addEventListener('click', () => saveIncidentInterview(f));
+  sheetRerender = (l) => withPreservedSignature('ii-interviewer-sig-pad', () => withPreservedSignature('ii-person-sig-pad', () => renderIncidentInterviewSheet(l)));
+}
+
+async function saveIncidentInterview(f) {
+  const personState = sigPads['ii-person-sig-pad'];
+  const interviewerState = sigPads['ii-interviewer-sig-pad'];
+  const saveBtn = document.getElementById('ii-save-btn');
+  saveBtn.disabled = true;
+  try {
+    const ref = pendingInterviewDocId ? doc(db, 'incident_interviews', pendingInterviewDocId) : doc(collection(db, 'incident_interviews'));
+    const data = {
+      incident_id: f.incidentId || null,
+      date: f.date, time: f.time, location: f.location,
+      person_emp_id: f.person ? f.person.id : '', person_role: f.personRole,
+      interviewer: f.interviewer, others_present: f.othersPresent, in_their_own_words: f.ownWords,
+      body_part: f.bodyPart, injury_type: f.injuryType, treatment_level: f.treatmentLevel,
+      when_reported: f.whenReported || null, reported_to: f.reportedTo,
+      damaged_what: f.damagedWhat, belongs_to: f.belongsTo, estimated_cost: f.damageCost, damage_description: f.damageDesc,
+      q_trained: f.qTrained, q_prevent: f.qPrevent, q_other: f.qOther,
+      person_signature_data_url: personState?.hasStroke ? document.getElementById('ii-person-sig-pad').toDataURL('image/png') : null,
+      interviewer_signature_data_url: interviewerState?.hasStroke ? document.getElementById('ii-interviewer-sig-pad').toDataURL('image/png') : null,
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    };
+    await setDoc(ref, data, pendingInterviewDocId ? { merge: true } : undefined);
+    pendingInterviewDocId = ref.id;
+    if (personState?.hasStroke) document.getElementById('ii-person-signedon').innerHTML = signedNowHtml();
+    if (interviewerState?.hasStroke) document.getElementById('ii-interviewer-signedon').innerHTML = signedNowHtml();
+    showToast('Interview notes saved.');
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+
+// ---- Retraining Record (SWL-INC-3) -- session summary, a photographed
+// sign-in sheet (field crews have no login, so signatures are collected
+// on paper the same way as the Medical Treatment Refusal upload), and a
+// 30-day follow-up check whose due date is computed from the session
+// date, never stored, so it can't go stale. Saving creates a task for
+// the trainer due on that computed date.
+function renderRetraining(lang = 'en') {
+  const isEs = lang === 'es';
+  document.getElementById('gen-body').innerHTML = `
+    <div class="card no-print" style="margin-bottom:16px">
+      <div class="card-body">
+        <div id="rt-linked-incident" class="dim" style="font-size:12.5px;margin-bottom:8px"></div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Session date</label><input class="f-in" id="rt-date" type="date"></div>
+          <div class="field"><label class="f-lab">Time</label><input class="f-in" id="rt-time" type="time"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab">Trainer</label><select class="f-in" id="rt-trainer"><option value="">Choose…</option>${staff.map((s) => `<option value="${s.id}">${s.name}</option>`).join('')}</select></div>
+          <div class="field"><label class="f-lab">Location</label><input class="f-in" id="rt-location"></div>
+        </div>
+        <div class="field"><label class="f-lab">Task / topic</label><input class="f-in" id="rt-topic"></div>
+        <div class="field"><label class="f-lab">Summary (no names — the crew reads this page)</label><textarea class="f-in" id="rt-summary" rows="3" style="resize:vertical"></textarea></div>
+        <div class="field"><label class="f-lab">How it could have been avoided</label><textarea class="f-in" id="rt-avoided" rows="2" style="resize:vertical"></textarea></div>
+        <div class="field"><label class="f-lab">What this retraining covers</label><textarea class="f-in" id="rt-covers" rows="2" style="resize:vertical"></textarea></div>
+        <div class="field"><label class="f-lab">Sign-in sheet — photo/scan of the signed paper sheet</label>
+          <input class="f-in" id="rt-signin-file" type="file" accept="application/pdf,image/*">
+          <div class="dim" style="font-size:11.5px;margin:4px 0 8px">Everyone who attended prints and signs on paper; upload a photo or scan here (max ~900KB). Names typed below are optional, just for a searchable attendee list.</div>
+        </div>
+        <div class="field"><label class="f-lab">Attendee names (optional, one per line)</label><textarea class="f-in" id="rt-attendees" rows="3" style="resize:vertical"></textarea></div>
+        <button class="gh solid" id="rt-generate-btn" type="button">Generate</button>
+      </div>
+    </div>
+    <div class="form-doc" id="rt-sheet" hidden></div>
+  `;
+  document.getElementById('rt-date').value = new Date().toISOString().slice(0, 10);
+  if (linkedIncidentId) {
+    getDoc(doc(db, 'incidents', linkedIncidentId)).then((snap) => {
+      if (!snap.exists()) return;
+      const inc = snap.data();
+      document.getElementById('rt-linked-incident').textContent = `Linked to the ${formatDate(inc.date)} ${inc.incident_type} incident.`;
+    });
+  } else {
+    document.getElementById('rt-linked-incident').textContent = 'Not linked to a saved incident — open this from Safety or from an Incident Report to link it.';
+  }
+  document.getElementById('rt-generate-btn').addEventListener('click', () => renderRetrainingSheet(document.getElementById('lang-select').value));
+}
+
+function readRetrainingForm() {
+  return {
+    incidentId: linkedIncidentId,
+    date: document.getElementById('rt-date').value,
+    time: document.getElementById('rt-time').value,
+    trainerId: document.getElementById('rt-trainer').value,
+    location: document.getElementById('rt-location').value.trim(),
+    topic: document.getElementById('rt-topic').value.trim(),
+    summary: document.getElementById('rt-summary').value.trim(),
+    avoided: document.getElementById('rt-avoided').value.trim(),
+    covers: document.getElementById('rt-covers').value.trim(),
+    attendees: document.getElementById('rt-attendees').value.split('\n').map((s) => s.trim()).filter(Boolean),
+  };
+}
+
+// Session date + 30 calendar days — computed wherever shown, never
+// stored, so it can't go stale if the session date is edited later.
+function retrainingCheckDue(sessionDate) {
+  if (!sessionDate) return '';
+  const d = new Date(sessionDate + 'T00:00:00');
+  d.setDate(d.getDate() + 30);
+  return d.toISOString().slice(0, 10);
+}
+
+function renderRetrainingSheet(lang = 'en') {
+  const isEs = lang === 'es';
+  const f = readRetrainingForm();
+  const trainer = staff.find((s) => s.id === f.trainerId);
+  const checkDue = retrainingCheckDue(f.date);
+  const sheet = document.getElementById('rt-sheet');
+  sheet.hidden = false;
+  sheet.scrollIntoView({ behavior: 'smooth' });
+  sheet.innerHTML = `
+    <div class="form-doc-inner">
+      <div class="form-head"><img src="${LOGO_DATA_URL}" alt="SouthWest Landscape"><div class="wordmark">SouthWest<br>Landscape</div></div>
+      <h1 class="form-title">${isEs ? 'Registro de Reentrenamiento' : 'Retraining Record'}</h1>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Fecha de la Sesión' : 'Session Date'}</b>${formatDate(f.date)}</div>
+        <div class="form-cell"><b>${isEs ? 'Hora' : 'Time'}</b>${escapeHtml(f.time) || '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Capacitador' : 'Trainer'}</b>${trainer ? trainer.name : '—'}</div>
+        <div class="form-cell"><b>${isEs ? 'Ubicación' : 'Location'}</b>${escapeHtml(f.location) || '—'}</div>
+      </div>
+      <div class="form-section">${isEs ? 'Tarea / Tema' : 'Task / Topic'}</div>
+      <div class="form-box">${escapeHtml(f.topic) || '—'}</div>
+      <div class="form-section">${isEs ? 'Resumen (sin nombres)' : 'Summary (No Names)'}</div>
+      <div class="form-box">${escapeHtml(f.summary) || '—'}</div>
+      <div class="form-section">${isEs ? 'Cómo Se Podría Haber Evitado' : 'How It Could Have Been Avoided'}</div>
+      <div class="form-box">${escapeHtml(f.avoided) || '—'}</div>
+      <div class="form-section">${isEs ? 'Qué Cubre Este Reentrenamiento' : 'What This Retraining Covers'}</div>
+      <div class="form-box">${escapeHtml(f.covers) || '—'}</div>
+      <div class="form-section">${isEs ? 'Hoja de Firmas' : 'Sign-In Sheet'}</div>
+      <div class="form-box">${f.attendees.length ? f.attendees.map((a) => escapeHtml(a)).join('<br>') : (isEs ? 'Ver hoja de firmas en papel adjunta.' : 'See attached paper sign-in sheet.')}</div>
+      <div class="field no-print"><label class="f-lab">${isEs ? 'Foto de la hoja de firmas firmada' : 'Photo of the signed sign-in sheet'}</label>
+        <input class="f-in" id="rt-signin-file-sheet" type="file" accept="application/pdf,image/*">
+        <div id="rt-signin-status" class="dim" style="font-size:11.5px;margin-top:4px"></div>
+      </div>
+      <div class="form-section">${isEs ? 'Verificación de 30 Días' : '30-Day Check'}</div>
+      <div class="form-grid c2">
+        <div class="form-cell"><b>${isEs ? 'Verificación Vence' : 'Check Due'}</b>${formatDate(checkDue)}</div>
+        <div class="form-cell"><b>${isEs ? 'Verificado El' : 'Checked On'}</b><input class="f-in no-print" id="rt-checked-on" type="date"><span class="print-only" id="rt-checked-on-print"></span></div>
+      </div>
+      <div class="field"><label class="f-lab">${isEs ? 'Verificado Por' : 'Checked By'}</label><input class="f-in" id="rt-checked-by"></div>
+      <div class="field"><label class="f-lab">${isEs ? '¿La cuadrilla está haciendo la tarea correctamente?' : 'Is the crew doing the task correctly?'}</label>
+        <select class="f-in" id="rt-crew-correct"><option value="">—</option><option value="yes">${isEs ? 'Sí' : 'Yes'}</option><option value="no_retrain">${isEs ? 'No — reentrenar' : 'No — retrain'}</option></select>
+      </div>
+      <div class="field"><label class="f-lab">${isEs ? 'Qué observó' : 'What you saw'}</label><textarea class="f-in" id="rt-what-saw" rows="2" style="resize:vertical"></textarea></div>
+      <div class="form-section">${isEs ? 'Firma de Verificación' : 'Checked By Signature'}</div>
+      ${signaturePadHtml('rt-checked-sig-pad', 'rt-checked-sig-clear')}
+      <div id="rt-checked-signedon"></div>
+      <button type="button" class="gh solid no-print" id="rt-save-btn" style="margin-top:10px">${isEs ? 'Guardar' : 'Save'}</button>
+      <div class="dim no-print" style="font-size:11.5px;margin-top:4px">${isEs
+        ? 'Esto siempre se guarda de inmediato. La sección de verificación de 30 días se puede completar después, al reabrir este registro.'
+        : 'This always saves right away. The 30-Day Check section can be filled in later, by reopening this record.'}</div>
+    </div>
+    <button class="gh no-print" id="rt-back-btn" type="button" style="margin:14px">&larr; Back to document generator</button>
+  `;
+  document.getElementById('rt-back-btn').addEventListener('click', () => document.getElementById('back-btn').click());
+  setUpSignaturePad('rt-checked-sig-pad', 'rt-checked-sig-clear');
+  document.getElementById('rt-save-btn').addEventListener('click', () => saveRetraining(f, checkDue));
+  sheetRerender = (l) => withPreservedSignature('rt-checked-sig-pad', () => renderRetrainingSheet(l));
+}
+
+async function saveRetraining(f, checkDue) {
+  const checkedState = sigPads['rt-checked-sig-pad'];
+  const saveBtn = document.getElementById('rt-save-btn');
+  saveBtn.disabled = true;
+  try {
+    let signInUrl = null;
+    const fileInput = document.getElementById('rt-signin-file-sheet') || document.getElementById('rt-signin-file');
+    const file = fileInput?.files[0];
+    if (file) {
+      if (file.size > 900 * 1024) {
+        showToast('That file is too large to attach (max ~900KB) — try a lower-resolution scan or photo of it.', 'error');
+        saveBtn.disabled = false;
+        return;
+      }
+      signInUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+    }
+    const wasNew = !pendingRetrainingDocId;
+    const ref = pendingRetrainingDocId ? doc(db, 'retraining_sessions', pendingRetrainingDocId) : doc(collection(db, 'retraining_sessions'));
+    const checkedOn = document.getElementById('rt-checked-on')?.value || '';
+    const data = {
+      incident_id: f.incidentId || null,
+      date: f.date, time: f.time, trainer_id: f.trainerId, location: f.location, topic: f.topic,
+      summary_no_names: f.summary, how_avoided: f.avoided, what_covers: f.covers, attendees: f.attendees,
+      checked_on: checkedOn || null, checked_by: document.getElementById('rt-checked-by').value.trim(),
+      crew_correct: document.getElementById('rt-crew-correct').value,
+      what_you_saw: document.getElementById('rt-what-saw').value.trim(),
+      checked_signature_data_url: checkedState?.hasStroke ? document.getElementById('rt-checked-sig-pad').toDataURL('image/png') : null,
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    };
+    if (signInUrl) data.sign_in_sheet_data_url = signInUrl;
+    await setDoc(ref, data, pendingRetrainingDocId ? { merge: true } : undefined);
+    pendingRetrainingDocId = ref.id;
+    if (wasNew && f.trainerId) {
+      await addDoc(collection(db, 'tasks'), {
+        assigned_to: f.trainerId, due_date: checkDue,
+        instructions: `30-day retraining check — ${f.topic || 'retraining'} (${formatDate(f.date)})`,
+        recurring: 'none', status: 'open', linked_doc_id: ref.id, linked_doc_type: 'retraining',
+        entered_by: profile.uid, entered_at: serverTimestamp(),
+      });
+    }
+    if (checkedState?.hasStroke) document.getElementById('rt-checked-signedon').innerHTML = signedNowHtml();
+    showToast(wasNew ? 'Retraining record saved. Trainer task created for the 30-day check.' : 'Retraining record updated.');
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+
+// Reopens a saved Interview Notes record (from a deep link, e.g. a list
+// of interviews on an incident) — populates the raw draft form, then
+// regenerates the sheet and redraws both signatures.
+async function loadIncidentInterview(id) {
+  const snap = await getDoc(doc(db, 'incident_interviews', id));
+  if (!snap.exists()) { showToast('That interview record could not be found.', 'error'); return; }
+  const d = snap.data();
+  linkedIncidentId = d.incident_id || null;
+  document.getElementById('ii-date').value = d.date || '';
+  document.getElementById('ii-time').value = d.time || '';
+  document.getElementById('ii-location').value = d.location || '';
+  setEmpField('ii-person', d.person_emp_id, allEmployeesEver);
+  document.getElementById('ii-person-role').value = d.person_role || '';
+  document.getElementById('ii-interviewer').value = d.interviewer || '';
+  document.getElementById('ii-others-present').value = d.others_present || '';
+  document.getElementById('ii-own-words').value = d.in_their_own_words || '';
+  document.getElementById('ii-body-part').value = d.body_part || '';
+  document.getElementById('ii-injury-type').value = d.injury_type || '';
+  document.getElementById('ii-treatment-level').value = d.treatment_level || '';
+  document.getElementById('ii-when-reported').value = d.when_reported || '';
+  document.getElementById('ii-reported-to').value = d.reported_to || '';
+  document.getElementById('ii-damaged-what').value = d.damaged_what || '';
+  document.getElementById('ii-belongs-to').value = d.belongs_to || '';
+  document.getElementById('ii-damage-cost').value = d.estimated_cost ?? '';
+  document.getElementById('ii-damage-desc').value = d.damage_description || '';
+  document.getElementById('ii-q-trained').value = d.q_trained || '';
+  document.getElementById('ii-q-prevent').value = d.q_prevent || '';
+  document.getElementById('ii-q-other').value = d.q_other || '';
+  pendingInterviewDocId = id;
+  renderIncidentInterviewSheet(document.getElementById('lang-select').value);
+  await drawExistingSignatureDataUrl('ii-person-sig-pad', d.person_signature_data_url);
+  await drawExistingSignatureDataUrl('ii-interviewer-sig-pad', d.interviewer_signature_data_url);
+}
+
+// Reopens a saved Retraining Record, same pattern as loadIncidentInterview.
+async function loadRetraining(id) {
+  const snap = await getDoc(doc(db, 'retraining_sessions', id));
+  if (!snap.exists()) { showToast('That retraining record could not be found.', 'error'); return; }
+  const d = snap.data();
+  linkedIncidentId = d.incident_id || null;
+  document.getElementById('rt-date').value = d.date || '';
+  document.getElementById('rt-time').value = d.time || '';
+  document.getElementById('rt-trainer').value = d.trainer_id || '';
+  document.getElementById('rt-location').value = d.location || '';
+  document.getElementById('rt-topic').value = d.topic || '';
+  document.getElementById('rt-summary').value = d.summary_no_names || '';
+  document.getElementById('rt-avoided').value = d.how_avoided || '';
+  document.getElementById('rt-covers').value = d.what_covers || '';
+  document.getElementById('rt-attendees').value = (d.attendees || []).join('\n');
+  pendingRetrainingDocId = id;
+  renderRetrainingSheet(document.getElementById('lang-select').value);
+  document.getElementById('rt-checked-on').value = d.checked_on || '';
+  document.getElementById('rt-checked-by').value = d.checked_by || '';
+  document.getElementById('rt-crew-correct').value = d.crew_correct || '';
+  document.getElementById('rt-what-saw').value = d.what_you_saw || '';
+  if (d.sign_in_sheet_data_url) {
+    document.getElementById('rt-signin-status').innerHTML = `A signed sheet is already on file (<a href="${d.sign_in_sheet_data_url}" target="_blank" rel="noopener">view</a>) — choosing a new file replaces it.`;
+  }
+  await drawExistingSignatureDataUrl('rt-checked-sig-pad', d.checked_signature_data_url);
 }
 
 // ---- OSHA 300A Annual Summary -- case/day totals are computed from
@@ -5527,7 +6230,7 @@ let pendingSigTaskId = null;
 // show "Signed [date/time]" for whichever of the two already has a
 // signature on file. Reset alongside pendingSigDocId whenever a fresh,
 // unsigned generator opens.
-let loadedIncidentSignedAt = { manager: null, employee: null };
+let loadedIncidentSignedAt = { manager: null, employee: null, hrManager: null, vp: null };
 
 function readTimecardForm() {
   const emp = employees.find((e) => e.id === document.getElementById('tc-emp').value);
@@ -5925,13 +6628,28 @@ async function populateIncidentReportForm(d) {
   document.getElementById('ir-describe').value = d.describe || '';
   document.getElementById('ir-immediate-action').value = d.immediate_action || '';
   document.getElementById('ir-cost').value = d.cost ?? '';
+  document.getElementById('ir-correct-way').value = d.correct_way || '';
+  document.querySelectorAll('.ir-root-tag').forEach((cb) => { cb.checked = (d.root_cause_tags || []).includes(cb.value); });
   document.getElementById('ir-root-cause').value = d.root_cause || '';
-  document.getElementById('ir-corrective-action').value = d.corrective_action || '';
-  document.getElementById('ir-corrective-owner').value = d.corrective_owner || '';
-  document.getElementById('ir-corrective-due').value = d.corrective_due || '';
+  document.getElementById('ir-preventable').value = d.preventable || '';
+  document.getElementById('ir-at-fault-accident').checked = !!d.at_fault_vehicle_accident;
+  document.getElementById('ir-repeat-incident').checked = !!d.repeat_incident;
+  document.getElementById('ir-repeat-dates-field').hidden = !d.repeat_incident;
+  document.getElementById('ir-repeat-dates').value = d.repeat_incident_dates || '';
+  const rowsBox = document.getElementById('ir-corrective-rows');
+  rowsBox.innerHTML = '';
+  (d.corrective_actions && d.corrective_actions.length ? d.corrective_actions : [{}]).forEach((row) => rowsBox.appendChild(correctiveRowEl({ action: row.action, ownerId: row.owner_id, due: row.due, done: row.done, taskCreated: row.task_created })));
   document.getElementById('ir-discussed-staff-who').value = d.discussed_staff_who || '';
   document.getElementById('ir-other-detail').value = d.other_detail || '';
   document.getElementById('ir-comments').value = d.comments || '';
+  document.getElementById('ir-hr-comments').value = d.hr_review_comments || '';
+  document.getElementById('ir-hr-reviewed-by').value = d.hr_reviewed_by || profile.name || '';
+  document.getElementById('ir-hr-reviewed-date').value = d.hr_reviewed_date || new Date().toISOString().slice(0, 10);
+  document.getElementById('ir-vp-decision').value = d.vp_decision || '';
+  document.getElementById('ir-vp-method-field').hidden = d.vp_decision !== 'suggests_different';
+  document.getElementById('ir-vp-method').value = d.vp_suggested_method || '';
+  document.getElementById('ir-vp-name').value = d.vp_name || '';
+  document.getElementById('ir-vp-date').value = d.vp_decision_date || '';
   const sel = document.getElementById('ir-supervisor');
   if (d.supervisor && ![...sel.options].some((o) => o.value === d.supervisor)) {
     const opt = document.createElement('option'); opt.value = d.supervisor; opt.textContent = d.supervisor; sel.appendChild(opt);
@@ -6009,7 +6727,10 @@ async function loadPendingSignatureDoc(type, id) {
       }
       pendingSigDocId = id; pendingSigTaskId = taskId;
       pendingIncidentRefusalDocId = d.refusal_doc_id || null;
-      loadedIncidentSignedAt = { manager: d.manager_signed_at || null, employee: d.employee_signed_at || null };
+      loadedIncidentSignedAt = {
+        manager: d.manager_signed_at || null, employee: d.employee_signed_at || null,
+        hrManager: d.hr_manager_signed_at || null, vp: d.vp_signed_at || null,
+      };
       await populateIncidentReportForm(d);
       renderIncidentReportSheet(document.getElementById('lang-select').value);
       if (d.followup_checks) {
@@ -6915,11 +7636,17 @@ const requestedDeductionId = new URLSearchParams(window.location.search).get('de
 const requestedSheetId = new URLSearchParams(window.location.search).get('sheet');
 const SIGNABLE_DOC_TYPES = ['timecard', 'mealpenalty', 'mileage', 'refusal', 'mealwaiver2', 'offer', 'pip', 'review', 'termination', 'incidentreport', 'changenotice'];
 if (requestedOpen && GENERATORS.some((g) => g.key === requestedOpen)) {
-  openGenerator(requestedOpen);
+  const linkOpts = (requestedOpen === 'incidentinterview' || requestedOpen === 'retraining') && requestedIncidentId
+    ? { incidentId: requestedIncidentId } : {};
+  openGenerator(requestedOpen, linkOpts);
   if (requestedDocId && SIGNABLE_DOC_TYPES.includes(requestedOpen)) {
     await loadPendingSignatureDoc(requestedOpen, requestedDocId);
   } else if (requestedOpen === 'refusal' && requestedIncidentId) {
     await loadIncidentForRefusal(requestedIncidentId);
+  } else if (requestedOpen === 'incidentinterview' && requestedDocId) {
+    await loadIncidentInterview(requestedDocId);
+  } else if (requestedOpen === 'retraining' && requestedDocId) {
+    await loadRetraining(requestedDocId);
   } else if (requestedOpen === 'tolldeduction' && requestedDeductionId) {
     await loadTollDeduction(requestedDeductionId);
   } else if (requestedOpen === 'tollinvoice' && requestedSheetId) {

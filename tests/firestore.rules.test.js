@@ -388,3 +388,68 @@ test('David can flag and read an employee private concern note', async () => {
     as(DAVID).collection('employees').doc('E100').collection('private').doc('concern').get()
   );
 });
+
+// ---- Incident Interview Notes and Retraining Record --------------------
+
+test('an HR user can write and read an incident interview, a stranger cannot', async () => {
+  await assertSucceeds(
+    as(TANYA).collection('incident_interviews').doc('II1').set({
+      incident_id: 'INC1', in_their_own_words: 'I was carrying the ladder when it slipped.',
+      q_trained: 'yes', entered_by: TANYA,
+    })
+  );
+  await assertSucceeds(as(DAVID).collection('incident_interviews').doc('II1').get());
+  await assertFails(anonymous().collection('incident_interviews').doc('II1').get());
+  await assertFails(
+    as(STRANGER).collection('incident_interviews').doc('II2').set({ incident_id: 'INC1', entered_by: STRANGER })
+  );
+});
+
+test('an incident interview is rejected if it carries a medical-detail field isClean forbids', async () => {
+  await assertFails(
+    as(TANYA).collection('incident_interviews').doc('II3').set({
+      incident_id: 'INC1', diagnosis: 'Lower back strain', entered_by: TANYA,
+    })
+  );
+});
+
+test('an incident interview requires entered_by to create', async () => {
+  await assertFails(
+    as(TANYA).collection('incident_interviews').doc('II4').set({ incident_id: 'INC1' })
+  );
+});
+
+test('incident interviews and retraining records can never be deleted', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await db.collection('incident_interviews').doc('II5').set({ incident_id: 'INC1', entered_by: DAVID });
+    await db.collection('retraining_sessions').doc('RT1').set({ date: '2026-11-06', entered_by: DAVID });
+  });
+  await assertFails(as(DAVID).collection('incident_interviews').doc('II5').delete());
+  await assertFails(as(DAVID).collection('retraining_sessions').doc('RT1').delete());
+});
+
+test('an HR user can write and read a retraining record, a stranger cannot', async () => {
+  await assertSucceeds(
+    as(TANYA).collection('retraining_sessions').doc('RT2').set({
+      incident_id: 'INC1', date: '2026-11-06', summary_no_names: 'Reviewed ladder setup on uneven ground.',
+      entered_by: TANYA,
+    })
+  );
+  await assertSucceeds(as(DAVID).collection('retraining_sessions').doc('RT2').get());
+  await assertFails(anonymous().collection('retraining_sessions').doc('RT2').get());
+});
+
+test('a retraining record is rejected if its sign-in sheet photo is too large', async () => {
+  const oversized = 'x'.repeat(700001);
+  await assertFails(
+    as(TANYA).collection('retraining_sessions').doc('RT3').set({
+      date: '2026-11-06', sign_in_sheet_data_url: oversized, entered_by: TANYA,
+    })
+  );
+  await assertSucceeds(
+    as(TANYA).collection('retraining_sessions').doc('RT4').set({
+      date: '2026-11-06', sign_in_sheet_data_url: 'x'.repeat(1000), entered_by: TANYA,
+    })
+  );
+});

@@ -125,6 +125,14 @@ service cloud.firestore {
         || data.signed_file_data_url.size() < 700000;
     }
 
+    // A photographed/scanned retraining sign-in sheet, same data: URI
+    // pattern as the fields above — retraining.html (via docgen.html)
+    // resizes/compresses client-side before this is ever reached.
+    function signInSheetOk(data) {
+      return !('sign_in_sheet_data_url' in data) || data.sign_in_sheet_data_url == null
+        || data.sign_in_sheet_data_url.size() < 700000;
+    }
+
     // ---- users ------------------------------------------------------------
     // Role assignment is how every other rule below decides who can do
     // what, so it is not something the app itself is allowed to change.
@@ -320,6 +328,26 @@ service cloud.firestore {
       allow create: if isHrUser() && isClean(request.resource.data)
         && stamped(request.resource.data) && incidentPhotosOk(request.resource.data);
       allow update: if isHrUser() && isClean(request.resource.data) && incidentPhotosOk(request.resource.data);
+      allow delete: if false;
+    }
+
+    // Interview Notes (SWL-INC-1) — one or more per incident, FK'd by
+    // incident_id. Never holds a diagnosis/doctor's notes/restrictions —
+    // isClean() already rejects those field names same as everywhere else.
+    match /incident_interviews/{interviewId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data) && stamped(request.resource.data);
+      allow update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+    }
+
+    // Retraining Record (SWL-INC-3) — optionally FK'd to an incident via
+    // incident_id, but can also stand alone for general crew retraining.
+    match /retraining_sessions/{sessionId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data)
+        && stamped(request.resource.data) && signInSheetOk(request.resource.data);
+      allow update: if isHrUser() && isClean(request.resource.data) && signInSheetOk(request.resource.data);
       allow delete: if false;
     }
 
