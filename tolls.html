@@ -46,15 +46,20 @@
       <div class="card" style="margin-bottom:16px">
         <div class="card-h">
           <h3>1. Import a statement</h3>
-          <span>paste the billing text, not a file upload</span>
+          <span>upload the PDF, or paste the billing text</span>
         </div>
         <div class="card-body">
           <p class="dim" style="margin-top:0;font-size:12.5px">
-            Open the PDF, select all the text (Ctrl/Cmd+A), copy it, and paste it below. This reads The Toll
-            Roads' statement format — grouped by transponder, plus the "Paid by plate" section — and matches
-            every charge to a vehicle and driver before anything is saved.
+            Upload the statement PDF from The Toll Roads and it reads the text itself — grouped by transponder,
+            plus the "Paid by plate" section — and matches every charge to a vehicle and driver before anything
+            is saved. If a PDF doesn't come out right, open it, select all the text (Ctrl/Cmd+A), copy it, and
+            paste it into the box below instead.
           </p>
-          <textarea class="f-in" id="paste-text" rows="6" style="width:100%;resize:vertical;font-family:var(--mono);font-size:11.5px" placeholder="Paste the statement text here…"></textarea>
+          <div style="margin-bottom:10px;display:flex;gap:9px;align-items:center">
+            <input class="f-in" id="statement-pdf-file" type="file" accept="application/pdf" style="max-width:360px">
+            <span class="dim" id="pdf-extract-status" style="font-size:12px"></span>
+          </div>
+          <textarea class="f-in" id="paste-text" rows="6" style="width:100%;resize:vertical;font-family:var(--mono);font-size:11.5px" placeholder="…or paste the statement text here"></textarea>
           <div style="margin-top:12px;display:flex;gap:9px;align-items:center">
             <button class="gh solid" id="parse-btn" type="button">Parse statement</button>
             <span class="dim" id="parse-status" style="font-size:12px"></span>
@@ -154,6 +159,7 @@
           </div>
           <div class="field" id="entry-method-field">
             <label class="f-lab">Repayment method</label>
+            <label style="margin-right:16px;font-size:12.5px"><input type="radio" name="entry-method" id="entry-method-cash" value="cash"> Cash</label>
             <label style="margin-right:16px;font-size:12.5px"><input type="radio" name="entry-method" id="entry-method-check" value="check"> Check</label>
             <label style="margin-right:16px;font-size:12.5px"><input type="radio" name="entry-method" id="entry-method-card" value="card"> Card</label>
             <label style="margin-right:16px;font-size:12.5px"><input type="radio" name="entry-method" id="entry-method-electronic" value="electronic"> Electronic payment</label>
@@ -186,10 +192,15 @@ import {
   collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, writeBatch,
   query, where, orderBy, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+// pdf.js 4.x only ships as an ES module, so it's imported here rather
+// than as a global <script> tag like pdf-lib above.
+import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.min.mjs';
 
 const profile = await requireAuth();
 if (!profile) throw new Error('not authenticated');
 initShell('tolls', profile);
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs';
 
 document.getElementById('header-date').textContent =
   new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
@@ -436,9 +447,7 @@ function renderUnmatchedTable() {
 // ---------------------------------------------------------------------
 // Import
 // ---------------------------------------------------------------------
-document.getElementById('parse-btn').addEventListener('click', () => {
-  const text = document.getElementById('paste-text').value;
-  if (!text.trim()) { showToast('Paste the statement text first.', 'error'); return; }
+function runParse(text, { sourceLabel = 'pasted text' } = {}) {
   const result = parseTollStatement(text);
   lastParse = result;
   const matched = result.charges.filter((c) => matchEmployee(c, employees));
@@ -449,8 +458,64 @@ document.getElementById('parse-btn').addEventListener('click', () => {
   document.getElementById('pv-period-start').value = result.periodStart || '';
   document.getElementById('pv-period-end').value = result.periodEnd || '';
   document.getElementById('parse-status').textContent = result.charges.length === 0
-    ? 'No charge lines recognized — check that the full statement text was pasted.' : '';
+    ? `No charge lines recognized in the ${sourceLabel} — if this came from a PDF, try pasting the text instead (select all in the PDF, copy, paste above).` : '';
   document.getElementById('parse-preview').hidden = false;
+}
+
+document.getElementById('parse-btn').addEventListener('click', () => {
+  const text = document.getElementById('paste-text').value;
+  if (!text.trim()) { showToast('Upload the PDF or paste the statement text first.', 'error'); return; }
+  runParse(text, { sourceLabel: 'pasted text' });
+});
+
+// Groups pdf.js's individual text fragments back into lines by their
+// vertical position — getTextContent() has no concept of lines on its
+// own, but parseTollStatement() needs one full charge (date, time,
+// location, amount) per line, same as a real Ctrl/Cmd+A copy-paste
+// preserves. A few px of Y tolerance absorbs tiny baseline differences
+// within what's visually one row.
+async function extractPdfText(file) {
+  const buf = await file.arrayBuffer();
+  const pdfDoc = await pdfjsLib.getDocument({ data: buf }).promise;
+  const lines = [];
+  for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum += 1) {
+    const page = await pdfDoc.getPage(pageNum);
+    const content = await page.getTextContent();
+    const rows = [];
+    content.items.forEach((item) => {
+      if (!item.str.trim()) return;
+      const y = item.transform[5];
+      const x = item.transform[4];
+      let row = rows.find((r) => Math.abs(r.y - y) < 3);
+      if (!row) { row = { y, parts: [] }; rows.push(row); }
+      row.parts.push({ x, str: item.str });
+    });
+    rows.sort((a, b) => b.y - a.y); // PDF y-axis runs bottom-up — top of page first
+    rows.forEach((row) => {
+      row.parts.sort((a, b) => a.x - b.x);
+      lines.push(row.parts.map((p) => p.str).join(' ').replace(/\s+/g, ' ').trim());
+    });
+  }
+  return lines.join('\n');
+}
+
+document.getElementById('statement-pdf-file').addEventListener('change', async () => {
+  const file = document.getElementById('statement-pdf-file').files[0];
+  if (!file) return;
+  const status = document.getElementById('pdf-extract-status');
+  status.textContent = 'Reading PDF…';
+  try {
+    const text = await extractPdfText(file);
+    document.getElementById('paste-text').value = text;
+    status.textContent = `Read ${file.name}.`;
+    runParse(text, { sourceLabel: 'PDF' });
+  } catch (err) {
+    console.error(err);
+    status.textContent = '';
+    showToast('Could not read that PDF — try pasting the statement text instead.', 'error');
+  } finally {
+    document.getElementById('statement-pdf-file').value = '';
+  }
 });
 
 document.getElementById('cancel-import-btn').addEventListener('click', () => {
@@ -541,7 +606,7 @@ const TOLL_SHEET_I18N = {
     notes: 'Notes', verifiedBy: 'Verified by / date',
     sectionC: 'C.  REPAYMENT OF PERSONAL TOLLS',
     tollsOwed: 'Personal tolls owed', dueDate: 'Due date (30 days)',
-    repayMethod: 'Repayment method', mCheck: 'Check', mCard: 'Card', mElectronic: 'Electronic payment', mPayroll: 'Payroll deduction (Section D)',
+    repayMethod: 'Repayment method', mCash: 'Cash', mCheck: 'Check', mCard: 'Card', mElectronic: 'Electronic payment', mPayroll: 'Payroll deduction (Section D)',
     dateReceived: 'Date received', receiptRef: 'Receipt / reference #', receivedBy: 'Received by',
     sectionD: 'D.  OPTIONAL PAYROLL DEDUCTION AUTHORIZATION  (non-exempt employees only)',
     dText: 'I choose to repay the personal tolls listed above through a deduction from my paycheck, as specified below. This is my voluntary choice. I may instead repay by check, card, or electronic payment. I understand I cannot be required to sign this section.',
@@ -567,7 +632,7 @@ const TOLL_SHEET_I18N = {
     notes: 'Notas', verifiedBy: 'Verificado por / fecha',
     sectionC: 'C.  REEMBOLSO DE PEAJES PERSONALES',
     tollsOwed: 'Peajes personales adeudados', dueDate: 'Fecha límite (30 días)',
-    repayMethod: 'Método de reembolso', mCheck: 'Cheque', mCard: 'Tarjeta', mElectronic: 'Pago electrónico', mPayroll: 'Deducción de nómina (Sección D)',
+    repayMethod: 'Método de reembolso', mCash: 'Efectivo', mCheck: 'Cheque', mCard: 'Tarjeta', mElectronic: 'Pago electrónico', mPayroll: 'Deducción de nómina (Sección D)',
     dateReceived: 'Fecha de recibido', receiptRef: 'Recibo / número de referencia', receivedBy: 'Recibido por',
     sectionD: 'D.  AUTORIZACIÓN OPCIONAL DE DEDUCCIÓN DE NÓMINA  (solo empleados no exentos)',
     dText: 'Elijo reembolsar los peajes personales indicados arriba mediante una deducción de mi cheque de pago, según se especifica abajo. Esta es mi elección voluntaria. En su lugar, puedo reembolsar con cheque, tarjeta o pago electrónico. Entiendo que no se me puede exigir que firme esta sección.',
@@ -761,11 +826,12 @@ async function buildReviewSheetPdf(emp, charges, periodLabel, lang = 'en') {
   infoRow([{ label: tr.tollsOwed, value: '', w: half }, { label: tr.dueDate, value: '', w: half }]);
   bcRow(tr.repayMethod, (x, yy) => {
     let cx = x;
+    cx = checkboxInline(cx, yy, false, tr.mCash, 8);
     cx = checkboxInline(cx, yy, false, tr.mCheck, 8);
     cx = checkboxInline(cx, yy, false, tr.mCard, 8);
     cx = checkboxInline(cx, yy, false, tr.mElectronic, 8);
     checkboxInline(cx, yy, false, tr.mPayroll, 8);
-  }, 0.3);
+  }, 0.2);
   infoRow([{ label: tr.dateReceived, value: '', w: half }, { label: tr.receiptRef, value: '', w: half }]);
   bcRow(tr.receivedBy, () => {}, 0.3);
   y -= 10;
