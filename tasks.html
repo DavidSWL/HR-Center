@@ -382,6 +382,7 @@ function staffName(uid) {
 // Document Generator's own generator list.
 function linkedDocUrl(type, docId, taskId) {
   if (type === 'writeup') return `discipline.html?doc=${docId}&task=${taskId}`;
+  if (type === 'vehiclereturn') return `vehicles.html?return=${docId}&task=${taskId}`;
   return `docgen.html?open=${type}&doc=${docId}&task=${taskId}`;
 }
 function empById(id) { return employees.find((e) => e.id === id); }

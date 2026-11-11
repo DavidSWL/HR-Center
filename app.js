@@ -53,6 +53,7 @@ export const NAV_SECTIONS = [
       { key: 'tasks', label: 'Tasks', href: 'tasks.html', built: true },
       { key: 'training', label: 'Team training', href: 'training.html', built: true },
       { key: 'tolls', label: 'Toll tracker', href: 'tolls.html', built: true },
+      { key: 'vehicles', label: 'Vehicles', href: 'vehicles.html', built: true },
     ],
   },
   {

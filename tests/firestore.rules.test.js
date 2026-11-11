@@ -453,3 +453,64 @@ test('a retraining record is rejected if its sign-in sheet photo is too large', 
     })
   );
 });
+
+// ---- vehicles and vehicle assignments -----------------------------------
+
+test('an HR user can add and read a vehicle, a stranger cannot', async () => {
+  await assertSucceeds(
+    as(TANYA).collection('vehicles').doc('V1').set({
+      unit_number: 'Unit 132', plate: '8A28061', transponder: 'Todd 132', active: true, entered_by: TANYA,
+    })
+  );
+  await assertSucceeds(as(DAVID).collection('vehicles').doc('V1').get());
+  await assertFails(anonymous().collection('vehicles').doc('V1').get());
+  await assertFails(
+    as(STRANGER).collection('vehicles').doc('V2').set({ unit_number: 'Unit 1', active: true, entered_by: STRANGER })
+  );
+});
+
+test('a vehicle can never be deleted, only marked out of service', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection('vehicles').doc('V3').set({ unit_number: 'Unit 3', active: true, entered_by: DAVID });
+  });
+  await assertSucceeds(as(DAVID).collection('vehicles').doc('V3').update({ active: false }));
+  await assertFails(as(DAVID).collection('vehicles').doc('V3').delete());
+});
+
+test('an HR user can create and update a vehicle assignment, a stranger cannot', async () => {
+  await assertSucceeds(
+    as(TANYA).collection('vehicle_assignments').doc('A1').set({
+      vehicle_id: 'V1', emp_id: 'EMP-0001', emp_name: 'Todd R.', assigned_date: '2026-11-11',
+      status: 'active', entered_by: TANYA,
+    })
+  );
+  await assertSucceeds(
+    as(TANYA).collection('vehicle_assignments').doc('A1').update({
+      status: 'returned', returned_date: '2026-11-12', returned_by: TANYA,
+    })
+  );
+  await assertFails(
+    as(STRANGER).collection('vehicle_assignments').doc('A2').set({ vehicle_id: 'V1', emp_id: 'EMP-0001', status: 'active', entered_by: STRANGER })
+  );
+});
+
+test('a vehicle assignment is rejected if it has too many condition photos', async () => {
+  const sevenPhotos = Array.from({ length: 7 }, (_, i) => `data:image/jpeg;base64,photo${i}`);
+  await assertFails(
+    as(TANYA).collection('vehicle_assignments').doc('A3').set({
+      vehicle_id: 'V1', emp_id: 'EMP-0001', status: 'active', photos_out: sevenPhotos, entered_by: TANYA,
+    })
+  );
+  await assertSucceeds(
+    as(TANYA).collection('vehicle_assignments').doc('A4').set({
+      vehicle_id: 'V1', emp_id: 'EMP-0001', status: 'active', photos_out: sevenPhotos.slice(0, 6), entered_by: TANYA,
+    })
+  );
+});
+
+test('a vehicle assignment can never be deleted', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection('vehicle_assignments').doc('A5').set({ vehicle_id: 'V1', emp_id: 'EMP-0001', status: 'active', entered_by: DAVID });
+  });
+  await assertFails(as(DAVID).collection('vehicle_assignments').doc('A5').delete());
+});

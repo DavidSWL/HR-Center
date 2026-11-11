@@ -133,6 +133,14 @@ service cloud.firestore {
         || data.sign_in_sheet_data_url.size() < 700000;
     }
 
+    // Before/after vehicle condition photos — same count-cap backstop as
+    // incidentPhotosOk above (vehicles.html resizes/compresses each one
+    // client-side before it ever reaches here).
+    function vehiclePhotosOk(data) {
+      return (!('photos_out' in data) || data.photos_out == null || data.photos_out.size() <= 6)
+        && (!('photos_in' in data) || data.photos_in == null || data.photos_in.size() <= 6);
+    }
+
     // ---- users ------------------------------------------------------------
     // Role assignment is how every other rule below decides who can do
     // what, so it is not something the app itself is allowed to change.
@@ -348,6 +356,31 @@ service cloud.firestore {
       allow create: if isHrUser() && isClean(request.resource.data)
         && stamped(request.resource.data) && signInSheetOk(request.resource.data);
       allow update: if isHrUser() && isClean(request.resource.data) && signInSheetOk(request.resource.data);
+      allow delete: if false;
+    }
+
+    // ---- vehicles ------------------------------------------------------
+    // One record per vehicle — plate/transponder here are what Toll
+    // Tracker matches statement charges against (not a flat field on the
+    // employee record). Never deleted so a vehicle's full assignment
+    // history stays intact even once it's sold/retired (active: false).
+    match /vehicles/{vehicleId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data) && stamped(request.resource.data);
+      allow update: if isHrUser() && isClean(request.resource.data);
+      allow delete: if false;
+    }
+
+    // One record per assignment period (handoff through return) — the
+    // before/after condition photos and notes both live here, FK'd to
+    // both the vehicle and the employee. status flips active -> returned
+    // on return; never deleted, same reasoning as every other record
+    // that documents who-had-what-when.
+    match /vehicle_assignments/{assignmentId} {
+      allow read: if isHrUser();
+      allow create: if isHrUser() && isClean(request.resource.data)
+        && stamped(request.resource.data) && vehiclePhotosOk(request.resource.data);
+      allow update: if isHrUser() && isClean(request.resource.data) && vehiclePhotosOk(request.resource.data);
       allow delete: if false;
     }
 

@@ -302,13 +302,21 @@ function parseTollStatement(text) {
   return { charges, periodStart, periodEnd, warnings };
 }
 
-function matchEmployee(charge, employees) {
+function matchEmployee(charge, vehicles, assignments, employees) {
+  let vehicle;
   if (charge.source === 'transponder') {
     const key = charge.match_key.trim().toLowerCase();
-    return employees.find((e) => (e.vehicle_transponder || '').trim().toLowerCase() === key) || null;
+    vehicle = vehicles.find((v) => (v.transponder || '').trim().toLowerCase() === key);
+  } else {
+    const key = charge.match_key.trim().toUpperCase();
+    vehicle = vehicles.find((v) => (v.plate || '').trim().toUpperCase() === key);
   }
-  const key = charge.match_key.trim().toUpperCase();
-  return employees.find((e) => (e.vehicle_plate || '').trim().toUpperCase() === key) || null;
+  if (!vehicle) return null;
+  // assignments passed in is expected to already be filtered to status
+  // == 'active' (see loadAssignments) — at most one per vehicle.
+  const assignment = assignments.find((a) => a.vehicle_id === vehicle.id);
+  if (!assignment) return null;
+  return employees.find((e) => e.id === assignment.emp_id) || null;
 }
 
 // ---------------------------------------------------------------------
@@ -330,6 +338,26 @@ async function loadEmployees() {
   employees = snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
     .filter((e) => e.status !== 'terminated' && !e.is_test);
+}
+
+// Plate/transponder now live on the vehicle roster (vehicles.html), not
+// on the employee record — a charge is matched to a vehicle first, then
+// to whoever currently has that vehicle via its open assignment.
+let vehicles = [];
+let assignments = [];
+async function loadVehicles() {
+  const snap = await getDocs(collection(db, 'vehicles'));
+  vehicles = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+async function loadAssignments() {
+  const snap = await getDocs(query(collection(db, 'vehicle_assignments'), where('status', '==', 'active')));
+  assignments = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+function vehicleLabelForEmp(empId) {
+  const a = assignments.find((x) => x.emp_id === empId);
+  if (!a) return '';
+  const v = vehicles.find((x) => x.id === a.vehicle_id);
+  return v ? (v.unit_number || v.plate || '') : '';
 }
 
 async function loadStatements() {
@@ -420,7 +448,7 @@ function renderSheetsTable() {
       return `
         <tr>
           <td>${escapeHtml(emp ? `${emp.first_name} ${emp.last_name}` : empId)}</td>
-          <td class="mono">${escapeHtml(emp?.vehicle_unit || emp?.vehicle_plate || '—')}</td>
+          <td class="mono">${escapeHtml(vehicleLabelForEmp(empId)) || '—'}</td>
           <td>${charges.length}</td>
           <td class="mono">${money(total)}</td>
           <td>${statusHtml}</td>
@@ -483,7 +511,7 @@ function renderUnmatchedTable() {
 function runParse(text, { sourceLabel = 'pasted text' } = {}) {
   const result = parseTollStatement(text);
   lastParse = result;
-  const matched = result.charges.filter((c) => matchEmployee(c, employees));
+  const matched = result.charges.filter((c) => matchEmployee(c, vehicles, assignments, employees));
   document.getElementById('pv-count').textContent = String(result.charges.length);
   document.getElementById('pv-matched').textContent = String(matched.length);
   document.getElementById('pv-unmatched').textContent = String(result.charges.length - matched.length);
@@ -655,7 +683,7 @@ document.getElementById('confirm-import-btn').addEventListener('click', async ()
     for (const chunk of chunks) {
       const batch = writeBatch(db);
       chunk.forEach((c) => {
-        const match = matchEmployee(c, employees);
+        const match = matchEmployee(c, vehicles, assignments, employees);
         const ref = doc(collection(db, 'tolls'));
         batch.set(ref, {
           statement_id: stRef.id, date: c.date, time: c.time, location: c.location, amount: c.amount,
@@ -839,7 +867,7 @@ async function buildReviewSheetPdf(emp, charges, periodLabel, lang = 'en') {
   }
   const half = (PW - 2 * M) / 2;
   infoRow([{ label: tr.lblEmpName, value: `${emp.first_name} ${emp.last_name}`, w: half }, { label: tr.lblPosition, value: emp.position || '', w: half }]);
-  infoRow([{ label: tr.lblVehicle, value: emp.vehicle_unit || emp.vehicle_plate || '', w: half }, { label: tr.lblMonth, value: periodLabel || '', w: half }]);
+  infoRow([{ label: tr.lblVehicle, value: vehicleLabelForEmp(emp.id) || '', w: half }, { label: tr.lblMonth, value: periodLabel || '', w: half }]);
   page.drawRectangle({ x: M, y: y - rowH, width: PW - 2 * M, height: rowH, borderColor: gridLine, borderWidth: 0.6 });
   const empTypeLabelW = Math.max(Math.round((PW - 2 * M) * 0.18), bold.widthOfTextAtSize(tr.lblEmpType, 8) + 10);
   page.drawRectangle({ x: M, y: y - rowH, width: empTypeLabelW, height: rowH, color: shade });
@@ -1178,6 +1206,8 @@ document.getElementById('entry-save-btn').addEventListener('click', async () => 
 // Boot
 // ---------------------------------------------------------------------
 await loadEmployees();
+await loadVehicles();
+await loadAssignments();
 await loadStatements();
 await loadStatementData(currentStatementId);
 </script>

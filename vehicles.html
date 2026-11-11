@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vehicles — SWL HR</title>
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" id="sidebar"></aside>
+
+  <div class="main" id="main" data-theme="light">
+    <header class="bar">
+      <div><h1>Vehicles</h1></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="toggle">
+          <button class="on" data-t="light" type="button">Light</button>
+          <button data-t="dark" type="button">Dark</button>
+        </div>
+        <div class="s" id="header-date"></div>
+      </div>
+    </header>
+
+    <section class="view">
+
+      <p class="dim" style="margin:0 0 16px;font-size:12.5px;max-width:76ch">
+        One record per vehicle — plate and transponder here are what Toll Tracker matches charges against. Assigning
+        a vehicle to someone captures condition photos at handoff; returning it (reassigned, or the employee left)
+        captures condition photos again, so before and after always sit side by side.
+      </p>
+
+      <div class="card">
+        <div class="card-h">
+          <h3>Fleet</h3>
+          <span id="log-summary">—</span>
+        </div>
+        <div class="tools">
+          <button class="gh solid" id="add-btn" type="button">Add vehicle</button>
+          <input class="inp" id="search" placeholder="Search unit #, plate, transponder, driver" style="min-width:240px">
+          <select class="inp" id="status-filter">
+            <option value="">All vehicles</option>
+            <option value="assigned">Assigned</option>
+            <option value="available">Available</option>
+            <option value="out_of_service">Out of service</option>
+          </select>
+        </div>
+        <table>
+          <thead>
+            <tr id="head-row">
+              <th class="sortable" data-key="unit">Unit #<span class="sort-arrow"></span></th>
+              <th>Vehicle</th>
+              <th class="sortable" data-key="plate">Plate<span class="sort-arrow"></span></th>
+              <th>Transponder</th>
+              <th class="sortable" data-key="assigned">Assigned to<span class="sort-arrow"></span></th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div class="legend" id="empty-state" hidden><span>No vehicles match — try clearing the search or filter.</span></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- add/edit vehicle modal -->
+<div class="modal-overlay" id="vehicle-modal-overlay" hidden>
+  <div class="modal" style="width:620px">
+    <div class="modal-h">
+      <h3 id="vehicle-modal-title">Add vehicle</h3>
+      <button class="modal-close" id="vehicle-modal-close" type="button">&times;</button>
+    </div>
+    <form id="vehicle-form">
+      <div class="modal-body">
+        <div class="frow">
+          <div class="field"><label class="f-lab" for="veh-unit">Unit #</label><input class="f-in" id="veh-unit" placeholder="e.g. Unit 132"></div>
+          <div class="field"><label class="f-lab" for="veh-year">Year</label><input class="f-in" id="veh-year" inputmode="numeric" placeholder="2022"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab" for="veh-make">Make</label><input class="f-in" id="veh-make"></div>
+          <div class="field"><label class="f-lab" for="veh-model">Model</label><input class="f-in" id="veh-model"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label class="f-lab" for="veh-plate">License plate</label><input class="f-in" id="veh-plate" style="text-transform:uppercase"></div>
+          <div class="field"><label class="f-lab" for="veh-transponder">FasTrak transponder label</label><input class="f-in" id="veh-transponder"></div>
+        </div>
+        <div class="field"><label class="f-lab" for="veh-vin">VIN (optional)</label><input class="f-in" id="veh-vin"></div>
+
+        <div id="veh-status-box" class="dim" style="font-size:12.5px;margin:14px 0;padding:10px 12px;border:1px solid var(--line);border-radius:6px"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="gh" id="veh-toggle-active-btn" style="color:var(--alertTx)" hidden>Mark out of service</button>
+        <button type="button" class="gh" id="vehicle-cancel-btn">Cancel</button>
+        <button type="submit" class="gh solid" id="vehicle-save-btn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- assign modal -->
+<div class="modal-overlay" id="assign-modal-overlay" hidden>
+  <div class="modal" style="width:620px">
+    <div class="modal-h">
+      <h3>Assign vehicle</h3>
+      <button class="modal-close" id="assign-modal-close" type="button">&times;</button>
+    </div>
+    <form id="assign-form">
+      <div class="modal-body">
+        <div id="assign-vehicle-label" class="dim" style="font-size:12.5px;margin-bottom:10px"></div>
+        <div class="frow">
+          <div class="field">
+            <label class="f-lab" for="assign-emp-search">Employee</label>
+            <input class="f-in" id="assign-emp-search" list="assign-emp-opts" placeholder="Type a name…" autocomplete="off">
+            <datalist id="assign-emp-opts"></datalist>
+            <input type="hidden" id="assign-emp">
+          </div>
+          <div class="field"><label class="f-lab" for="assign-date">Assigned date</label><input class="f-in" id="assign-date" type="date"></div>
+        </div>
+        <div class="field"><label class="f-lab" for="assign-odometer">Odometer (optional)</label><input class="f-in" id="assign-odometer" type="number" min="0"></div>
+        <div class="field"><label class="f-lab" for="assign-notes">Condition at handoff</label><textarea class="f-in" id="assign-notes" rows="3" style="resize:vertical" placeholder="Existing dents, scratches, wear — whatever's worth having on record before it leaves the yard"></textarea></div>
+        <div class="field">
+          <label class="f-lab" for="assign-photos-file">Before photos</label>
+          <input class="f-in" id="assign-photos-file" type="file" accept="image/*" multiple>
+          <p class="dim" style="font-size:11.5px;margin:4px 0 8px">Up to 6 photos of the vehicle's condition before handoff.</p>
+          <div id="assign-photos-gallery" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="gh" id="assign-cancel-btn">Cancel</button>
+        <button type="submit" class="gh solid" id="assign-save-btn">Assign</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- return modal -->
+<div class="modal-overlay" id="return-modal-overlay" hidden>
+  <div class="modal" style="width:620px">
+    <div class="modal-h">
+      <h3>Return vehicle</h3>
+      <button class="modal-close" id="return-modal-close" type="button">&times;</button>
+    </div>
+    <form id="return-form">
+      <div class="modal-body">
+        <div id="return-vehicle-label" class="dim" style="font-size:12.5px;margin-bottom:10px"></div>
+        <div class="frow">
+          <div class="field"><label class="f-lab" for="return-date">Return date</label><input class="f-in" id="return-date" type="date"></div>
+          <div class="field"><label class="f-lab" for="return-odometer">Odometer (optional)</label><input class="f-in" id="return-odometer" type="number" min="0"></div>
+        </div>
+        <div class="field"><label class="f-lab" for="return-reason">Reason</label>
+          <select class="f-in" id="return-reason">
+            <option value="employee_left">Employee left the company</option>
+            <option value="reassigned">Reassigned to someone else</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="field"><label class="f-lab" for="return-notes">Condition at return</label><textarea class="f-in" id="return-notes" rows="3" style="resize:vertical" placeholder="New damage, excessive wear, missing items — compare against the before photos"></textarea></div>
+        <div class="field">
+          <label class="f-lab" for="return-photos-file">After photos</label>
+          <input class="f-in" id="return-photos-file" type="file" accept="image/*" multiple>
+          <p class="dim" style="font-size:11.5px;margin:4px 0 8px">Up to 6 photos of the vehicle's condition at return.</p>
+          <div id="return-photos-gallery" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="gh" id="return-cancel-btn">Cancel</button>
+        <button type="submit" class="gh solid" id="return-save-btn">Mark returned</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- assignment history modal -->
+<div class="modal-overlay" id="history-modal-overlay" hidden>
+  <div class="modal" style="width:700px">
+    <div class="modal-h">
+      <h3 id="history-modal-title">Assignment history</h3>
+      <button class="modal-close" id="history-modal-close" type="button">&times;</button>
+    </div>
+    <div class="modal-body" id="history-body" style="max-height:70vh;overflow:auto"></div>
+    <div class="modal-actions">
+      <button type="button" class="gh" id="history-close-btn">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- photo lightbox (shared) -->
+<div class="modal-overlay" id="photo-lightbox-overlay" hidden style="background:rgba(0,0,0,.85)">
+  <div style="position:relative;max-width:90vw;max-height:90vh;display:flex;flex-direction:column;align-items:center;gap:10px">
+    <button type="button" id="photo-lightbox-close" style="position:absolute;top:-36px;right:0;background:none;border:none;color:#fff;font-size:28px;line-height:1;cursor:pointer">&times;</button>
+    <img id="photo-lightbox-img" style="max-width:90vw;max-height:78vh;object-fit:contain;box-shadow:0 4px 20px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;gap:16px">
+      <button type="button" id="photo-lightbox-prev" class="gh" style="color:#fff;border-color:#fff">&larr; Prev</button>
+      <span id="photo-lightbox-count" style="color:#fff;font-family:var(--mono);font-size:11.5px"></span>
+      <button type="button" id="photo-lightbox-next" class="gh" style="color:#fff;border-color:#fff">Next &rarr;</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './auth.js';
+import { initShell, showToast, formatDate } from './app.js';
+import { db } from './firebaseconfig.js';
+import {
+  collection, doc, getDoc, getDocs, addDoc, updateDoc, query, where, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const profile = await requireAuth();
+if (!profile) throw new Error('not authenticated');
+initShell('vehicles', profile);
+
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+let employees = [];
+async function loadEmployees() {
+  const snap = await getDocs(collection(db, 'employees'));
+  employees = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((e) => e.status !== 'terminated' && !e.is_test)
+    .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
+  document.getElementById('assign-emp-opts').innerHTML = employees
+    .map((e) => `<option value="${escapeHtml(`${e.first_name} ${e.last_name} (${e.id})`)}">`).join('');
+}
+function empName(empId) {
+  const emp = employees.find((e) => e.id === empId);
+  return emp ? `${emp.first_name} ${emp.last_name}` : '';
+}
+function wireEmpSearch(searchId, hiddenId) {
+  const search = document.getElementById(searchId);
+  const hidden = document.getElementById(hiddenId);
+  const resolve = () => {
+    const m = search.value.match(/\(([^()]+)\)\s*$/);
+    const match = m && employees.find((e) => e.id === m[1]);
+    hidden.value = match ? match.id : '';
+  };
+  search.addEventListener('input', resolve);
+  search.addEventListener('change', resolve);
+}
+wireEmpSearch('assign-emp-search', 'assign-emp');
+
+// ---- photo capture — embedded as data URLs directly on the assignment
+// doc, same reasoning as incident photos elsewhere in this app (this
+// account is on the free Spark plan, no Firebase Storage bucket).
+// Parameterized by "slot" ('out' at handoff, 'in' at return) so the two
+// modals that need this don't need two copies of the same logic.
+const PHOTO_MAX_DIMENSION = 1280;
+const PHOTO_JPEG_QUALITY = 0.8;
+const PHOTO_MAX_COUNT = 6;
+const photoState = { out: [], in: [] };
+
+function resizeVehiclePhoto(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const scale = Math.min(1, PHOTO_MAX_DIMENSION / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', PHOTO_JPEG_QUALITY));
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Could not read that image.')); };
+    img.src = objectUrl;
+  });
+}
+function renderPhotoGallery(slot) {
+  const galleryId = slot === 'out' ? 'assign-photos-gallery' : 'return-photos-gallery';
+  document.getElementById(galleryId).innerHTML = photoState[slot].map((url, i) => `
+    <div style="position:relative;width:72px;height:72px">
+      <img src="${url}" data-slot="${slot}" data-idx="${i}" class="veh-photo-thumb" style="width:100%;height:100%;object-fit:cover;border:1px solid var(--line);cursor:pointer">
+      <button type="button" class="veh-photo-remove" data-slot="${slot}" data-idx="${i}" title="Remove" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:1px solid var(--line);background:var(--raise);font-size:11px;line-height:1;cursor:pointer">&times;</button>
+    </div>
+  `).join('');
+  document.querySelectorAll(`#${galleryId} .veh-photo-thumb`).forEach((img) => {
+    img.addEventListener('click', () => openPhotoLightbox(photoState[slot], Number(img.dataset.idx)));
+  });
+  document.querySelectorAll(`#${galleryId} .veh-photo-remove`).forEach((btn) => {
+    btn.addEventListener('click', () => {
+      photoState[slot].splice(Number(btn.dataset.idx), 1);
+      renderPhotoGallery(slot);
+    });
+  });
+}
+async function handlePhotoFiles(slot, files) {
+  const room = PHOTO_MAX_COUNT - photoState[slot].length;
+  if (room <= 0) { showToast(`Already at the ${PHOTO_MAX_COUNT}-photo limit — remove one first.`, 'error'); return; }
+  if (files.length > room) showToast(`Only adding the first ${room} — ${PHOTO_MAX_COUNT}-photo limit.`, 'error');
+  for (const file of files.slice(0, room)) {
+    try {
+      photoState[slot].push(await resizeVehiclePhoto(file));
+    } catch (err) {
+      console.error(err);
+      showToast(`Could not read "${file.name}" — ` + err.message, 'error');
+    }
+  }
+  renderPhotoGallery(slot);
+}
+document.getElementById('assign-photos-file').addEventListener('change', (e) => {
+  const files = [...e.target.files]; e.target.value = '';
+  if (files.length) handlePhotoFiles('out', files);
+});
+document.getElementById('return-photos-file').addEventListener('change', (e) => {
+  const files = [...e.target.files]; e.target.value = '';
+  if (files.length) handlePhotoFiles('in', files);
+});
+
+// Shared lightbox — works against whichever photo array it was opened
+// with (an active slot's state, or a read-only array from history).
+let lightboxPhotos = [];
+let lightboxIndex = 0;
+function openPhotoLightbox(photos, index) {
+  lightboxPhotos = photos;
+  lightboxIndex = index;
+  renderLightbox();
+  document.getElementById('photo-lightbox-overlay').hidden = false;
+}
+function renderLightbox() {
+  document.getElementById('photo-lightbox-img').src = lightboxPhotos[lightboxIndex] || '';
+  document.getElementById('photo-lightbox-count').textContent = `${lightboxIndex + 1} / ${lightboxPhotos.length}`;
+}
+function lightboxStep(dir) {
+  if (!lightboxPhotos.length) return;
+  lightboxIndex = (lightboxIndex + dir + lightboxPhotos.length) % lightboxPhotos.length;
+  renderLightbox();
+}
+document.getElementById('photo-lightbox-close').addEventListener('click', () => { document.getElementById('photo-lightbox-overlay').hidden = true; });
+document.getElementById('photo-lightbox-prev').addEventListener('click', () => lightboxStep(-1));
+document.getElementById('photo-lightbox-next').addEventListener('click', () => lightboxStep(1));
+document.addEventListener('keydown', (e) => {
+  if (document.getElementById('photo-lightbox-overlay').hidden) return;
+  if (e.key === 'ArrowLeft') lightboxStep(-1);
+  if (e.key === 'ArrowRight') lightboxStep(1);
+  if (e.key === 'Escape') document.getElementById('photo-lightbox-overlay').hidden = true;
+});
+
+// ---- data ----
+let vehicles = [];
+let assignments = []; // every assignment, active and returned
+function activeAssignmentFor(vehicleId) {
+  return assignments.find((a) => a.vehicle_id === vehicleId && a.status === 'active') || null;
+}
+async function loadVehicles() {
+  const snap = await getDocs(collection(db, 'vehicles'));
+  vehicles = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+async function loadAssignments() {
+  const snap = await getDocs(collection(db, 'vehicle_assignments'));
+  assignments = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+async function loadAll() {
+  await Promise.all([loadVehicles(), loadAssignments()]);
+  render();
+}
+
+const SORT_ACCESSORS = {
+  unit: (v) => (v.unit_number || '').toLowerCase(),
+  plate: (v) => (v.plate || '').toLowerCase(),
+  assigned: (v) => { const a = activeAssignmentFor(v.id); return a ? empName(a.emp_id).toLowerCase() : 'zzz'; },
+};
+let sortKey = 'unit';
+let sortDir = 'asc';
+document.querySelectorAll('#head-row .sortable').forEach((th) => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.key;
+    if (sortKey === key) { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; } else { sortKey = key; sortDir = 'asc'; }
+    render();
+  });
+});
+function updateSortIndicators() {
+  document.querySelectorAll('#head-row .sortable').forEach((th) => {
+    const arrow = th.querySelector('.sort-arrow');
+    arrow.textContent = th.dataset.key === sortKey ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+  });
+}
+
+function render() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const statusFilter = document.getElementById('status-filter').value;
+
+  const visible = vehicles.filter((v) => {
+    const active = activeAssignmentFor(v.id);
+    const statusKey = v.active === false ? 'out_of_service' : (active ? 'assigned' : 'available');
+    if (statusFilter && statusFilter !== statusKey) return false;
+    if (q && !`${v.unit_number || ''} ${v.plate || ''} ${v.transponder || ''} ${active ? empName(active.emp_id) : ''}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  const accessor = SORT_ACCESSORS[sortKey] || SORT_ACCESSORS.unit;
+  visible.sort((a, b) => {
+    const cmp = String(accessor(a)).localeCompare(String(accessor(b)));
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+  updateSortIndicators();
+
+  document.getElementById('log-summary').textContent = `${visible.length} of ${vehicles.length}`;
+  document.getElementById('rows').innerHTML = visible.map((v) => {
+    const active = activeAssignmentFor(v.id);
+    const outOfService = v.active === false;
+    const vehicleLabel = [v.year, v.make, v.model].filter(Boolean).join(' ') || '—';
+    let statusCell;
+    if (outOfService) statusCell = '<span class="pill mid">Out of service</span>';
+    else if (active) statusCell = escapeHtml(empName(active.emp_id)) || '<span class="dim">Unknown employee</span>';
+    else statusCell = '<span class="dim">Available</span>';
+    return `
+      <tr>
+        <td class="mono row-clickable" data-open="${v.id}" style="cursor:pointer">${escapeHtml(v.unit_number) || '—'}</td>
+        <td>${escapeHtml(vehicleLabel)}</td>
+        <td class="mono">${escapeHtml(v.plate) || '—'}</td>
+        <td class="mono">${escapeHtml(v.transponder) || '—'}</td>
+        <td>${statusCell}</td>
+        <td style="white-space:nowrap">
+          ${!outOfService && !active ? `<button class="gh assign-btn" data-id="${v.id}" type="button">Assign</button>` : ''}
+          ${!outOfService && active ? `<button class="gh return-btn" data-id="${v.id}" type="button">Return</button>` : ''}
+          <button class="gh history-btn" data-id="${v.id}" type="button">History</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+  document.getElementById('empty-state').hidden = visible.length > 0;
+
+  document.querySelectorAll('[data-open]').forEach((el) => {
+    el.addEventListener('click', () => openVehicleModal(el.dataset.open));
+  });
+  document.querySelectorAll('.assign-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); openAssignModal(btn.dataset.id); });
+  });
+  document.querySelectorAll('.return-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); openReturnModal(activeAssignmentFor(btn.dataset.id).id); });
+  });
+  document.querySelectorAll('.history-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); openHistoryModal(btn.dataset.id); });
+  });
+}
+document.getElementById('search').addEventListener('input', render);
+document.getElementById('status-filter').addEventListener('change', render);
+
+// ---- add/edit vehicle ----
+let editingVehicleId = null;
+function openVehicleModal(id) {
+  const v = id ? vehicles.find((x) => x.id === id) : null;
+  editingVehicleId = v ? v.id : null;
+  document.getElementById('vehicle-modal-title').textContent = v ? 'Edit vehicle' : 'Add vehicle';
+  document.getElementById('veh-unit').value = v?.unit_number || '';
+  document.getElementById('veh-year').value = v?.year || '';
+  document.getElementById('veh-make').value = v?.make || '';
+  document.getElementById('veh-model').value = v?.model || '';
+  document.getElementById('veh-plate').value = v?.plate || '';
+  document.getElementById('veh-transponder').value = v?.transponder || '';
+  document.getElementById('veh-vin').value = v?.vin || '';
+
+  const statusBox = document.getElementById('veh-status-box');
+  const toggleBtn = document.getElementById('veh-toggle-active-btn');
+  if (!v) {
+    statusBox.textContent = '';
+    statusBox.style.display = 'none';
+    toggleBtn.hidden = true;
+  } else {
+    statusBox.style.display = '';
+    const active = activeAssignmentFor(v.id);
+    if (v.active === false) {
+      statusBox.innerHTML = '<span class="pill mid">Out of service</span> — not shown as available to assign.';
+    } else if (active) {
+      statusBox.innerHTML = `Currently assigned to <b>${escapeHtml(empName(active.emp_id))}</b> since ${formatDate(active.assigned_date)}.`;
+    } else {
+      statusBox.textContent = 'Not currently assigned — available.';
+    }
+    toggleBtn.hidden = false;
+    toggleBtn.textContent = v.active === false ? 'Reactivate' : 'Mark out of service';
+    toggleBtn.style.color = v.active === false ? '' : 'var(--alertTx)';
+  }
+  document.getElementById('vehicle-modal-overlay').hidden = false;
+}
+function closeVehicleModal() {
+  document.getElementById('vehicle-modal-overlay').hidden = true;
+  document.getElementById('vehicle-form').reset();
+  editingVehicleId = null;
+}
+document.getElementById('add-btn').addEventListener('click', () => openVehicleModal(null));
+document.getElementById('vehicle-modal-close').addEventListener('click', closeVehicleModal);
+document.getElementById('vehicle-cancel-btn').addEventListener('click', closeVehicleModal);
+document.getElementById('veh-toggle-active-btn').addEventListener('click', async () => {
+  if (!editingVehicleId) return;
+  const v = vehicles.find((x) => x.id === editingVehicleId);
+  try {
+    await updateDoc(doc(db, 'vehicles', editingVehicleId), { active: v.active === false, entered_by: profile.uid, updated_at: serverTimestamp() });
+    showToast(v.active === false ? 'Vehicle reactivated.' : 'Vehicle marked out of service.');
+    closeVehicleModal();
+    await loadAll();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+});
+document.getElementById('vehicle-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const data = {
+    unit_number: document.getElementById('veh-unit').value.trim(),
+    year: document.getElementById('veh-year').value.trim(),
+    make: document.getElementById('veh-make').value.trim(),
+    model: document.getElementById('veh-model').value.trim(),
+    plate: document.getElementById('veh-plate').value.trim().toUpperCase(),
+    transponder: document.getElementById('veh-transponder').value.trim(),
+    vin: document.getElementById('veh-vin').value.trim(),
+    entered_by: profile.uid,
+  };
+  if (!data.unit_number && !data.plate) { showToast('Enter at least a unit # or a plate.', 'error'); return; }
+  try {
+    if (editingVehicleId) {
+      await updateDoc(doc(db, 'vehicles', editingVehicleId), { ...data, updated_at: serverTimestamp() });
+    } else {
+      await addDoc(collection(db, 'vehicles'), { ...data, active: true, entered_at: serverTimestamp() });
+    }
+    showToast('Saved.');
+    closeVehicleModal();
+    await loadAll();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  }
+});
+
+// ---- assign ----
+let assigningVehicleId = null;
+function openAssignModal(vehicleId) {
+  const v = vehicles.find((x) => x.id === vehicleId);
+  if (!v) return;
+  assigningVehicleId = vehicleId;
+  photoState.out = [];
+  renderPhotoGallery('out');
+  document.getElementById('assign-vehicle-label').textContent =
+    `${v.unit_number || ''} ${[v.year, v.make, v.model].filter(Boolean).join(' ')} — ${v.plate || 'no plate on file'}`.trim();
+  document.getElementById('assign-emp-search').value = '';
+  document.getElementById('assign-emp').value = '';
+  document.getElementById('assign-date').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('assign-odometer').value = '';
+  document.getElementById('assign-notes').value = '';
+  document.getElementById('assign-modal-overlay').hidden = false;
+}
+function closeAssignModal() {
+  document.getElementById('assign-modal-overlay').hidden = true;
+  document.getElementById('assign-form').reset();
+  assigningVehicleId = null;
+}
+document.getElementById('assign-modal-close').addEventListener('click', closeAssignModal);
+document.getElementById('assign-cancel-btn').addEventListener('click', closeAssignModal);
+document.getElementById('assign-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!assigningVehicleId) return;
+  const empId = document.getElementById('assign-emp').value;
+  const emp = employees.find((x) => x.id === empId);
+  if (!emp) { showToast('Choose who this vehicle is going to.', 'error'); return; }
+  const assignedDate = document.getElementById('assign-date').value;
+  if (!assignedDate) { showToast('Enter the assigned date.', 'error'); return; }
+  const btn = document.getElementById('assign-save-btn');
+  btn.disabled = true;
+  try {
+    await addDoc(collection(db, 'vehicle_assignments'), {
+      vehicle_id: assigningVehicleId, emp_id: emp.id, emp_name: `${emp.first_name} ${emp.last_name}`, division: emp.division || '',
+      assigned_date: assignedDate,
+      odometer_out: document.getElementById('assign-odometer').value === '' ? null : Number(document.getElementById('assign-odometer').value),
+      condition_notes_out: document.getElementById('assign-notes').value.trim(),
+      photos_out: photoState.out,
+      status: 'active',
+      entered_by: profile.uid, entered_at: serverTimestamp(),
+    });
+    showToast(`Assigned to ${emp.first_name} ${emp.last_name}.`);
+    closeAssignModal();
+    await loadAll();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---- return ----
+let returningAssignmentId = null;
+let returningTaskId = null;
+function openReturnModal(assignmentId, taskId = null) {
+  const a = assignments.find((x) => x.id === assignmentId);
+  if (!a) { showToast('That assignment could not be found.', 'error'); return; }
+  const v = vehicles.find((x) => x.id === a.vehicle_id);
+  returningAssignmentId = assignmentId;
+  returningTaskId = taskId;
+  photoState.in = [];
+  renderPhotoGallery('in');
+  document.getElementById('return-vehicle-label').textContent =
+    `${v ? `${v.unit_number || ''} ${[v.year, v.make, v.model].filter(Boolean).join(' ')}` : 'Vehicle'} — assigned to ${empName(a.emp_id)} since ${formatDate(a.assigned_date)}`.trim();
+  document.getElementById('return-date').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('return-odometer').value = '';
+  document.getElementById('return-reason').value = 'employee_left';
+  document.getElementById('return-notes').value = '';
+  document.getElementById('return-modal-overlay').hidden = false;
+}
+function closeReturnModal() {
+  document.getElementById('return-modal-overlay').hidden = true;
+  document.getElementById('return-form').reset();
+  returningAssignmentId = null;
+  returningTaskId = null;
+}
+document.getElementById('return-modal-close').addEventListener('click', closeReturnModal);
+document.getElementById('return-cancel-btn').addEventListener('click', closeReturnModal);
+document.getElementById('return-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!returningAssignmentId) return;
+  const returnDate = document.getElementById('return-date').value;
+  if (!returnDate) { showToast('Enter the return date.', 'error'); return; }
+  const btn = document.getElementById('return-save-btn');
+  btn.disabled = true;
+  try {
+    await updateDoc(doc(db, 'vehicle_assignments', returningAssignmentId), {
+      status: 'returned',
+      returned_date: returnDate,
+      return_reason: document.getElementById('return-reason').value,
+      odometer_in: document.getElementById('return-odometer').value === '' ? null : Number(document.getElementById('return-odometer').value),
+      condition_notes_in: document.getElementById('return-notes').value.trim(),
+      photos_in: photoState.in,
+      returned_by: profile.uid, returned_at: serverTimestamp(),
+    });
+    if (returningTaskId) {
+      await updateDoc(doc(db, 'tasks', returningTaskId), { status: 'complete', completed_at: serverTimestamp(), completed_by: profile.uid });
+    }
+    showToast('Vehicle marked returned.');
+    closeReturnModal();
+    await loadAll();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save — ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---- history ----
+function openHistoryModal(vehicleId) {
+  const v = vehicles.find((x) => x.id === vehicleId);
+  if (!v) return;
+  document.getElementById('history-modal-title').textContent =
+    `Assignment history — ${v.unit_number || v.plate || 'vehicle'}`;
+  const history = assignments
+    .filter((a) => a.vehicle_id === vehicleId)
+    .sort((a, b) => (b.assigned_date || '').localeCompare(a.assigned_date || ''));
+  const body = document.getElementById('history-body');
+  if (!history.length) {
+    body.innerHTML = '<p class="dim">No assignments on file for this vehicle yet.</p>';
+  } else {
+    body.innerHTML = history.map((a, i) => `
+      <div style="padding:12px 0;${i > 0 ? 'border-top:1px solid var(--line)' : ''}">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+          <b>${escapeHtml(a.emp_name || empName(a.emp_id))}</b>
+          <span class="dim" style="font-size:12px">${formatDate(a.assigned_date)} ${a.status === 'returned' ? '– ' + formatDate(a.returned_date) : '– present'}</span>
+        </div>
+        ${a.status === 'returned' ? `<div class="dim" style="font-size:12px;margin-bottom:6px">Returned: ${{ employee_left: 'employee left the company', reassigned: 'reassigned to someone else', other: 'other' }[a.return_reason] || a.return_reason || '—'}</div>` : ''}
+        <div class="frow" style="gap:16px">
+          <div style="flex:1">
+            <div style="font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Condition at handoff${a.odometer_out != null ? ` — ${a.odometer_out.toLocaleString()} mi` : ''}</div>
+            <div style="font-size:12.5px;margin-bottom:6px">${escapeHtml(a.condition_notes_out) || '—'}</div>
+            <div class="history-photos" data-assignment="${a.id}" data-slot="out" style="display:flex;flex-wrap:wrap;gap:6px">
+              ${(a.photos_out || []).map((url, idx) => `<img src="${url}" data-idx="${idx}" style="width:56px;height:56px;object-fit:cover;border:1px solid var(--line);cursor:pointer">`).join('') || '<span class="dim" style="font-size:11.5px">No photos</span>'}
+            </div>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Condition at return${a.odometer_in != null ? ` — ${a.odometer_in.toLocaleString()} mi` : ''}</div>
+            <div style="font-size:12.5px;margin-bottom:6px">${a.status === 'returned' ? (escapeHtml(a.condition_notes_in) || '—') : '<span class="dim">Still assigned</span>'}</div>
+            <div class="history-photos" data-assignment="${a.id}" data-slot="in" style="display:flex;flex-wrap:wrap;gap:6px">
+              ${(a.photos_in || []).map((url, idx) => `<img src="${url}" data-idx="${idx}" style="width:56px;height:56px;object-fit:cover;border:1px solid var(--line);cursor:pointer">`).join('') || (a.status === 'returned' ? '<span class="dim" style="font-size:11.5px">No photos</span>' : '')}
+            </div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+    body.querySelectorAll('.history-photos img').forEach((img) => {
+      const wrap = img.closest('.history-photos');
+      const a = history.find((x) => x.id === wrap.dataset.assignment);
+      const photos = wrap.dataset.slot === 'out' ? (a.photos_out || []) : (a.photos_in || []);
+      img.addEventListener('click', () => openPhotoLightbox(photos, Number(img.dataset.idx)));
+    });
+  }
+  document.getElementById('history-modal-overlay').hidden = false;
+}
+document.getElementById('history-modal-close').addEventListener('click', () => { document.getElementById('history-modal-overlay').hidden = true; });
+document.getElementById('history-close-btn').addEventListener('click', () => { document.getElementById('history-modal-overlay').hidden = true; });
+
+await loadEmployees();
+await loadAll();
+
+// A task's "Open document" link (e.g. created when a termination finds
+// the employee still has a vehicle out) lands here with ?return=<id> —
+// jump straight into that assignment's return flow instead of the list.
+const requestedReturn = new URLSearchParams(window.location.search).get('return');
+const requestedTask = new URLSearchParams(window.location.search).get('task');
+if (requestedReturn) openReturnModal(requestedReturn, requestedTask || null);
+</script>
+</body>
+</html>

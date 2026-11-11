@@ -1313,7 +1313,33 @@ async function registerTermination() {
       module: 'documents', item: `Termination registered — ${record.emp_name}`,
       entered_by: profile.uid, entered_at: serverTimestamp(),
     });
-    showToast('Registered — reflects in reports now. No final-pay figures were saved.');
+
+    // If this employee still has a company vehicle checked out, registering
+    // the termination doesn't return it by itself — create a task so the
+    // "after" condition photos actually get taken, same as a corrective
+    // action task gets created from an incident rather than relying on
+    // someone remembering.
+    let vehicleTaskMsg = '';
+    try {
+      const openAssignments = await getDocs(query(
+        collection(db, 'vehicle_assignments'),
+        where('emp_id', '==', record.emp_id),
+        where('status', '==', 'active'),
+      ));
+      for (const a of openAssignments.docs) {
+        await addDoc(collection(db, 'tasks'), {
+          assigned_to: profile.uid, due_date: record.last_day_worked || record.termination_date,
+          instructions: `Return vehicle — take after photos — ${record.emp_name}`,
+          recurring: 'none', status: 'open', linked_doc_id: a.id, linked_doc_type: 'vehiclereturn',
+          entered_by: profile.uid, entered_at: serverTimestamp(),
+        });
+        vehicleTaskMsg = ' A vehicle return task was created.';
+      }
+    } catch (err) {
+      console.error(err);
+    }
+
+    showToast('Registered — reflects in reports now. No final-pay figures were saved.' + vehicleTaskMsg);
     await loadEmployees();
     terminations.push({ id: termRef.id, ...record });
     document.getElementById('term-form-card').hidden = true;

@@ -143,6 +143,26 @@ const emp = { id: empSnap.id, ...empSnap.data() };
 const allEmployees = allSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 const byId = new Map(allEmployees.map((e) => [e.id, e]));
 
+// Vehicle, plate, and transponder live on the vehicle roster
+// (vehicles.html) now, FK'd via an assignment record — not on the
+// employee doc — so this is a small lookup rather than a flat field read.
+let assignedVehicleLabel = '—';
+{
+  const assignSnap = await getDocs(query(
+    collection(db, 'vehicle_assignments'), where('emp_id', '==', empId), where('status', '==', 'active'),
+  ));
+  if (!assignSnap.empty) {
+    const assignment = assignSnap.docs[0].data();
+    const vehSnap = await getDoc(doc(db, 'vehicles', assignment.vehicle_id));
+    if (vehSnap.exists()) {
+      const v = vehSnap.data();
+      assignedVehicleLabel = `${v.unit_number || ''} ${[v.year, v.make, v.model].filter(Boolean).join(' ')} — ${v.plate || 'no plate on file'}${v.transponder ? ' / ' + v.transponder : ''}`.trim();
+    } else {
+      assignedVehicleLabel = 'Assigned, vehicle record not found';
+    }
+  }
+}
+
 function managerName(id) {
   if (!id) return '—';
   const m = byId.get(id);
@@ -202,9 +222,7 @@ document.getElementById('tab-employment').innerHTML = `
     <div><b>Dotted line</b><span>${escapeHtml(managerName(emp.dotted_line_emp_id))}</span></div>
     <div><b>Hire date</b><span>${formatDate(emp.hire_date)}</span></div>
     <div><b>Tenure</b><span>${emp.status === 'terminated' ? '—' : `${yearsSince(emp.hire_date)} yrs`}</span><span class="kv-note">Computed from hire date, not stored</span></div>
-    <div><b>Assigned vehicle</b><span>${escapeHtml(emp.vehicle_unit) || '—'}</span></div>
-    <div><b>License plate</b><span>${escapeHtml(emp.vehicle_plate) || '—'}</span></div>
-    <div><b>FasTrak transponder label</b><span>${escapeHtml(emp.vehicle_transponder) || '—'}</span><span class="kv-note">Matches toll charges in Toll Tracker</span></div>
+    <div><b>Assigned vehicle</b><span>${escapeHtml(assignedVehicleLabel)}</span><span class="kv-note">Managed on the Vehicles page — matches toll charges in Toll Tracker</span></div>
     ${emp.status === 'terminated' ? `
     <div><b>Separation date</b><span>${formatDate(emp.separation_date)}</span></div>
     <div><b>Separation type</b><span>${escapeHtml(emp.separation_type) || '—'}</span></div>

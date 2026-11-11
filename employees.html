@@ -233,20 +233,10 @@
             <input class="f-in" id="emergency-phone" type="tel">
           </div>
         </div>
-        <div class="frow">
-          <div class="field">
-            <label class="f-lab" for="vehicle-unit">Assigned vehicle</label>
-            <input class="f-in" id="vehicle-unit" placeholder="e.g. Unit 132 or White F-150">
-          </div>
-          <div class="field">
-            <label class="f-lab" for="vehicle-plate">License plate</label>
-            <input class="f-in" id="vehicle-plate" placeholder="e.g. 8A28061" style="text-transform:uppercase">
-          </div>
-        </div>
         <div class="field">
-          <label class="f-lab" for="vehicle-transponder">FasTrak transponder label</label>
-          <input class="f-in" id="vehicle-transponder" placeholder="As it appears on the toll statement, e.g. &quot;Todd 132&quot; — leave blank if same as above">
-          <span class="s" style="display:block;margin-top:5px;font-size:10.5px;color:var(--faint)">Used by Toll Tracker to match statement charges to this employee automatically. Leave all three blank if they don't drive a company vehicle.</span>
+          <label class="f-lab">Assigned vehicle</label>
+          <div id="assigned-vehicle-display" style="font-size:13px">—</div>
+          <span class="s" style="display:block;margin-top:5px;font-size:10.5px;color:var(--faint)">Vehicles, plates, and transponders are managed on the <a href="vehicles.html">Vehicles</a> page now, not here.</span>
         </div>
         <div class="field" id="onboarding-field" hidden>
           <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted)">
@@ -667,6 +657,19 @@ async function loadManagerIds() {
   managerIds = new Set(snap.exists() ? (snap.data().employee_ids || []) : []);
 }
 
+// Just enough to show "Assigned vehicle" read-only on the edit modal —
+// the roster, assignment, and return flow itself lives on vehicles.html.
+let vehicles = [];
+let assignments = [];
+async function loadVehiclesAndAssignments() {
+  const [vehSnap, assignSnap] = await Promise.all([
+    getDocs(collection(db, 'vehicles')),
+    getDocs(collection(db, 'vehicle_assignments')),
+  ]);
+  vehicles = vehSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  assignments = assignSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((a) => a.status === 'active');
+}
+
 // Restricted to whoever's flagged as a manager in Settings. If the
 // employee being edited already reports to someone who isn't (or isn't
 // anymore) flagged as a manager, that person is still added so editing
@@ -745,9 +748,14 @@ function openEdit(id) {
   if (emp.photo_data_url) document.getElementById('photo-remove-btn').hidden = false;
   document.getElementById('emergency-name').value = emp.emergency_contact_name || '';
   document.getElementById('emergency-phone').value = emp.emergency_contact_phone || '';
-  document.getElementById('vehicle-unit').value = emp.vehicle_unit || '';
-  document.getElementById('vehicle-plate').value = emp.vehicle_plate || '';
-  document.getElementById('vehicle-transponder').value = emp.vehicle_transponder || '';
+  const vehAssignment = assignments.find((a) => a.emp_id === emp.id);
+  const vehDisplay = document.getElementById('assigned-vehicle-display');
+  if (vehAssignment) {
+    const v = vehicles.find((x) => x.id === vehAssignment.vehicle_id);
+    vehDisplay.textContent = v ? `${v.unit_number || ''} ${[v.year, v.make, v.model].filter(Boolean).join(' ')} — ${v.plate || 'no plate on file'}`.trim() : 'Assigned, vehicle record not found';
+  } else {
+    vehDisplay.textContent = 'None';
+  }
   document.getElementById('is-test').checked = !!emp.is_test;
   document.getElementById('terminate-btn').hidden = emp.status === 'terminated';
   document.getElementById('reactivate-btn').hidden = emp.status !== 'terminated';
@@ -823,9 +831,6 @@ form.addEventListener('submit', async (e) => {
     birth_day: document.getElementById('birth-day').value ? Number(document.getElementById('birth-day').value) : null,
     emergency_contact_name: document.getElementById('emergency-name').value.trim(),
     emergency_contact_phone: document.getElementById('emergency-phone').value.trim(),
-    vehicle_unit: document.getElementById('vehicle-unit').value.trim(),
-    vehicle_plate: document.getElementById('vehicle-plate').value.trim().toUpperCase(),
-    vehicle_transponder: document.getElementById('vehicle-transponder').value.trim(),
     is_test: document.getElementById('is-test').checked,
     entered_by: profile.uid,
     updated_at: serverTimestamp(),
@@ -1224,6 +1229,7 @@ if (urlStatus) document.getElementById('status-filter').value = urlStatus;
 
 await loadEmployees();
 await loadManagerIds();
+await loadVehiclesAndAssignments();
 
 // Deep link from the profile page's "Edit details" button — jump
 // straight into that employee's edit modal instead of making HR find
