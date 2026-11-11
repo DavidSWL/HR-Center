@@ -102,6 +102,7 @@ const REPORTS = [
   { key: 'output', title: 'Team output', desc: 'Completed work by person, from the activity log' },
   { key: 'tolls', title: 'Toll charges', desc: 'Total toll spend, business vs. personal split' },
   { key: 'tollsdue', title: 'Toll amount due', desc: 'Minimal — total owed to the toll agency, business charges only' },
+  { key: 'tollsafterhours', title: 'After-hours toll charges', desc: 'Business hours vs. after hours, by employee, in date/time order' },
 ];
 
 document.getElementById('report-tiles').innerHTML = REPORTS.map((r) => `
@@ -624,6 +625,87 @@ async function renderReport(key) {
       ${unreviewedCount > 0 ? `<p class="dim" style="font-size:12px;margin:-6px 0 0">${unreviewedCount} charge(s) in this range are not yet marked business or personal in Toll Tracker and are not included above.</p>` : ''}
     `;
     lastCsv = [['Toll amount due (business only)'], [businessTotal.toFixed(2)]];
+  }
+
+  else if (key === 'tollsafterhours') {
+    await ensureLoaded(['tolls', 'employees']);
+    const money = (n) => `$${n.toFixed(2)}`;
+    const empName = (id) => {
+      const e = data.employees.find((x) => x.id === id);
+      return e ? `${e.first_name} ${e.last_name}` : (id ? 'Unknown' : 'Unassigned');
+    };
+    const empDivision = (id) => (data.employees.find((x) => x.id === id) || {}).division || '—';
+    // 5:00 AM–3:59 PM is the crew workday for this landscaping company;
+    // everything outside that — evening, overnight, and before 5 AM — is
+    // "after hours". The two bands together cover all 24 hours, so every
+    // charge with a time on file lands in exactly one of them.
+    function hourOf(timeStr) {
+      const h = parseInt((timeStr || '').split(':')[0], 10);
+      return Number.isNaN(h) ? null : h;
+    }
+    function timeLabel(timeStr) {
+      const [h, m] = (timeStr || '').split(':').map(Number);
+      if (Number.isNaN(h) || Number.isNaN(m)) return '—';
+      const period = h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 === 0 ? 12 : h % 12;
+      return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+    }
+    const charges = data.tolls.filter((t) => inRange(t.date, range));
+    const businessCharges = [];
+    const afterHoursCharges = [];
+    const noTimeCharges = [];
+    charges.forEach((t) => {
+      const h = hourOf(t.time);
+      if (h === null) noTimeCharges.push(t);
+      else if (h >= 5 && h < 16) businessCharges.push(t);
+      else afterHoursCharges.push(t);
+    });
+    const byDateTime = (a, b) => (a.date + a.time).localeCompare(b.date + b.time);
+    businessCharges.sort(byDateTime);
+    afterHoursCharges.sort(byDateTime);
+
+    function section(title, rangeLabel, rows) {
+      const total = rows.reduce((s, t) => s + t.amount, 0);
+      return `
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>${title}</h3><span>${rangeLabel}</span></div>
+        <table>
+          <thead><tr><th>Date</th><th>Time</th><th>Employee</th><th>Division</th><th>Location</th><th>Amount</th></tr></thead>
+          <tbody>
+            ${rows.length ? rows.map((t) => `
+              <tr>
+                <td class="mono">${formatDate(t.date)}</td>
+                <td class="mono">${timeLabel(t.time)}</td>
+                <td>${escapeHtml(empName(t.emp_id))}</td>
+                <td>${escapeHtml(empDivision(t.emp_id))}</td>
+                <td>${escapeHtml(t.location) || '—'}</td>
+                <td class="mono">${money(t.amount)}</td>
+              </tr>
+            `).join('') : '<tr><td colspan="6" class="dim">None in range.</td></tr>'}
+          </tbody>
+          ${rows.length ? `<tfoot><tr><td colspan="4"></td><td><b>${rows.length} charge${rows.length === 1 ? '' : 's'}</b></td><td class="mono"><b>${money(total)}</b></td></tr></tfoot>` : ''}
+        </table>
+      </div>`;
+    }
+
+    const grandTotal = charges.reduce((s, t) => s + t.amount, 0);
+    body.innerHTML = statLine(range, `denominator: ${charges.length} toll charges with a date in range`) + `
+      <div class="big" style="margin-bottom:16px">
+        <div><div class="v n">${afterHoursCharges.length}</div><div class="k">After-hours charges</div></div>
+        <div><div class="v hot">${money(afterHoursCharges.reduce((s, t) => s + t.amount, 0))}</div><div class="k">After-hours amount</div></div>
+        <div><div class="v n">${businessCharges.length}</div><div class="k">Business-hours charges</div></div>
+        <div><div class="v n">${money(grandTotal)}</div><div class="k">Total, all charges</div></div>
+      </div>
+      ${section('After hours', '4:00 PM – 4:59 AM', afterHoursCharges)}
+      ${section('Business hours', '5:00 AM – 3:59 PM', businessCharges)}
+      ${noTimeCharges.length ? `<p class="dim" style="font-size:12px">${noTimeCharges.length} charge(s) in range have no time on file and aren't included in either band above.</p>` : ''}
+      <p class="dim" style="font-size:11.5px;margin-top:10px">Full charge-by-charge detail, vehicle assignment, and review status live in <a href="tolls.html">Toll Tracker</a>.</p>
+    `;
+    lastCsv = [
+      ['Band', 'Date', 'Time', 'Employee', 'Division', 'Location', 'Amount'],
+      ...afterHoursCharges.map((t) => ['After hours', t.date, t.time, empName(t.emp_id), empDivision(t.emp_id), t.location, t.amount.toFixed(2)]),
+      ...businessCharges.map((t) => ['Business hours', t.date, t.time, empName(t.emp_id), empDivision(t.emp_id), t.location, t.amount.toFixed(2)]),
+    ];
   }
 
   else if (key === 'attendance') {

@@ -111,14 +111,12 @@
         <div class="card-h"><h3>Charges with no vehicle match</h3><span id="unmatched-count"></span></div>
         <div class="card-body" style="padding-top:0">
           <p class="dim" style="font-size:12.5px">
-            These charges didn't match any employee's plate number or transponder label. Add the vehicle to
-            that employee's profile under Employee roster, or assign a driver here directly.
+            Grouped by plate or transponder — these didn't match a vehicle on the <a href="vehicles.html">Vehicles</a>
+            page. Assigning a group here assigns every charge in it at once; add the vehicle there so future
+            statements match automatically.
           </p>
         </div>
-        <table>
-          <thead><tr><th>Date &amp; time</th><th>Source</th><th>Location</th><th>Amount</th><th>Assign to</th><th></th></tr></thead>
-          <tbody id="unmatched-body"></tbody>
-        </table>
+        <div id="unmatched-body"></div>
       </div>
 
       <div class="card" id="entry-card" hidden>
@@ -467,6 +465,10 @@ function renderSheetsTable() {
   body.querySelectorAll('[data-enter]').forEach((btn) => btn.addEventListener('click', () => openEntry(btn.dataset.enter)));
 }
 
+// Grouped by plate/transponder (not one row per charge) — a vehicle
+// that failed to match shows up as however many charges it racked up in
+// the statement, and assigning it once is what "sends it to the person
+// responsible for it" without clicking through each individual charge.
 function renderUnmatchedTable() {
   const unmatched = currentTolls.filter((t) => !t.emp_id);
   const card = document.getElementById('unmatched-card');
@@ -477,25 +479,60 @@ function renderUnmatchedTable() {
     .slice()
     .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''))
     .map((e) => `<option value="${e.id}">${escapeHtml(`${e.first_name} ${e.last_name}`)}</option>`).join('');
-  document.getElementById('unmatched-body').innerHTML = unmatched.map((t) => `
-    <tr>
-      <td class="mono">${formatDate(t.date)} ${t.time}</td>
-      <td class="mono">${t.source === 'plate' ? 'Plate ' + t.match_key : 'Transponder "' + escapeHtml(t.match_key) + '"'}</td>
-      <td>${escapeHtml(t.location)}</td>
-      <td class="mono">${money(t.amount)}</td>
-      <td><select class="inp" data-assign="${t.id}" style="font-size:11.5px"><option value="">Choose…</option>${empOptions}</select></td>
-      <td><button class="gh" style="padding:5px 10px;font-size:10.5px" type="button" data-save-assign="${t.id}">Assign</button></td>
-    </tr>
-  `).join('');
-  document.getElementById('unmatched-body').querySelectorAll('[data-save-assign]').forEach((btn) => {
+
+  const groups = {};
+  unmatched.forEach((t) => {
+    const key = `${t.source}:${t.match_key}`;
+    (groups[key] = groups[key] || { source: t.source, matchKey: t.match_key, charges: [] }).charges.push(t);
+  });
+  const groupList = Object.values(groups).sort((a, b) => b.charges.length - a.charges.length);
+
+  document.getElementById('unmatched-body').innerHTML = groupList.map((g, gi) => {
+    const total = g.charges.reduce((s, t) => s + t.amount, 0);
+    const label = g.source === 'plate' ? `Plate ${g.matchKey}` : `Transponder "${escapeHtml(g.matchKey)}"`;
+    return `
+      <table style="margin-bottom:14px">
+        <thead>
+          <tr>
+            <th colspan="3">${label} — ${g.charges.length} charge${g.charges.length === 1 ? '' : 's'}, ${money(total)}</th>
+            <th>Assign all to</th>
+            <th></th>
+          </tr>
+          <tr><th>Date &amp; time</th><th>Location</th><th>Amount</th><th></th><th></th></tr>
+        </thead>
+        <tbody>
+          ${g.charges.map((t) => `
+            <tr>
+              <td class="mono">${formatDate(t.date)} ${t.time}</td>
+              <td>${escapeHtml(t.location)}</td>
+              <td class="mono">${money(t.amount)}</td>
+              <td></td><td></td>
+            </tr>
+          `).join('')}
+          <tr>
+            <td colspan="3"></td>
+            <td><select class="inp" data-group-assign="${gi}" style="font-size:11.5px"><option value="">Choose…</option>${empOptions}</select></td>
+            <td><button class="gh" style="padding:5px 10px;font-size:10.5px" type="button" data-group-save="${gi}">Assign group</button></td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+  }).join('');
+
+  document.getElementById('unmatched-body').querySelectorAll('[data-group-save]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const tollId = btn.dataset.saveAssign;
-      const sel = document.querySelector(`[data-assign="${tollId}"]`);
+      const gi = Number(btn.dataset.groupSave);
+      const sel = document.querySelector(`[data-group-assign="${gi}"]`);
       const empId = sel.value;
       if (!empId) { showToast('Choose who had this vehicle.', 'error'); return; }
+      const group = groupList[gi];
       try {
-        await updateDoc(doc(db, 'tolls', tollId), { emp_id: empId, entered_by: profile.uid, entered_at: serverTimestamp() });
-        showToast('Assigned.');
+        const batch = writeBatch(db);
+        group.charges.forEach((t) => {
+          batch.update(doc(db, 'tolls', t.id), { emp_id: empId, entered_by: profile.uid, entered_at: serverTimestamp() });
+        });
+        await batch.commit();
+        showToast(`Assigned ${group.charges.length} charge${group.charges.length === 1 ? '' : 's'}.`);
         await loadStatementData(currentStatementId);
       } catch (err) {
         console.error(err);
