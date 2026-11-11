@@ -10,8 +10,10 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 <style>
+.print-only { display:none; }
 @media print {
   .side, .bar .toggle, .acts, #range-bar, .no-print { display:none !important; }
+  .print-only { display:table-cell !important; }
   .app { display:block; }
   .view { padding:0; }
 }
@@ -65,6 +67,10 @@
               <input class="f-in" id="range-end" type="date">
             </div>
             <button class="gh solid" id="apply-range-btn" type="button">Apply</button>
+            <div class="field" id="report-emp-field" style="margin:0" hidden>
+              <label class="f-lab" for="report-emp-select">Employee</label>
+              <select class="f-in" id="report-emp-select"><option value="">Choose an employee…</option></select>
+            </div>
           </div>
         </div>
         <div id="report-body"></div>
@@ -103,6 +109,7 @@ const REPORTS = [
   { key: 'tolls', title: 'Toll charges', desc: 'Total toll spend, business vs. personal split' },
   { key: 'tollsdue', title: 'Toll amount due', desc: 'Minimal — total owed to the toll agency, business charges only' },
   { key: 'tollsafterhours', title: 'After-hours toll charges', desc: 'Business hours vs. after hours, by employee, in date/time order' },
+  { key: 'tollsbyemployee', title: 'Toll charges by employee', desc: 'Full charge history for one employee — mark business/personal, print or export' },
 ];
 
 document.getElementById('report-tiles').innerHTML = REPORTS.map((r) => `
@@ -215,6 +222,7 @@ document.getElementById('back-btn').addEventListener('click', () => {
 });
 document.getElementById('print-btn').addEventListener('click', () => window.print());
 document.getElementById('apply-range-btn').addEventListener('click', () => renderReport(currentKey));
+document.getElementById('report-emp-select').addEventListener('change', () => renderReport(currentKey));
 document.getElementById('export-btn').addEventListener('click', () => {
   const csv = lastCsv.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -235,6 +243,19 @@ async function openReport(key) {
   document.getElementById('menu-view').hidden = true;
   document.getElementById('report-view').hidden = false;
   document.getElementById('page-title').textContent = REPORTS.find((r) => r.key === key).title;
+
+  const empField = document.getElementById('report-emp-field');
+  empField.hidden = key !== 'tollsbyemployee';
+  if (key === 'tollsbyemployee') {
+    await ensureLoaded(['employees']);
+    const sel = document.getElementById('report-emp-select');
+    if (!sel.dataset.populated) {
+      const sorted = data.employees.slice().sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
+      sel.innerHTML = '<option value="">Choose an employee…</option>' + sorted
+        .map((e) => `<option value="${e.id}">${escapeHtml(`${e.first_name} ${e.last_name}`)}${e.status === 'terminated' ? ' (terminated)' : ''}</option>`).join('');
+      sel.dataset.populated = '1';
+    }
+  }
   document.getElementById('report-body').innerHTML = '<p class="dim">Loading…</p>';
   await renderReport(key);
 }
@@ -706,6 +727,72 @@ async function renderReport(key) {
       ...afterHoursCharges.map((t) => ['After hours', t.date, t.time, empName(t.emp_id), empDivision(t.emp_id), t.location, t.amount.toFixed(2)]),
       ...businessCharges.map((t) => ['Business hours', t.date, t.time, empName(t.emp_id), empDivision(t.emp_id), t.location, t.amount.toFixed(2)]),
     ];
+  }
+
+  else if (key === 'tollsbyemployee') {
+    await ensureLoaded(['tolls', 'employees']);
+    const money = (n) => `$${n.toFixed(2)}`;
+    const empId = document.getElementById('report-emp-select').value;
+    if (!empId) {
+      body.innerHTML = statLine(range, 'denominator: choose an employee above')
+        + '<p class="dim">Choose an employee above to see their full toll charge history.</p>';
+      lastCsv = [['Choose an employee']];
+    } else {
+      const emp = data.employees.find((e) => e.id === empId);
+      const charges = data.tolls.filter((t) => t.emp_id === empId && inRange(t.date, range))
+        .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+      const businessTotal = charges.filter((t) => t.status === 'business').reduce((s, t) => s + t.amount, 0);
+      const personalTotal = charges.filter((t) => t.status === 'personal').reduce((s, t) => s + t.amount, 0);
+      const unreviewed = charges.filter((t) => t.status !== 'business' && t.status !== 'personal');
+      const total = charges.reduce((s, t) => s + t.amount, 0);
+      body.innerHTML = statLine(range, `denominator: ${charges.length} toll charges for ${escapeHtml(`${emp.first_name} ${emp.last_name}`)} with a date in range`) + `
+        <div class="big" style="margin-bottom:16px">
+          <div><div class="v n">${money(total)}</div><div class="k">Total, all charges</div></div>
+          <div><div class="v n">${money(businessTotal)}</div><div class="k">Business</div></div>
+          <div><div class="v hot">${money(personalTotal)}</div><div class="k">Personal</div></div>
+          <div><div class="v n">${money(unreviewed.reduce((s, t) => s + t.amount, 0))}</div><div class="k">Not yet reviewed (${unreviewed.length})</div></div>
+        </div>
+        <p class="dim no-print" style="font-size:11.5px;margin:-6px 0 14px">
+          Checking Business or Personal here writes straight to that charge — same field Toll Tracker's "Enter a
+          returned sheet" uses. Only check these off a charge you've actually confirmed (the driver's signed sheet,
+          or other proof) — this doesn't require one the way Toll Tracker's entry flow does.
+        </p>
+        <table>
+          <thead><tr><th>Date</th><th>Time</th><th>Location</th><th>Amount</th><th class="no-print">Business</th><th class="no-print">Personal</th><th class="print-only">Status</th></tr></thead>
+          <tbody id="tbe-rows">
+            ${charges.length ? charges.map((t) => `
+              <tr>
+                <td class="mono">${formatDate(t.date)}</td>
+                <td class="mono">${t.time || '—'}</td>
+                <td>${escapeHtml(t.location) || '—'}</td>
+                <td class="mono">${money(t.amount)}</td>
+                <td class="no-print"><input type="checkbox" class="tbe-biz" data-id="${t.id}" ${t.status === 'business' ? 'checked' : ''}></td>
+                <td class="no-print"><input type="checkbox" class="tbe-per" data-id="${t.id}" ${t.status === 'personal' ? 'checked' : ''}></td>
+                <td class="print-only">${t.status === 'business' ? 'Business' : t.status === 'personal' ? 'Personal' : 'Not reviewed'}</td>
+              </tr>
+            `).join('') : '<tr><td colspan="7" class="dim">No charges for this employee in range.</td></tr>'}
+          </tbody>
+        </table>
+        <p class="dim" style="font-size:11.5px;margin-top:10px">Signed review sheets and per-statement detail live in <a href="tolls.html">Toll Tracker</a>.</p>
+      `;
+      async function setStatus(id, status) {
+        try {
+          await updateDoc(doc(db, 'tolls', id), { status, entered_by: profile.uid, entered_at: serverTimestamp() });
+          const rec = data.tolls.find((t) => t.id === id);
+          if (rec) rec.status = status;
+          renderReport(currentKey);
+        } catch (err) {
+          console.error(err);
+          showToast('Could not save — ' + err.message, 'error');
+        }
+      }
+      document.querySelectorAll('.tbe-biz').forEach((cb) => cb.addEventListener('change', () => setStatus(cb.dataset.id, cb.checked ? 'business' : '')));
+      document.querySelectorAll('.tbe-per').forEach((cb) => cb.addEventListener('change', () => setStatus(cb.dataset.id, cb.checked ? 'personal' : '')));
+      lastCsv = [
+        ['Date', 'Time', 'Location', 'Amount', 'Status'],
+        ...charges.map((t) => [t.date, t.time, t.location, t.amount.toFixed(2), t.status === 'business' ? 'Business' : t.status === 'personal' ? 'Personal' : 'Not reviewed']),
+      ];
+    }
   }
 
   else if (key === 'attendance') {
