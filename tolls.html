@@ -111,14 +111,12 @@
         <div class="card-h"><h3>Charges with no vehicle match</h3><span id="unmatched-count"></span></div>
         <div class="card-body" style="padding-top:0">
           <p class="dim" style="font-size:12.5px">
-            These charges didn't match any employee's plate number or transponder label. Add the vehicle to
-            that employee's profile under Employee roster, or assign a driver here directly.
+            Grouped by plate or transponder — these didn't match a vehicle on the <a href="vehicles.html">Vehicles</a>
+            page. Assigning a group here assigns every charge in it at once; add the vehicle there so future
+            statements match automatically.
           </p>
         </div>
-        <table>
-          <thead><tr><th>Date &amp; time</th><th>Source</th><th>Location</th><th>Amount</th><th>Assign to</th><th></th></tr></thead>
-          <tbody id="unmatched-body"></tbody>
-        </table>
+        <div id="unmatched-body"></div>
       </div>
 
       <div class="card" id="entry-card" hidden>
@@ -302,13 +300,21 @@ function parseTollStatement(text) {
   return { charges, periodStart, periodEnd, warnings };
 }
 
-function matchEmployee(charge, employees) {
+function matchEmployee(charge, vehicles, assignments, employees) {
+  let vehicle;
   if (charge.source === 'transponder') {
     const key = charge.match_key.trim().toLowerCase();
-    return employees.find((e) => (e.vehicle_transponder || '').trim().toLowerCase() === key) || null;
+    vehicle = vehicles.find((v) => (v.transponder || '').trim().toLowerCase() === key);
+  } else {
+    const key = charge.match_key.trim().toUpperCase();
+    vehicle = vehicles.find((v) => (v.plate || '').trim().toUpperCase() === key);
   }
-  const key = charge.match_key.trim().toUpperCase();
-  return employees.find((e) => (e.vehicle_plate || '').trim().toUpperCase() === key) || null;
+  if (!vehicle) return null;
+  // assignments passed in is expected to already be filtered to status
+  // == 'active' (see loadAssignments) — at most one per vehicle.
+  const assignment = assignments.find((a) => a.vehicle_id === vehicle.id);
+  if (!assignment) return null;
+  return employees.find((e) => e.id === assignment.emp_id) || null;
 }
 
 // ---------------------------------------------------------------------
@@ -330,6 +336,26 @@ async function loadEmployees() {
   employees = snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
     .filter((e) => e.status !== 'terminated' && !e.is_test);
+}
+
+// Plate/transponder now live on the vehicle roster (vehicles.html), not
+// on the employee record — a charge is matched to a vehicle first, then
+// to whoever currently has that vehicle via its open assignment.
+let vehicles = [];
+let assignments = [];
+async function loadVehicles() {
+  const snap = await getDocs(collection(db, 'vehicles'));
+  vehicles = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+async function loadAssignments() {
+  const snap = await getDocs(query(collection(db, 'vehicle_assignments'), where('status', '==', 'active')));
+  assignments = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+function vehicleLabelForEmp(empId) {
+  const a = assignments.find((x) => x.emp_id === empId);
+  if (!a) return '';
+  const v = vehicles.find((x) => x.id === a.vehicle_id);
+  return v ? (v.unit_number || v.plate || '') : '';
 }
 
 async function loadStatements() {
@@ -420,7 +446,7 @@ function renderSheetsTable() {
       return `
         <tr>
           <td>${escapeHtml(emp ? `${emp.first_name} ${emp.last_name}` : empId)}</td>
-          <td class="mono">${escapeHtml(emp?.vehicle_unit || emp?.vehicle_plate || '—')}</td>
+          <td class="mono">${escapeHtml(vehicleLabelForEmp(empId)) || '—'}</td>
           <td>${charges.length}</td>
           <td class="mono">${money(total)}</td>
           <td>${statusHtml}</td>
@@ -439,6 +465,10 @@ function renderSheetsTable() {
   body.querySelectorAll('[data-enter]').forEach((btn) => btn.addEventListener('click', () => openEntry(btn.dataset.enter)));
 }
 
+// Grouped by plate/transponder (not one row per charge) — a vehicle
+// that failed to match shows up as however many charges it racked up in
+// the statement, and assigning it once is what "sends it to the person
+// responsible for it" without clicking through each individual charge.
 function renderUnmatchedTable() {
   const unmatched = currentTolls.filter((t) => !t.emp_id);
   const card = document.getElementById('unmatched-card');
@@ -449,25 +479,60 @@ function renderUnmatchedTable() {
     .slice()
     .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''))
     .map((e) => `<option value="${e.id}">${escapeHtml(`${e.first_name} ${e.last_name}`)}</option>`).join('');
-  document.getElementById('unmatched-body').innerHTML = unmatched.map((t) => `
-    <tr>
-      <td class="mono">${formatDate(t.date)} ${t.time}</td>
-      <td class="mono">${t.source === 'plate' ? 'Plate ' + t.match_key : 'Transponder "' + escapeHtml(t.match_key) + '"'}</td>
-      <td>${escapeHtml(t.location)}</td>
-      <td class="mono">${money(t.amount)}</td>
-      <td><select class="inp" data-assign="${t.id}" style="font-size:11.5px"><option value="">Choose…</option>${empOptions}</select></td>
-      <td><button class="gh" style="padding:5px 10px;font-size:10.5px" type="button" data-save-assign="${t.id}">Assign</button></td>
-    </tr>
-  `).join('');
-  document.getElementById('unmatched-body').querySelectorAll('[data-save-assign]').forEach((btn) => {
+
+  const groups = {};
+  unmatched.forEach((t) => {
+    const key = `${t.source}:${t.match_key}`;
+    (groups[key] = groups[key] || { source: t.source, matchKey: t.match_key, charges: [] }).charges.push(t);
+  });
+  const groupList = Object.values(groups).sort((a, b) => b.charges.length - a.charges.length);
+
+  document.getElementById('unmatched-body').innerHTML = groupList.map((g, gi) => {
+    const total = g.charges.reduce((s, t) => s + t.amount, 0);
+    const label = g.source === 'plate' ? `Plate ${g.matchKey}` : `Transponder "${escapeHtml(g.matchKey)}"`;
+    return `
+      <table style="margin-bottom:14px">
+        <thead>
+          <tr>
+            <th colspan="3">${label} — ${g.charges.length} charge${g.charges.length === 1 ? '' : 's'}, ${money(total)}</th>
+            <th>Assign all to</th>
+            <th></th>
+          </tr>
+          <tr><th>Date &amp; time</th><th>Location</th><th>Amount</th><th></th><th></th></tr>
+        </thead>
+        <tbody>
+          ${g.charges.map((t) => `
+            <tr>
+              <td class="mono">${formatDate(t.date)} ${t.time}</td>
+              <td>${escapeHtml(t.location)}</td>
+              <td class="mono">${money(t.amount)}</td>
+              <td></td><td></td>
+            </tr>
+          `).join('')}
+          <tr>
+            <td colspan="3"></td>
+            <td><select class="inp" data-group-assign="${gi}" style="font-size:11.5px"><option value="">Choose…</option>${empOptions}</select></td>
+            <td><button class="gh" style="padding:5px 10px;font-size:10.5px" type="button" data-group-save="${gi}">Assign group</button></td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+  }).join('');
+
+  document.getElementById('unmatched-body').querySelectorAll('[data-group-save]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const tollId = btn.dataset.saveAssign;
-      const sel = document.querySelector(`[data-assign="${tollId}"]`);
+      const gi = Number(btn.dataset.groupSave);
+      const sel = document.querySelector(`[data-group-assign="${gi}"]`);
       const empId = sel.value;
       if (!empId) { showToast('Choose who had this vehicle.', 'error'); return; }
+      const group = groupList[gi];
       try {
-        await updateDoc(doc(db, 'tolls', tollId), { emp_id: empId, entered_by: profile.uid, entered_at: serverTimestamp() });
-        showToast('Assigned.');
+        const batch = writeBatch(db);
+        group.charges.forEach((t) => {
+          batch.update(doc(db, 'tolls', t.id), { emp_id: empId, entered_by: profile.uid, entered_at: serverTimestamp() });
+        });
+        await batch.commit();
+        showToast(`Assigned ${group.charges.length} charge${group.charges.length === 1 ? '' : 's'}.`);
         await loadStatementData(currentStatementId);
       } catch (err) {
         console.error(err);
@@ -483,7 +548,7 @@ function renderUnmatchedTable() {
 function runParse(text, { sourceLabel = 'pasted text' } = {}) {
   const result = parseTollStatement(text);
   lastParse = result;
-  const matched = result.charges.filter((c) => matchEmployee(c, employees));
+  const matched = result.charges.filter((c) => matchEmployee(c, vehicles, assignments, employees));
   document.getElementById('pv-count').textContent = String(result.charges.length);
   document.getElementById('pv-matched').textContent = String(matched.length);
   document.getElementById('pv-unmatched').textContent = String(result.charges.length - matched.length);
@@ -655,7 +720,7 @@ document.getElementById('confirm-import-btn').addEventListener('click', async ()
     for (const chunk of chunks) {
       const batch = writeBatch(db);
       chunk.forEach((c) => {
-        const match = matchEmployee(c, employees);
+        const match = matchEmployee(c, vehicles, assignments, employees);
         const ref = doc(collection(db, 'tolls'));
         batch.set(ref, {
           statement_id: stRef.id, date: c.date, time: c.time, location: c.location, amount: c.amount,
@@ -839,7 +904,7 @@ async function buildReviewSheetPdf(emp, charges, periodLabel, lang = 'en') {
   }
   const half = (PW - 2 * M) / 2;
   infoRow([{ label: tr.lblEmpName, value: `${emp.first_name} ${emp.last_name}`, w: half }, { label: tr.lblPosition, value: emp.position || '', w: half }]);
-  infoRow([{ label: tr.lblVehicle, value: emp.vehicle_unit || emp.vehicle_plate || '', w: half }, { label: tr.lblMonth, value: periodLabel || '', w: half }]);
+  infoRow([{ label: tr.lblVehicle, value: vehicleLabelForEmp(emp.id) || '', w: half }, { label: tr.lblMonth, value: periodLabel || '', w: half }]);
   page.drawRectangle({ x: M, y: y - rowH, width: PW - 2 * M, height: rowH, borderColor: gridLine, borderWidth: 0.6 });
   const empTypeLabelW = Math.max(Math.round((PW - 2 * M) * 0.18), bold.widthOfTextAtSize(tr.lblEmpType, 8) + 10);
   page.drawRectangle({ x: M, y: y - rowH, width: empTypeLabelW, height: rowH, color: shade });
@@ -1178,6 +1243,8 @@ document.getElementById('entry-save-btn').addEventListener('click', async () => 
 // Boot
 // ---------------------------------------------------------------------
 await loadEmployees();
+await loadVehicles();
+await loadAssignments();
 await loadStatements();
 await loadStatementData(currentStatementId);
 </script>
