@@ -18,6 +18,14 @@
 .div-dot.IE{background:#6B7280}
 .div-legend{display:flex;flex-wrap:wrap;gap:14px;margin:-6px 0 16px;font-size:11.5px;color:var(--muted)}
 .div-legend span{display:inline-flex;align-items:center}
+.print-only{display:none}
+@media print {
+  body{background:#fff !important;color:#000 !important}
+  .side, .bar .toggle, .tools, .no-print { display:none !important; }
+  .print-only{display:block !important}
+  .app { display:block; }
+  .view { padding:0; }
+}
 </style>
 </head>
 <body>
@@ -46,6 +54,7 @@
         </div>
         <div class="tools">
           <button class="gh solid" id="add-btn" type="button">Add iPad</button>
+          <button class="gh" id="print-btn" type="button">Print</button>
           <input class="inp" id="search" placeholder="Search iPad # or name" style="min-width:200px">
           <select class="inp" id="division-filter">
             <option value="">All divisions</option>
@@ -58,6 +67,7 @@
             <option>Yard</option>
           </select>
         </div>
+        <div class="print-only" id="print-summary" style="font-size:11.5px;margin:-6px 0 12px"></div>
         <div class="div-legend">
           <span><i class="div-dot Trees"></i>Trees</span>
           <span><i class="div-dot Enhancements"></i>Enhancements</span>
@@ -233,6 +243,10 @@ function render() {
   updateSortIndicators();
 
   document.getElementById('log-summary').textContent = `${visible.length} of ${ipads.length}`;
+  const printedOn = new Date().toLocaleDateString('en-US', { dateStyle: 'medium' });
+  const filterNote = [q ? `search "${q}"` : '', divisionFilter ? `division ${divisionFilter}` : ''].filter(Boolean).join(', ');
+  document.getElementById('print-summary').textContent =
+    `${visible.length} iPad${visible.length === 1 ? '' : 's'}${filterNote ? ` — filtered: ${filterNote}` : ''} — printed ${printedOn}`;
   document.getElementById('rows').innerHTML = visible.length ? visible.map((i) => `
       <tr class="row-clickable" data-id="${i.id}" style="cursor:pointer">
         <td class="mono">${escapeHtml(i.ipad_number)}</td>
@@ -330,6 +344,7 @@ document.getElementById('remove-btn').addEventListener('click', async () => {
 
 document.getElementById('search').addEventListener('input', render);
 document.getElementById('division-filter').addEventListener('change', render);
+document.getElementById('print-btn').addEventListener('click', () => window.print());
 
 wireEmpSearch();
 await loadEmployees();
