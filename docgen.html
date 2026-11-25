@@ -2700,6 +2700,15 @@ function renderLetters() {
           <div class="field"><label class="f-lab">Reports-to title</label><input class="f-in" id="ltr-reportsto-title"></div>
         </div>
         ${managerIds.size === 0 ? '<p class="dim" style="margin:-4px 0 12px">No managers marked yet — add them in Settings → Managers.</p>' : ''}
+        <div class="frow" id="ltr-vacation-field" hidden>
+          <div class="field"><label class="f-lab">Vacation time</label>
+            <select class="f-in" id="ltr-vacation-mode">
+              <option value="same">Keep the same</option>
+              <option value="change">Change to a new total</option>
+            </select>
+          </div>
+          <div class="field" id="ltr-vacation-hours-field" hidden><label class="f-lab">New total (hours per year)</label><input class="f-in" id="ltr-vacation-hours" type="number" step="1" min="0"></div>
+        </div>
         <div class="frow" id="ltr-payrange-field">
           <div class="field"><label class="f-lab">Pay range lookup (optional — fills the rate below)</label>
             <select class="f-in" id="ltr-payrange-division"><option value="">Select a division…</option>${PAY_SCALE.map((d) => `<option value="${escapeHtml(d.division)}">${escapeHtml(d.division)}</option>`).join('')}</select>
@@ -2761,6 +2770,11 @@ function renderLetters() {
     // Retro pay only makes sense when there's a prior rate to catch up on
     // -- an Offer letter is someone's first rate, so it's left off there.
     document.getElementById('ltr-retro-field').hidden = !(type.startsWith('increase') || type.startsWith('promotion'));
+    // Same reasoning for vacation: an Offer letter's Benefits paragraph
+    // talks about eligibility, not accrual continuity, so there's nothing
+    // for "keep the same vs. change it" to apply to until the person is
+    // already employed.
+    document.getElementById('ltr-vacation-field').hidden = !(type.startsWith('increase') || type.startsWith('promotion'));
   }
 
   // Pay range lookup -- a reference table (never saved, same as the
@@ -2793,6 +2807,10 @@ function renderLetters() {
       document.getElementById('ltr-rate').value = role.senior.toFixed(2);
     });
   }
+
+  document.getElementById('ltr-vacation-mode').addEventListener('change', (e) => {
+    document.getElementById('ltr-vacation-hours-field').hidden = e.target.value !== 'change';
+  });
 
   document.getElementById('ltr-branch').addEventListener('change', (e) => {
     const loc = LOCATIONS[e.target.value];
@@ -2980,6 +2998,22 @@ function buildSalaryEs(ctx) {
     ${acceptanceBlock('ACEPTACIÓN Y ACUERDO:', 'Firma', 'Fecha')}
     ${pageFooter()}`;
 }
+// Increase and Promotion letters both default to "benefits and accruals
+// stay the same" — this is the one place that sentence has to branch when
+// someone is also getting a vacation change, instead of each of the 8
+// letter builders below spelling out both versions themselves.
+function benefitsSentenceEn(ctx) {
+  if (!ctx.vacationChanged) {
+    return 'Your current elected benefits and vacation/sick time accruals remain the same as outlined in our Employee Benefits Guide and Handbook.';
+  }
+  return `Your current elected benefits and sick time accrual remain the same as outlined in our Employee Benefits Guide and Handbook. Your vacation accrual will increase to a total of <strong>${ctx.vacationHours} hours per year</strong>, effective ${ctx.startDate}.`;
+}
+function benefitsSentenceEs(ctx) {
+  if (!ctx.vacationChanged) {
+    return 'Sus beneficios actualmente elegidos y la acumulación de tiempo de vacaciones/enfermedad permanecen igual según lo descrito en nuestra Guía de Beneficios y Manual del Empleado.';
+  }
+  return `Sus beneficios actualmente elegidos y la acumulación de tiempo por enfermedad permanecen igual según lo descrito en nuestra Guía de Beneficios y Manual del Empleado. Su acumulación de vacaciones aumentará a un total de <strong>${ctx.vacationHours} horas por año</strong>, a partir del ${ctx.startDate}.`;
+}
 function buildIncreaseEn(ctx) {
   const overtime = formatMoney(ctx.rate * 1.5);
   return `${letterHead()}
@@ -3001,7 +3035,7 @@ function buildIncreaseEn(ctx) {
       <li>Your schedule is as follows: <strong>${escapeHtml(ctx.schedule)}</strong> – Schedule will vary as business needs dictate.</li>
     </ul>
     <p class="center">Your location and schedule may be subject to changes as the company's needs may require.</p>
-    <p class="indent section-gap"><strong>4. Benefits.</strong> Your current elected benefits and vacation/sick time accruals remain the same as outlined in our Employee Benefits Guide and Handbook.</p>
+    <p class="indent section-gap"><strong>4. Benefits.</strong> ${benefitsSentenceEn(ctx)}</p>
     <p class="section-gap"><strong>5. Conditional Offer.</strong> All other terms and conditions of your employment remain unchanged.</p>
     <p class="indent section-gap force-break"><strong>6. Employment Relationship.</strong> Notwithstanding any of the above, your employment with Southwest Landscape is "at will" meaning that you or Southwest Landscape can terminate the employment relationship at any time, with or without cause, and with or without notice.</p>
     <p>If you wish to accept this offer, please sign and date this letter and return it to me by <strong>${ctx.returnDate}</strong>.</p>
@@ -3030,7 +3064,7 @@ function buildIncreaseEs(ctx) {
       <li>Su horario será el siguiente: <strong>${escapeHtml(ctx.schedule)}</strong>; el horario puede variar según las necesidades del negocio.</li>
     </ul>
     <p class="center">Su ubicación y horario pueden estar sujetos a cambios según lo requieran las necesidades de la empresa.</p>
-    <p class="indent section-gap"><strong>4. Beneficios.</strong> Sus beneficios actualmente elegidos y la acumulación de tiempo de vacaciones/enfermedad permanecen igual según lo descrito en nuestra Guía de Beneficios y Manual del Empleado.</p>
+    <p class="indent section-gap"><strong>4. Beneficios.</strong> ${benefitsSentenceEs(ctx)}</p>
     <p class="section-gap"><strong>5. Oferta Condicional.</strong> Todos los demás términos y condiciones de su empleo permanecen sin cambios.</p>
     <p class="indent section-gap force-break"><strong>6. Relación Laboral.</strong> Sin perjuicio de lo anterior, su empleo con Southwest Landscape es "a voluntad", lo que significa que usted o Southwest Landscape pueden terminar la relación laboral en cualquier momento, con o sin causa, y con o sin previo aviso.</p>
     <p>Si desea aceptar esta oferta, firme y feche esta carta y regrésela a mí antes del <strong>${ctx.returnDate}</strong>.</p>
@@ -3054,7 +3088,7 @@ function buildIncreaseSalaryEn(ctx) {
       <li>Your schedule is as follows: <strong>${escapeHtml(ctx.schedule)}</strong> – Schedule will vary as business needs dictate.</li>
     </ul>
     <p class="center">Your location and schedule may be subject to changes as the company's needs may require.</p>
-    <p class="indent section-gap"><strong>4. Benefits.</strong> Your current elected benefits and vacation/sick time accruals remain the same as outlined in our Employee Benefits Guide and Handbook.</p>
+    <p class="indent section-gap"><strong>4. Benefits.</strong> ${benefitsSentenceEn(ctx)}</p>
     <p class="section-gap"><strong>5. Conditional Offer.</strong> All other terms and conditions of your employment remain unchanged.</p>
     <p class="indent section-gap force-break"><strong>6. Employment Relationship.</strong> Notwithstanding any of the above, your employment with Southwest Landscape is "at will" meaning that you or Southwest Landscape can terminate the employment relationship at any time, with or without cause, and with or without notice.</p>
     <p>If you wish to accept this offer, please sign and date this letter and return it to me by <strong>${ctx.returnDate}</strong>.</p>
@@ -3078,7 +3112,7 @@ function buildIncreaseSalaryEs(ctx) {
       <li>Su horario será el siguiente: <strong>${escapeHtml(ctx.schedule)}</strong>; el horario puede variar según las necesidades del negocio.</li>
     </ul>
     <p class="center">Su ubicación y horario pueden estar sujetos a cambios según lo requieran las necesidades de la empresa.</p>
-    <p class="indent section-gap"><strong>4. Beneficios.</strong> Sus beneficios actualmente elegidos y la acumulación de tiempo de vacaciones/enfermedad permanecen igual según lo descrito en nuestra Guía de Beneficios y Manual del Empleado.</p>
+    <p class="indent section-gap"><strong>4. Beneficios.</strong> ${benefitsSentenceEs(ctx)}</p>
     <p class="section-gap"><strong>5. Oferta Condicional.</strong> Todos los demás términos y condiciones de su empleo permanecen sin cambios.</p>
     <p class="indent section-gap force-break"><strong>6. Relación Laboral.</strong> Sin perjuicio de lo anterior, su empleo con Southwest Landscape es "a voluntad", lo que significa que usted o Southwest Landscape pueden terminar la relación laboral en cualquier momento, con o sin causa, y con o sin previo aviso.</p>
     <p>Si desea aceptar esta oferta, firme y feche esta carta y regrésela a mí antes del <strong>${ctx.returnDate}</strong>.</p>
@@ -3107,7 +3141,7 @@ function buildPromotionHourly(ctx) {
       <li>Your schedule is as follows: <strong>${escapeHtml(ctx.schedule)}</strong> – Schedule will vary as business needs dictate.</li>
     </ul>
     <p class="center">Your location and schedule may be subject to changes as the company's needs may require.</p>
-    <p class="indent section-gap"><strong>4. Benefits.</strong> Your current elected benefits and vacation/sick time accruals remain the same as outlined in our Employee Benefits Guide and Handbook.</p>
+    <p class="indent section-gap"><strong>4. Benefits.</strong> ${benefitsSentenceEn(ctx)}</p>
     <p class="section-gap"><strong>5. 90-Day Performance Period.</strong> You will be subject to a 90-day performance review, starting from your first day in the position. The purpose of this period is to assess your suitability for the position and to provide you with feedback, coaching, and training to help you succeed in your role. Your supervisor will conduct a formal performance evaluation at the end of the 90-day performance period to determine if you will continue with this role. If it is determined during or at the end of the 90-day performance period that the position is not a good fit, the Company may, at its discretion, attempt to place you in your former position (or a comparable position) if one is available. However, the Company cannot guarantee such placement.</p>
     <p class="indent section-gap force-break"><strong>6. Employment Relationship.</strong> Notwithstanding any of the above, your employment with Southwest Landscape is "at will" meaning that you or Southwest Landscape can terminate the employment relationship at any time, with or without cause, and with or without notice.</p>
     <p>If you wish to accept this offer, please sign and date this letter and return it to me by <strong>${ctx.returnDate}</strong>.</p>
@@ -3136,7 +3170,7 @@ function buildPromotionHourlyEs(ctx) {
       <li>Su horario es el siguiente: <strong>${escapeHtml(ctx.schedule)}</strong> – El horario puede variar según las necesidades del negocio.</li>
     </ul>
     <p class="center">Su ubicación y horario pueden estar sujetos a cambios según lo requieran las necesidades de la empresa.</p>
-    <p class="indent section-gap"><strong>4. Beneficios.</strong> Sus beneficios actualmente elegidos y la acumulación de tiempo de vacaciones/enfermedad permanecen igual según lo descrito en nuestra Guía de Beneficios y Manual del Empleado.</p>
+    <p class="indent section-gap"><strong>4. Beneficios.</strong> ${benefitsSentenceEs(ctx)}</p>
     <p class="section-gap"><strong>5. Período de Desempeño de 90 Días.</strong> Estará sujeto(a) a una revisión de desempeño de 90 días, a partir de su primer día en el puesto. El propósito de este período es evaluar su idoneidad para el puesto y brindarle retroalimentación, orientación y capacitación para ayudarle a tener éxito en su función. Su supervisor realizará una evaluación formal de desempeño al final del período de 90 días para determinar si continuará en este puesto. Si se determina durante o al final del período de 90 días que el puesto no es el adecuado, la Compañía podrá, a su discreción, intentar reubicarlo(a) en su puesto anterior (o uno comparable) si hay uno disponible. Sin embargo, la Compañía no puede garantizar dicha reubicación.</p>
     <p class="indent section-gap force-break"><strong>6. Relación Laboral.</strong> No obstante lo anterior, su empleo con Southwest Landscape es "a voluntad", lo que significa que usted o Southwest Landscape pueden terminar la relación laboral en cualquier momento, con o sin causa, y con o sin previo aviso.</p>
     <p>Si desea aceptar esta oferta, favor de firmar y fechar esta carta y devolverla a mí antes del <strong>${ctx.returnDate}</strong>.</p>
@@ -3160,7 +3194,7 @@ function buildPromotionSalary(ctx) {
       <li>Your schedule is as follows: <strong>${escapeHtml(ctx.schedule)}</strong> – Schedule will vary as business needs dictate.</li>
     </ul>
     <p class="center">Your location and schedule may be subject to changes as the company's needs may require.</p>
-    <p class="indent section-gap"><strong>4. Benefits.</strong> Your current elected benefits and vacation/sick time accruals remain the same as outlined in our Employee Benefits Guide and Handbook.</p>
+    <p class="indent section-gap"><strong>4. Benefits.</strong> ${benefitsSentenceEn(ctx)}</p>
     <p class="section-gap"><strong>5. 90-Day Performance Period.</strong> You will be subject to a 90-day performance review, starting from your first day in the position. The purpose of this period is to assess your suitability for the position and to provide you with feedback, coaching, and training to help you succeed in your role. Your supervisor will conduct a formal performance evaluation at the end of the 90-day performance period to determine if you will continue with this role. If it is determined during or at the end of the 90-day performance period that the position is not a good fit, the Company may, at its discretion, attempt to place you in your former position (or a comparable position) if one is available. However, the Company cannot guarantee such placement.</p>
     <p class="indent section-gap force-break"><strong>6. Employment Relationship.</strong> Notwithstanding any of the above, your employment with Southwest Landscape is "at will" meaning that you or Southwest Landscape can terminate the employment relationship at any time, with or without cause, and with or without notice.</p>
     <p>If you wish to accept this offer, please sign and date this letter and return it to me by <strong>${ctx.returnDate}</strong>.</p>
@@ -3184,7 +3218,7 @@ function buildPromotionSalaryEs(ctx) {
       <li>Su horario es el siguiente: <strong>${escapeHtml(ctx.schedule)}</strong> – El horario puede variar según las necesidades del negocio.</li>
     </ul>
     <p class="center">Su ubicación y horario pueden estar sujetos a cambios según lo requieran las necesidades de la empresa.</p>
-    <p class="indent section-gap"><strong>4. Beneficios.</strong> Sus beneficios actualmente elegidos y la acumulación de tiempo de vacaciones/enfermedad permanecen igual según lo descrito en nuestra Guía de Beneficios y Manual del Empleado.</p>
+    <p class="indent section-gap"><strong>4. Beneficios.</strong> ${benefitsSentenceEs(ctx)}</p>
     <p class="section-gap"><strong>5. Período de Desempeño de 90 Días.</strong> Estará sujeto(a) a una revisión de desempeño de 90 días, a partir de su primer día en el puesto. El propósito de este período es evaluar su idoneidad para el puesto y brindarle retroalimentación, orientación y capacitación para ayudarle a tener éxito en su función. Su supervisor realizará una evaluación formal de desempeño al final del período de 90 días para determinar si continuará en este puesto. Si se determina durante o al final del período de 90 días que el puesto no es el adecuado, la Compañía podrá, a su discreción, intentar reubicarlo(a) en su puesto anterior (o uno comparable) si hay uno disponible. Sin embargo, la Compañía no puede garantizar dicha reubicación.</p>
     <p class="indent section-gap force-break"><strong>6. Relación Laboral.</strong> No obstante lo anterior, su empleo con Southwest Landscape es "a voluntad", lo que significa que usted o Southwest Landscape pueden terminar la relación laboral en cualquier momento, con o sin causa, y con o sin previo aviso.</p>
     <p>Si desea aceptar esta oferta, favor de firmar y fechar esta carta y devolverla a mí antes del <strong>${ctx.returnDate}</strong>.</p>
@@ -3214,6 +3248,9 @@ function generateLetterSheet() {
   const retroAmount = parseFloat(document.getElementById('ltr-retro-amount').value);
   const retroStartRaw = document.getElementById('ltr-retro-start').value;
   const retroEndRaw = document.getElementById('ltr-retro-end').value;
+  const vacationMode = document.getElementById('ltr-vacation-mode').value;
+  const vacationHours = parseFloat(document.getElementById('ltr-vacation-hours').value);
+  const vacationChanged = !document.getElementById('ltr-vacation-field').hidden && vacationMode === 'change';
 
   if (!first || !last) return showToast('Enter the employee\'s name.', 'error');
   if (!loc) return showToast('Select a branch.', 'error');
@@ -3233,6 +3270,7 @@ function generateLetterSheet() {
   const isSalaryType = type === 'salary' || type === 'salary-es' || type === 'promotion-salary' || type === 'promotion-salary-es' || type === 'increase-salary-en' || type === 'increase-salary-es';
   if (!isSalaryType && (!rate || rate <= 0)) return showToast('Enter a valid hourly rate.', 'error');
   if (isSalaryType && (!salary || salary <= 0)) return showToast('Enter a valid annual salary.', 'error');
+  if (vacationChanged && (!vacationHours || vacationHours <= 0)) return showToast('Enter the new vacation total (hours per year).', 'error');
 
   const isEs = type.endsWith('-es');
   const ctx = {
@@ -3244,6 +3282,7 @@ function generateLetterSheet() {
     retroEnd: retroEndRaw ? longDate(retroEndRaw, isEs) : '',
     supervisorName: `${reportsTo.first_name} ${reportsTo.last_name}`,
     supervisorTitle: reportsToTitle || reportsTo.position || '',
+    vacationChanged, vacationHours: vacationChanged ? vacationHours : 0,
   };
 
   const builders = {
