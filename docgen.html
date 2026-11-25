@@ -127,6 +127,7 @@
           Write-up, Termination, 30/60/90 Review, and Offer/Increase/Promotion letters match the real SWL
           forms exactly. Every generator produces a print view — use your browser's Print → Save as PDF.
         </p>
+        <p class="dim" id="tiles-loading-note" style="margin:-8px 0 16px">Loading employee and manager data…</p>
         <div id="tiles"></div>
       </div>
 
@@ -262,6 +263,17 @@ document.querySelectorAll('.gen-tile').forEach((btn) => {
     openGenerator(g.key);
   });
 });
+
+// The tiles above render immediately, but every generator reads from
+// employees/managers/staff/etc. loaded by the awaits at the bottom of this
+// file — those are real Firestore reads, not instant. Without this, a
+// click that lands before they resolve builds a generator (like Offer's
+// "Reports to" list) against the still-empty initial data and never
+// recovers, since each generator only renders once per open. Blocking
+// clicks here until the data is in means managers marked in Settings
+// always show up, no matter how fast someone clicks after the page loads.
+document.getElementById('tiles').style.opacity = '0.45';
+document.getElementById('tiles').style.pointerEvents = 'none';
 
 document.getElementById('back-btn').addEventListener('click', () => {
   document.getElementById('menu-view').hidden = false;
@@ -7652,6 +7664,10 @@ await loadTerminations();
 await loadStaff();
 await loadDepartmentList();
 await loadOshaEstablishment();
+
+document.getElementById('tiles').style.opacity = '';
+document.getElementById('tiles').style.pointerEvents = '';
+document.getElementById('tiles-loading-note').remove();
 
 // A nav item can jump straight into a specific generator (used for the
 // Terminations tab) instead of always landing on the tile menu.
