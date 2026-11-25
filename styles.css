@@ -288,6 +288,7 @@ select.f-in{
   background-image:url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%2369705F' stroke-width='1.6'%3E%3Cpath d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
 }
 .frow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.frow[hidden]{display:none}
 .field{margin-bottom:14px}
 .modal-actions{display:flex;justify-content:flex-end;gap:8px;padding:14px 18px;border-top:1px solid var(--line);background:var(--panel)}
 
